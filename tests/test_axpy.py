@@ -23,17 +23,16 @@ STRIDES = [(1, 1), (2, 2), (2, 3), (3, 2), (3, 3)]
 COMPLEX_SCALARS = [1.0 + 2.0j, -0.5 + 1.5j]
 
 
-def cublas_axpy_reference(x, y, alpha, incx=1, incy=1):
+def cublas_axpy_reference(n, alpha, x, incx, y, incy):
     assert x.dtype == y.dtype, "x and y must have the same dtype"
     assert x.dim() == 1, "x must be 1-dimensional"
     assert y.dim() == 1, "y must be 1-dimensional"
 
+    if n == 0:
+        return
+
     x = x.contiguous()
     y = y.contiguous()
-
-    n = (x.numel() + incx - 1) // incx
-    if n == 0:
-        return y
 
     dtype = x.dtype
     if dtype == torch.float32:
@@ -55,8 +54,6 @@ def cublas_axpy_reference(x, y, alpha, incx=1, incy=1):
 
     func(handle, n, alpha_ptr, x.data_ptr(), incx, y.data_ptr(), incy)
 
-    return y
-
 
 @pytest.mark.axpy
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -74,14 +71,14 @@ def test_accuracy_axpy_real(dtype, shape, alpha, incx, incy):
     ref_x = x.clone()
     ref_y = y.clone()
 
-    ref_out = cublas_axpy_reference(ref_x, ref_y, alpha, incx, incy)
+    cublas_axpy_reference(n, alpha, ref_x, incx, ref_y, incy)
 
     if dtype == torch.float32:
-        res_out = flag_blas.ops.saxpy(x, y, alpha=alpha, incx=incx, incy=incy)
-        torch.testing.assert_close(res_out, ref_out, rtol=1e-5, atol=1e-5)
+        flag_blas.ops.saxpy(n, alpha, x, incx, y, incy)
+        torch.testing.assert_close(y, ref_y, rtol=1e-5, atol=1e-5)
     else:
-        res_out = flag_blas.ops.daxpy(x, y, alpha=alpha, incx=incx, incy=incy)
-        torch.testing.assert_close(res_out, ref_out, rtol=1e-15, atol=1e-15)
+        flag_blas.ops.daxpy(n, alpha, x, incx, y, incy)
+        torch.testing.assert_close(y, ref_y, rtol=1e-15, atol=1e-15)
 
 
 @pytest.mark.axpy
@@ -100,14 +97,14 @@ def test_accuracy_axpy_complex(dtype, shape, alpha, incx, incy):
     ref_x = x.clone()
     ref_y = y.clone()
 
-    ref_out = cublas_axpy_reference(ref_x, ref_y, alpha, incx, incy)
+    cublas_axpy_reference(n, alpha, ref_x, incx, ref_y, incy)
 
     if dtype == torch.complex64:
-        res_out = flag_blas.ops.caxpy(x, y, alpha=alpha, incx=incx, incy=incy)
-        torch.testing.assert_close(res_out, ref_out, rtol=1e-5, atol=1e-5)
+        flag_blas.ops.caxpy(n, alpha, x, incx, y, incy)
+        torch.testing.assert_close(y, ref_y, rtol=1e-5, atol=1e-5)
     else:
-        res_out = flag_blas.ops.zaxpy(x, y, alpha=alpha, incx=incx, incy=incy)
-        torch.testing.assert_close(res_out, ref_out, rtol=1e-15, atol=1e-15)
+        flag_blas.ops.zaxpy(n, alpha, x, incx, y, incy)
+        torch.testing.assert_close(y, ref_y, rtol=1e-15, atol=1e-15)
 
 
 @pytest.mark.axpy
@@ -120,16 +117,17 @@ def test_accuracy_axpy_empty_tensor(dtype):
     y = torch.randn(0, dtype=dtype, device=flag_blas.device)
 
     alpha = 2.0 + 1.0j if dtype in [torch.complex64, torch.complex128] else 2.0
+    n = 0
 
     if dtype == torch.float32:
-        res_out = flag_blas.ops.saxpy(x, y, alpha=alpha)
+        flag_blas.ops.saxpy(n, alpha, x, 1, y, 1)
     elif dtype == torch.float64:
-        res_out = flag_blas.ops.daxpy(x, y, alpha=alpha)
+        flag_blas.ops.daxpy(n, alpha, x, 1, y, 1)
     elif dtype == torch.complex64:
-        res_out = flag_blas.ops.caxpy(x, y, alpha=alpha)
+        flag_blas.ops.caxpy(n, alpha, x, 1, y, 1)
     else:
-        res_out = flag_blas.ops.zaxpy(x, y, alpha=alpha)
+        flag_blas.ops.zaxpy(n, alpha, x, 1, y, 1)
 
-    assert res_out.shape == (0,)
-    assert res_out.dtype == dtype
-    assert res_out.device == x.device
+    assert y.shape == (0,)
+    assert y.dtype == dtype
+    assert y.device == x.device
