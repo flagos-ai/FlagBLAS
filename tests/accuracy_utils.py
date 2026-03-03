@@ -5,7 +5,7 @@ import random
 import numpy as np
 import torch
 
-import flag_gems
+import flag_blas
 
 QUICK_MODE = False
 TO_CPU = False
@@ -19,13 +19,13 @@ try:
 except (ImportError, AttributeError):
     pass
 
-fp64_is_supported = flag_gems.runtime.device.support_fp64
-bf16_is_supported = flag_gems.runtime.device.support_bf16
-int64_is_supported = flag_gems.runtime.device.support_int64
+fp64_is_supported = flag_blas.runtime.device.support_fp64
+bf16_is_supported = flag_blas.runtime.device.support_bf16
+int64_is_supported = flag_blas.runtime.device.support_int64
 
 
 def TestForwardOnly():
-    return flag_gems.vendor_name in []
+    return flag_blas.vendor_name in []
 
 
 def SkipVersion(module_name, skip_pattern):
@@ -234,18 +234,15 @@ def to_cpu(res, ref):
         assert ref.device == torch.device("cpu")
     return res
 
-
 def gems_assert_close(res, ref, dtype, equal_nan=False, reduce_dim=1, atol=1e-4):
     res = to_cpu(res, ref)
-    flag_gems.testing.assert_close(
+    flag_blas.testing.assert_close(
         res, ref, dtype, equal_nan=equal_nan, reduce_dim=reduce_dim, atol=atol
     )
 
-
 def gems_assert_equal(res, ref, equal_nan=False):
     res = to_cpu(res, ref)
-    flag_gems.testing.assert_equal(res, ref, equal_nan=equal_nan)
-
+    flag_blas.testing.assert_equal(res, ref, equal_nan=equal_nan)
 
 def unsqueeze_tuple(t, max_len):
     for _ in range(len(t), max_len):

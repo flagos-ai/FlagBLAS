@@ -5,9 +5,9 @@ import torch
 import triton
 import triton.language as tl
 
-from flag_gems.runtime import torch_device_fn
-from flag_gems.utils import libentry
-from flag_gems.utils import triton_lang_extension as tle
+from flag_blas.runtime import torch_device_fn
+from flag_blas.utils import libentry
+from flag_blas.utils import triton_lang_extension as tle
 
 logger = logging.getLogger(__name__)
 
