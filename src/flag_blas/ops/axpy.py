@@ -28,7 +28,7 @@ ScalarType = Union[float, int, complex, torch.Tensor]
 def axpy_real_kernel(
     x_ptr,
     y_ptr,
-    alpha,
+    alpha: tl.constexpr,
     n,
     INCX: tl.constexpr,
     INCY: tl.constexpr,
@@ -62,8 +62,8 @@ def axpy_real_kernel(
 def axpy_complex_kernel(
     x_ptr,
     y_ptr,
-    alpha_real,
-    alpha_imag,
+    alpha_real: tl.constexpr,
+    alpha_imag: tl.constexpr,
     n,
     INCX: tl.constexpr,
     INCY: tl.constexpr,
