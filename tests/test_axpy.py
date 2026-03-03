@@ -13,7 +13,6 @@ tests_path = Path(__file__).parent
 sys.path.insert(0, str(tests_path))
 
 import flag_blas
-import flag_gems
 
 from accuracy_utils import SCALARS, gems_assert_close, to_reference
 
@@ -65,12 +64,12 @@ def cublas_axpy_reference(x, y, alpha, incx=1, incy=1):
 @pytest.mark.parametrize("alpha", SCALARS)
 @pytest.mark.parametrize("incx,incy", STRIDES)
 def test_accuracy_axpy_real(dtype, shape, alpha, incx, incy):
-    if dtype == torch.float64 and not flag_gems.runtime.device.support_fp64:
+    if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_gems.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_gems.device)
+    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     ref_x = to_reference(x, True)
     ref_y = to_reference(y, True)
@@ -91,12 +90,12 @@ def test_accuracy_axpy_real(dtype, shape, alpha, incx, incy):
 @pytest.mark.parametrize("alpha", COMPLEX_SCALARS + SCALARS)
 @pytest.mark.parametrize("incx,incy", STRIDES)
 def test_accuracy_axpy_complex(dtype, shape, alpha, incx, incy):
-    if dtype == torch.complex128 and not flag_gems.runtime.device.support_fp64:
+    if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_gems.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_gems.device)
+    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     ref_x = x.clone()
     ref_y = y.clone()
@@ -114,11 +113,11 @@ def test_accuracy_axpy_complex(dtype, shape, alpha, incx, incy):
 @pytest.mark.axpy
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.complex64, torch.complex128])
 def test_accuracy_axpy_empty_tensor(dtype):
-    if dtype in [torch.float64, torch.complex128] and not flag_gems.runtime.device.support_fp64:
+    if dtype in [torch.float64, torch.complex128] and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(0, dtype=dtype, device=flag_gems.device)
-    y = torch.randn(0, dtype=dtype, device=flag_gems.device)
+    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
+    y = torch.randn(0, dtype=dtype, device=flag_blas.device)
 
     alpha = 2.0 + 1.0j if dtype in [torch.complex64, torch.complex128] else 2.0
 

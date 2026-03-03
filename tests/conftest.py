@@ -6,9 +6,9 @@ from datetime import datetime
 import pytest
 import torch
 
-import flag_gems
+import flag_blas
 
-device = flag_gems.device
+device = flag_blas.device
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 filename = f"test_detail_and_result_{timestamp}.json"
@@ -26,7 +26,7 @@ def pytest_addoption(parser):
     parser.addoption(
         (
             "--mode"
-            if not (flag_gems.vendor_name == "kunlunxin" and torch.__version__ < "2.5")
+            if not (flag_blas.vendor_name == "kunlunxin" and torch.__version__ < "2.5")
             else "--fg_mode"
         ),  # TODO: fix pytest-* common --mode args,
         action="store",
