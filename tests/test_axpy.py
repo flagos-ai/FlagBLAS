@@ -71,17 +71,17 @@ def test_accuracy_axpy_real(dtype, shape, alpha, incx, incy):
     x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
 
-    ref_x = to_reference(x, True)
-    ref_y = to_reference(y, True)
+    ref_x = x.clone()
+    ref_y = y.clone()
 
     ref_out = cublas_axpy_reference(ref_x, ref_y, alpha, incx, incy)
 
     if dtype == torch.float32:
         res_out = flag_blas.ops.saxpy(x, y, alpha=alpha, incx=incx, incy=incy)
+        torch.testing.assert_close(res_out, ref_out, rtol=1e-5, atol=1e-5)
     else:
         res_out = flag_blas.ops.daxpy(x, y, alpha=alpha, incx=incx, incy=incy)
-
-    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+        torch.testing.assert_close(res_out, ref_out, rtol=1e-15, atol=1e-15)
 
 
 @pytest.mark.axpy
@@ -104,10 +104,10 @@ def test_accuracy_axpy_complex(dtype, shape, alpha, incx, incy):
 
     if dtype == torch.complex64:
         res_out = flag_blas.ops.caxpy(x, y, alpha=alpha, incx=incx, incy=incy)
-        torch.testing.assert_close(res_out, ref_out, rtol=1e-4, atol=1e-4)
+        torch.testing.assert_close(res_out, ref_out, rtol=1e-5, atol=1e-5)
     else:
         res_out = flag_blas.ops.zaxpy(x, y, alpha=alpha, incx=incx, incy=incy)
-        torch.testing.assert_close(res_out, ref_out, rtol=1.3e-6, atol=1e-5)
+        torch.testing.assert_close(res_out, ref_out, rtol=1e-15, atol=1e-15)
 
 
 @pytest.mark.axpy
