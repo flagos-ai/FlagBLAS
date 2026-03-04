@@ -6,10 +6,11 @@ import numpy as np
 import torch
 
 import flag_blas
-
+import os
+import sys
 QUICK_MODE = False
 TO_CPU = False
-
+GEN_SHAPE = True
 try:
     import conftest
     if hasattr(conftest, 'QUICK_MODE'):
@@ -22,6 +23,26 @@ except (ImportError, AttributeError):
 fp64_is_supported = flag_blas.runtime.device.support_fp64
 bf16_is_supported = flag_blas.runtime.device.support_bf16
 int64_is_supported = flag_blas.runtime.device.support_int64
+
+from conftest import L1_n_start
+from conftest import L1_n_end
+from conftest import L1_n_step
+L1_n_start_val = int(conftest.L1_n_start)
+L1_n_end_val = int(conftest.L1_n_end)
+L1_n_step_val = int(conftest.L1_n_step)
+print(L1_n_start_val)
+print(L1_n_end_val)
+print(L1_n_step_val)
+def gen_shape_N(n_start, n_end, n_inc):
+    shape_list = [(num,) for num in range(n_start, n_end + 1, n_inc)]
+    print(shape_list)
+    return shape_list
+### axpy shape
+AXPY_SHAPES = [(32,), (1024,), (5333,), (16384,), (1024 * 1024,)]
+if GEN_SHAPE:
+    AXPY_SHAPES.clear()
+    AXPY_SHAPES=gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
+###
 
 
 def TestForwardOnly():

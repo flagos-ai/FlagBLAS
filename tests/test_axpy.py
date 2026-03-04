@@ -14,14 +14,13 @@ sys.path.insert(0, str(tests_path))
 
 import flag_blas
 
-from accuracy_utils import SCALARS, gems_assert_close, to_reference
+from accuracy_utils import SCALARS, AXPY_SHAPES, gems_assert_close, to_reference
 
 
-SHAPES = [(32,), (1024,), (5333,), (16384,), (1024 * 1024,)]
+#SHAPES = [(32,), (1024,), (5333,), (16384,), (1024 * 1024,)]
 STRIDES = [(1, 1), (2, 2), (2, 3), (3, 2), (3, 3)]
 
 COMPLEX_SCALARS = [1.0 + 2.0j, -0.5 + 1.5j]
-
 
 def cublas_axpy_reference(x, y, alpha, incx=1, incy=1):
     assert x.dtype == y.dtype, "x and y must have the same dtype"
@@ -60,7 +59,7 @@ def cublas_axpy_reference(x, y, alpha, incx=1, incy=1):
 
 @pytest.mark.axpy
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("shape", AXPY_SHAPES)
 @pytest.mark.parametrize("alpha", SCALARS)
 @pytest.mark.parametrize("incx,incy", STRIDES)
 def test_accuracy_axpy_real(dtype, shape, alpha, incx, incy):
@@ -86,7 +85,7 @@ def test_accuracy_axpy_real(dtype, shape, alpha, incx, incy):
 
 @pytest.mark.axpy
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("shape", AXPY_SHAPES)
 @pytest.mark.parametrize("alpha", COMPLEX_SCALARS + SCALARS)
 @pytest.mark.parametrize("incx,incy", STRIDES)
 def test_accuracy_axpy_complex(dtype, shape, alpha, incx, incy):
