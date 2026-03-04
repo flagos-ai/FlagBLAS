@@ -13,6 +13,16 @@ device = flag_blas.device
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 filename = f"test_detail_and_result_{timestamp}.json"
 
+DEFAULT_L1_N_START = 100
+DEFAULT_L1_N_END = 1000
+DEFAULT_L1_N_STEP = 100
+L1_n_start = DEFAULT_L1_N_START
+L1_n_end = DEFAULT_L1_N_END
+L1_n_step = DEFAULT_L1_N_STEP
+TO_CPU = False
+QUICK_MODE = False
+RECORD_LOG = False
+
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -44,6 +54,23 @@ def pytest_addoption(parser):
         help="tests function param recorded in log files or not",
     )
 
+    parser.addoption(
+        "--L1_n_start",
+        default=DEFAULT_L1_N_START,
+        help="Number of reps for each benchmark run.",
+    )
+
+    parser.addoption(
+        "--L1_n_end",
+        default=DEFAULT_L1_N_END,
+        help="Number of reps for each benchmark run.",
+    )
+
+    parser.addoption(
+        "--L1_n_step",
+        default=DEFAULT_L1_N_STEP,
+        help="Number of reps for each benchmark run.",
+    )
 
 def pytest_configure(config):
     global TO_CPU
@@ -54,6 +81,17 @@ def pytest_configure(config):
 
     global RECORD_LOG
     RECORD_LOG = config.getoption("--record") == "log"
+    
+    global L1_n_start
+    L1_n_start = config.getoption("--L1_n_start")
+
+    global L1_n_end
+    L1_n_end = config.getoption("--L1_n_end")
+
+    global L1_n_step 
+    L1_n_step = config.getoption("--L1_n_step")
+    
+    
     if RECORD_LOG:
         global RUNTEST_INFO, BUILTIN_MARKS, REGISTERED_MARKERS
         RUNTEST_INFO = {}
