@@ -3,8 +3,6 @@ import torch
 import cupy as cp
 import numpy as np
 from cupy_backends.cuda.libs import cublas
-import sys
-from pathlib import Path
 
 import flag_blas
 
@@ -23,9 +21,6 @@ def cublas_axpy_reference(n, alpha, x, incx, y, incy):
 
     if n == 0:
         return
-
-    x = x.contiguous()
-    y = y.contiguous()
 
     dtype = x.dtype
     if dtype == torch.float32:
