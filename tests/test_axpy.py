@@ -6,15 +6,9 @@ from cupy_backends.cuda.libs import cublas
 import sys
 from pathlib import Path
 
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
-
-tests_path = Path(__file__).parent
-sys.path.insert(0, str(tests_path))
-
 import flag_blas
 
-from accuracy_utils import SCALARS, AXPY_SHAPES, gems_assert_close, to_reference
+from .accuracy_utils import SCALARS, AXPY_SHAPES, gems_assert_close, to_reference
 
 
 #SHAPES = [(32,), (1024,), (5333,), (16384,), (1024 * 1024,)]
