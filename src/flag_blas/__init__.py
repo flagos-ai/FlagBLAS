@@ -8,6 +8,7 @@ from packaging import version
 from flag_blas import runtime
 from flag_blas import testing
 from flag_blas.ops import *
+from flag_gems.config import aten_patch_list, resolve_user_setting
 from flag_gems.runtime.register import Register
 device = runtime.device.name
 vendor_name = runtime.device.vendor_name
