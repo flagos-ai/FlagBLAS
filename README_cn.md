@@ -1,5 +1,3 @@
-[<img width="2182" height="602" alt="github+banner-20260130" src=".github/assets/banner-20260130.png" />](https://flagos.io/)
-
 [中文版|[English](./README.md)]
 
 ## 介绍
@@ -16,7 +14,7 @@ FlagBLAS 是一个使用 OpenAI 推出的[Triton 编程语言](https://github.co
 - 灵活的多后端支持机制
 
 
-## 快速
+## 快速安装
 ### 安装依赖
 ```shell
 pip install -U scikit-build-core>=0.11 pybind11 ninja cmake
