@@ -2,6 +2,6 @@
 BLAS Level 1 operations
 """
 
-from .axpy import saxpy, daxpy, caxpy, zaxpy
+from flag_gems.ops.axpy import saxpy, daxpy, caxpy, zaxpy
 
 __all__ = ["saxpy", "daxpy", "caxpy", "zaxpy"]
