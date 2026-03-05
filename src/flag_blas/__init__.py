@@ -7,13 +7,18 @@ import torch
 from packaging import version
 from flag_blas import runtime
 from flag_blas import testing
-from flag_blas import ops
+from flag_blas.ops import *
+from flag_gems.runtime.register import Register
 device = runtime.device.name
 vendor_name = runtime.device.vendor_name
+aten_lib = torch.library.Library("aten", "IMPL")
+registrar = Register
+current_work_registerar = None
+runtime.replace_customized_ops(globals())
+
 __version__ = "0.1.0"
 
 _FULL_CONFIG = (
-        ("gemm", gemm),
     )
 
 FULL_CONFIG_BY_FUNC = {}
