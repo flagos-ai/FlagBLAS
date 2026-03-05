@@ -24,12 +24,12 @@ fp64_is_supported = flag_blas.runtime.device.support_fp64
 bf16_is_supported = flag_blas.runtime.device.support_bf16
 int64_is_supported = flag_blas.runtime.device.support_int64
 
-from conftest import L1_n_start
-from conftest import L1_n_end
-from conftest import L1_n_step
-L1_n_start_val = int(conftest.L1_n_start)
-L1_n_end_val = int(conftest.L1_n_end)
-L1_n_step_val = int(conftest.L1_n_step)
+from .conftest import L1_n_start
+from .conftest import L1_n_end
+from .conftest import L1_n_step
+L1_n_start_val = int(L1_n_start)
+L1_n_end_val = int(L1_n_end)
+L1_n_step_val = int(L1_n_step)
 print(L1_n_start_val)
 print(L1_n_end_val)
 print(L1_n_step_val)
