@@ -110,9 +110,8 @@ def saxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor
     req_size_y = 1 + (n - 1) * incy
     assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
     assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
-
-    x = x.contiguous()
-    y = y.contiguous()
+    assert x.is_contiguous(), "x must be contiguous"
+    assert y.is_contiguous(), "y must be contiguous"
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
@@ -140,9 +139,8 @@ def daxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor
     req_size_y = 1 + (n - 1) * incy
     assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
     assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
-
-    x = x.contiguous()
-    y = y.contiguous()
+    assert x.is_contiguous(), "x must be contiguous"
+    assert y.is_contiguous(), "y must be contiguous"
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
@@ -177,9 +175,11 @@ def caxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor
     req_size_y = 1 + (n - 1) * incy
     assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
     assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
+    assert x.is_contiguous(), "x must be contiguous"
+    assert y.is_contiguous(), "y must be contiguous"
 
-    x_real = torch.view_as_real(x.contiguous())
-    y_real = torch.view_as_real(y.contiguous())
+    x_real = torch.view_as_real(x)
+    y_real = torch.view_as_real(y)
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
@@ -222,9 +222,11 @@ def zaxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor
     req_size_y = 1 + (n - 1) * incy
     assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
     assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
+    assert x.is_contiguous(), "x must be contiguous"
+    assert y.is_contiguous(), "y must be contiguous"
 
-    x_real = torch.view_as_real(x.contiguous())
-    y_real = torch.view_as_real(y.contiguous())
+    x_real = torch.view_as_real(x)
+    y_real = torch.view_as_real(y)
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
