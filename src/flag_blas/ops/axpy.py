@@ -5,26 +5,25 @@ import torch
 import triton
 import triton.language as tl
 
+from  flag_blas import runtime
 from flag_blas.runtime import torch_device_fn
-from flag_blas.utils import libentry
+from flag_blas.utils import libentry,libtuner
 from flag_blas.utils import triton_lang_extension as tle
 
 logger = logging.getLogger(__name__)
 
 ScalarType = Union[float, int, complex, torch.Tensor]
 
-
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_SIZE": 128}, num_warps=4, num_stages=3),
-        triton.Config({"BLOCK_SIZE": 256}, num_warps=4, num_stages=3),
-        triton.Config({"BLOCK_SIZE": 512}, num_warps=4, num_stages=3),
-        triton.Config({"BLOCK_SIZE": 1024}, num_warps=4, num_stages=3),
-    ],
-    key=["n", "INCX", "INCY"], 
-    restore_value=["y_ptr"],
+@libtuner(
+    configs=runtime.get_tuned_config("axpy"),
+                # Add 'stride_am' and 'stride_bk' to trigger autotune for tensors with the same shape but different strides.
+    key=["n"],
+    strategy=["align32"],
+    warmup=5,
+    rep=10,
 )
+
 @triton.jit
 def axpy_real_kernel(
     x_ptr,
