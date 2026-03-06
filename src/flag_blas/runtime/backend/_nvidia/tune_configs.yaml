@@ -1197,3 +1197,22 @@ gated_activation:
       - 8
     block_n:
       - 1024
+
+axpy:
+  - gen: true
+    param_map:
+      META:
+        BLOCK_SIZE: block_size
+      num_warps: warps
+      num_stages: stages
+    block_size:
+      - 128
+      - 256
+      - 512
+      - 1024
+    warps:
+      - 4
+      - 8
+    stages:
+      - 2
+      - 3
