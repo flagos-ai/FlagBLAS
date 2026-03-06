@@ -22,6 +22,7 @@ ScalarType = Union[float, int, complex, torch.Tensor]
     strategy=["align32"],
     warmup=5,
     rep=10,
+    restore_value=["y_ptr"],
 )
 
 @triton.jit
