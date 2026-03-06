@@ -1085,7 +1085,7 @@ class ModuleGenerator:
 class PointwiseDynamicFunction:
     """Utility to generate function for general pointwise operation. It generate wrapper & JITFunction
     which are specialized according to the rank of the task space(the broadcasted shape of all input tensors).
-    The generated code are written out to the cache directory (defaults to ~/.flaggems).
+    The generated code are written out to the cache directory (defaults to ~/.flagblas).
     """
 
     def __init__(self, op_desc: FunctionSchema, scalar_fn: JITFunction, config=None):
