@@ -24,13 +24,13 @@ def cublas_scal_reference(n, alpha, x, incx, y, incy):
 
     dtype = x.dtype
     if dtype == torch.float32:
-        func, np_dtype = cublas.sscal, np.float32
+        func, np_dtype = cublas.saxpy, np.float32
     elif dtype == torch.float64:
-        func, np_dtype = cublas.dscal, np.float64
+        func, np_dtype = cublas.daxpy, np.float64
     elif dtype == torch.complex64:
-        func, np_dtype = cublas.cscal, np.complex64
+        func, np_dtype = cublas.caxpy, np.complex64
     elif dtype == torch.complex128:
-        func, np_dtype = cublas.zscal, np.complex128
+        func, np_dtype = cublas.zaxpy, np.complex128
     else:
         raise ValueError(f"Unsupported dtype for cuBLAS: {dtype}")
 
@@ -85,7 +85,7 @@ def test_accuracy_scal_empty_tensor(dtype):
 
     if dtype == torch.float32:
         flag_blas.ops.sscal(n, alpha, x, 1, y, 1)
-    else dtype == torch.float64:
+    else:
         flag_blas.ops.dscal(n, alpha, x, 1, y, 1)
 
     assert y.shape == (0,)

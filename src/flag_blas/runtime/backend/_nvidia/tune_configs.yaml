@@ -16,3 +16,25 @@ axpy:
     stages:
       - 2
       - 3
+scal:
+  - gen: true
+    param_map:
+      META:
+        BLOCK_SIZE: block_size
+        KERNEL_ID: kernel_id
+      num_warps: warps
+      num_stages: stages
+    block_size:
+      - 128
+      - 256
+      - 512
+      - 1024
+    kernel_id:
+      - 0
+      - 1
+    warps:
+      - 4
+      - 8
+    stages:
+      - 2
+      - 3
