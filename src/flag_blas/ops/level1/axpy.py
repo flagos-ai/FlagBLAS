@@ -34,6 +34,7 @@ def axpy_real_kernel(
     INCX: tl.constexpr,
     INCY: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
+    KERNEL_ID: tl.constexpr,
 ):
     pid = tle.program_id(0)
     idx = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
@@ -46,6 +47,7 @@ def axpy_real_kernel(
     y = tl.load(y_ptr + y_offset, mask=mask)
 
     tl.store(y_ptr + y_offset, alpha * x + y, mask=mask)
+
 
 
 @libentry()
