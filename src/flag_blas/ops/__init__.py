@@ -2,14 +2,37 @@
 BLAS Level 1 operations
 """
 
-from flag_blas.ops.level1.axpy import saxpy, daxpy, caxpy, zaxpy
-from flag_blas.ops.demo_op import sscal, dscal
+from flag_blas.ops.level1.asum import (
+    dasum,
+    dzasum,
+    sasum,
+    scasum,
+)
+from flag_blas.ops.level1.axpy import (
+    caxpy,
+    daxpy,
+    saxpy,
+    zaxpy,
+)
+from flag_blas.ops.level1.scal import (
+    cscal,
+    dscal,
+    sscal,
+)
 
 __all__ = [
-        "saxpy", 
-        "daxpy", 
-        "caxpy", 
-        "zaxpy",
-        "sscal", 
-        "dscal",
-    ]
+    # asum
+    "dasum",
+    "dzasum",
+    "sasum",
+    "scasum",
+    # axpy
+    "caxpy",
+    "daxpy",
+    "saxpy",
+    "zaxpy",
+    # scal
+    "cscal",
+    "dscal",
+    "sscal",
+]
