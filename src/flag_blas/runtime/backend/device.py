@@ -101,7 +101,7 @@ class DeviceDetector(object):
         return None
 
     def _get_vendor_from_env(self):
-        device_from_evn = os.environ.get("GEMS_VENDOR")
+        device_from_evn = os.environ.get("BLAS_VENDOR")
         return None if device_from_evn not in self.vendor_list else device_from_evn
 
     def _get_vendor_from_sys(self):
