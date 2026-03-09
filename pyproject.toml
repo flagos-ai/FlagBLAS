@@ -20,7 +20,7 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
-    "torch>=2.2.0",
+    "torch>=2.6.0",
     "packaging",
     "pybind11",
     "PyYAML",
