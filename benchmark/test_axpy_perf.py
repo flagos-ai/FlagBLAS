@@ -64,11 +64,16 @@ class AxpyBenchmark(Benchmark):
     def set_more_shapes(self):
         shapes = [
             (1024,),
+            (5333,),
             (65536,),
+            (100000,),
             (1048576,),
+            (3000000,),
             (4194304,),
+            (10000000,),
             (16777216,),
             (33554432,),
+            (50000000,),
             (67108864,),
             (134217728,),
         ]
@@ -117,8 +122,11 @@ class AxpyStrideBenchmark(Benchmark):
     def set_more_shapes(self):
         shapes_1d = [
             (1024,),
+            (5333,),
             (65536,),
+            (100000,),
             (1048576,),
+            (3000000,),
             (4194304,),
         ]
         self.shapes = shapes_1d

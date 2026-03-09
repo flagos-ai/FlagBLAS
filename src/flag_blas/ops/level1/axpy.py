@@ -14,17 +14,18 @@ logger = logging.getLogger(__name__)
 
 ScalarType = Union[float, int, complex, torch.Tensor]
 
+
 @libentry()
-@libtuner(
-    configs=runtime.get_tuned_config("axpy"),
-                # Add 'stride_am' and 'stride_bk' to trigger autotune for tensors with the same shape but different strides.
-    key=["n"],
-    strategy=["align32"],
-    warmup=5,
-    rep=10,
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 1024}, num_warps=4, num_stages=3),
+    ],
+    key=["n", "INCX", "INCY"], 
     restore_value=["y_ptr"],
 )
-
 @triton.jit
 def axpy_real_kernel(
     x_ptr,
@@ -46,7 +47,6 @@ def axpy_real_kernel(
     y = tl.load(y_ptr + y_offset, mask=mask)
 
     tl.store(y_ptr + y_offset, alpha * x + y, mask=mask)
-
 
 
 @libentry()
