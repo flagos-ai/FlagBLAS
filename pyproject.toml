@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "flag_blas"
 version = "0.1.0"
-description = "flag-blas is a function library written in Triton."
+description = "FlagBLAS is a function library written in Triton."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.8.0"
 license = { text = "Apache Software License" }
@@ -36,7 +36,7 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/flag-ai/flag-blas"
+Homepage = "https://github.com/flagos-ai/FlagBLAS"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
