@@ -26,11 +26,11 @@ ScalarType = Union[float, int, complex, torch.Tensor]
     restore_value=["x_ptr"],
 )
 @triton.jit
-def scal_real_kernel(
+def sscal_kernel(
     x_ptr,
-    alpha: tl.constexpr,
+    alpha: tl.float32,
     n,
-    INCX: tl.constexpr,
+    INCX,
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tle.program_id(0)
@@ -55,12 +55,43 @@ def scal_real_kernel(
     restore_value=["x_ptr"],
 )
 @triton.jit
-def scal_complex_kernel(
+def dscal_kernel(
     x_ptr,
-    alpha_real: tl.constexpr,
-    alpha_imag: tl.constexpr,
+    alpha_int: tl.int64,
     n,
-    INCX: tl.constexpr,
+    INCX,
+    BLOCK_SIZE: tl.constexpr,
+):
+    pid = tle.program_id(0)
+    idx = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = idx < n
+
+    alpha = alpha_int.to(tl.float64, bitcast=True)
+
+    x_offset = idx * INCX
+    x = tl.load(x_ptr + x_offset, mask=mask)
+
+    tl.store(x_ptr + x_offset, alpha * x, mask=mask)
+
+
+@libentry()
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 1024}, num_warps=4, num_stages=3),
+    ],
+    key=["n", "INCX"],
+    restore_value=["x_ptr"],
+)
+@triton.jit
+def cscal_kernel(
+    x_ptr,
+    alpha_real: tl.float32,
+    alpha_imag: tl.float32,
+    n,
+    INCX,
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tle.program_id(0)
@@ -83,27 +114,20 @@ def sscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
 
     assert x.dtype == torch.float32, "x must be float32"
     assert x.dim() == 1, "x must be 1-dimensional"
+    assert x.is_contiguous(), "x must be contiguous"
     assert incx > 0, "incx must be positive"
-
-    # Type check for alpha (const float *)
-    if isinstance(alpha, torch.Tensor):
-        assert alpha.dtype == torch.float32, "alpha must be a float32 tensor"
-        alpha_val = float(alpha.item())
-    else:
-        assert isinstance(alpha, (float, int)), "alpha must be a real scalar"
-        alpha_val = float(alpha)
 
     if n <= 0:
         return
 
+    alpha = alpha.item() if isinstance(alpha, torch.Tensor) else float(alpha)
+
     req_size_x = 1 + (n - 1) * incx
     assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
 
-    assert x.is_contiguous(), "x must be contiguous"
-
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
-        scal_real_kernel[grid](x, alpha_val, n, incx)
+        sscal_kernel[grid](x, alpha, n, incx)
 
 
 def dscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
@@ -111,27 +135,21 @@ def dscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
 
     assert x.dtype == torch.float64, "x must be float64"
     assert x.dim() == 1, "x must be 1-dimensional"
+    assert x.is_contiguous(), "x must be contiguous"
     assert incx > 0, "incx must be positive"
-
-    # Type check for alpha (const double *)
-    if isinstance(alpha, torch.Tensor):
-        assert alpha.dtype == torch.float64, "alpha must be a float64 tensor"
-        alpha_val = float(alpha.item())
-    else:
-        assert isinstance(alpha, (float, int)), "alpha must be a real scalar"
-        alpha_val = float(alpha)
 
     if n <= 0:
         return
 
+    alpha_val = float(alpha.item() if isinstance(alpha, torch.Tensor) else alpha)
+    alpha_int = torch.tensor(alpha_val, dtype=torch.float64).view(torch.int64).item()
+
     req_size_x = 1 + (n - 1) * incx
     assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
 
-    assert x.is_contiguous(), "x must be contiguous"
-
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
-        scal_real_kernel[grid](x, alpha_val, n, incx)
+        dscal_kernel[grid](x, alpha_int, n, incx)
 
 
 def cscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
@@ -139,28 +157,21 @@ def cscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
 
     assert x.dtype == torch.complex64, "x must be complex64"
     assert x.dim() == 1, "x must be 1-dimensional"
+    assert x.is_contiguous(), "x must be contiguous"
     assert incx > 0, "incx must be positive"
-
-    # Type check for alpha (const cuComplex *)
-    if isinstance(alpha, torch.Tensor):
-        assert alpha.dtype == torch.complex64, "alpha must be a complex64 tensor"
-        alpha_item = alpha.item()
-        alpha_real, alpha_imag = float(alpha_item.real), float(alpha_item.imag)
-    else:
-        assert isinstance(alpha, (complex, float, int)), "alpha must be a complex scalar"
-        alpha_real = float(alpha.real) if isinstance(alpha, complex) else float(alpha)
-        alpha_imag = float(alpha.imag) if isinstance(alpha, complex) else 0.0
 
     if n <= 0:
         return
 
+    alpha = alpha.item() if isinstance(alpha, torch.Tensor) else alpha
+    alpha_real = float(alpha.real) if isinstance(alpha, complex) else float(alpha)
+    alpha_imag = float(alpha.imag) if isinstance(alpha, complex) else 0.0
+
     req_size_x = 1 + (n - 1) * incx
     assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
-
-    assert x.is_contiguous(), "x must be contiguous"
 
     x_real = torch.view_as_real(x)
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
-        scal_complex_kernel[grid](x_real, alpha_real, alpha_imag, n, incx)
+        cscal_kernel[grid](x_real, alpha_real, alpha_imag, n, incx)
