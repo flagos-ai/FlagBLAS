@@ -20,7 +20,7 @@ def asum_kernel1_real(
     x_ptr,
     mid_ptr,
     n,
-    INCX: tl.constexpr,
+    INCX,
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tle.program_id(0)
@@ -41,7 +41,7 @@ def asum_kernel1_complex(
     x_ptr,
     mid_ptr,
     n,
-    INCX: tl.constexpr,
+    INCX,
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tle.program_id(0)
@@ -78,7 +78,7 @@ def asum_kernel_atomic_real(
     x_ptr,
     out_ptr,
     n,
-    INCX: tl.constexpr,
+    INCX,
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tle.program_id(0)
@@ -99,7 +99,7 @@ def asum_kernel_atomic_complex(
     x_ptr,
     out_ptr,
     n,
-    INCX: tl.constexpr,
+    INCX,
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tle.program_id(0)
