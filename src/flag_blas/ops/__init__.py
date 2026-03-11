@@ -14,6 +14,12 @@ from flag_blas.ops.level1.axpy import (
     saxpy,
     zaxpy,
 )
+from flag_blas.ops.level1.rot import (
+    srot,
+    drot,
+    crot,
+    zrot,
+)
 from flag_blas.ops.level1.scal import (
     cscal,
     dscal,
@@ -35,4 +41,9 @@ __all__ = [
     "cscal",
     "dscal",
     "sscal",
+    # rot
+    "srot",
+    "drot",
+    "crot",
+    "zrot",
 ]
