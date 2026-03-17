@@ -1,5 +1,5 @@
 """
-BLAS Level 1 operations
+BLAS Level 1, Level 2, and Level 3 operations
 """
 
 from flag_blas.ops.level1.asum import (
@@ -25,6 +25,17 @@ from flag_blas.ops.level1.scal import (
     dscal,
     sscal,
 )
+from flag_blas.ops.level2.gemv import (
+    sgemv,
+    dgemv,
+    cgemv,
+    zgemv,
+    hgemv,
+    bfgemv,
+    CUBLAS_OP_N,
+    CUBLAS_OP_T,
+    CUBLAS_OP_C,
+)
 
 __all__ = [
     # asum
@@ -46,4 +57,14 @@ __all__ = [
     "drot",
     "crot",
     "zrot",
+    # gemv
+    "sgemv",
+    "dgemv",
+    "cgemv",
+    "zgemv",
+    "hgemv",
+    "bfgemv",
+    "CUBLAS_OP_N",
+    "CUBLAS_OP_T",
+    "CUBLAS_OP_C",
 ]
