@@ -4,7 +4,16 @@ flag_blas - BLAS operations implemented with Triton
 
 
 import torch
+import triton
 from packaging import version
+
+
+def _alloc_fn(size, alignment, stream):
+    return torch.empty(size, device="cuda", dtype=torch.int8)
+
+
+triton.set_allocator(_alloc_fn)
+
 from flag_blas import runtime
 from flag_blas import testing
 from flag_blas.ops import *
