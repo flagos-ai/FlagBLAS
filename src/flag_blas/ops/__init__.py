@@ -2,6 +2,12 @@
 BLAS Level 1, Level 2, and Level 3 operations
 """
 
+from flag_blas.ops.level1.amax import (
+    camax,
+    damax,
+    samax,
+    zamax,
+)
 from flag_blas.ops.level1.asum import (
     dasum,
     dzasum,
@@ -32,12 +38,24 @@ from flag_blas.ops.level2.gemv import (
     zgemv,
     hgemv,
     bfgemv,
+    fp8_gemv,
     CUBLAS_OP_N,
     CUBLAS_OP_T,
     CUBLAS_OP_C,
 )
+from flag_blas.ops.level3.gemm import (
+    sgemm,
+    hgemm,
+    bfgemm,
+    fp8gemm,
+)
 
 __all__ = [
+    # amax
+    "samax",
+    "damax",
+    "camax",
+    "zamax",
     # asum
     "dasum",
     "dzasum",
@@ -64,7 +82,13 @@ __all__ = [
     "zgemv",
     "hgemv",
     "bfgemv",
+    "fp8_gemv",
     "CUBLAS_OP_N",
     "CUBLAS_OP_T",
     "CUBLAS_OP_C",
+    # gemm
+    "sgemm",
+    "hgemm",
+    "bfgemm",
+    "fp8gemm",
 ]

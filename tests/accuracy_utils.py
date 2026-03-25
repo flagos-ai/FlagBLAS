@@ -59,6 +59,13 @@ if GEN_SHAPE:
     AXPY_SHAPES=gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
 ###
 
+### amax shape
+AMAX_SHAPES = DEFAULT_SHAPES
+if GEN_SHAPE:
+    AMAX_SHAPES.clear()
+    AMAX_SHAPES=gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
+###
+
 ### asum shape
 ASUM_SHAPES = DEFAULT_SHAPES
 if GEN_SHAPE:

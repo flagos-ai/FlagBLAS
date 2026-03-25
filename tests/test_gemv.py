@@ -47,7 +47,38 @@ GEMV_SHAPES = [
     (14335, 4095),
 ]
 
+FP8_GEMV_SHAPES = [
+    (64, 64),
+    (128, 128),
+    (256, 256),
+    (512, 512),
+    (1024, 1024),
+    (4096, 4096),
+    (8192, 8192),
+    (1024, 4096),
+    (4096, 14336),
+    (8192, 28672),
+    (4096, 1024),
+    (14336, 4096),
+    (28672, 8192),
+]
+
 STRIDES = [(1, 1), (2, 1), (1, 2), (2, 2)]
+
+
+def prepare_fp8_gemv_data(m, n, incx, incy, fp8_dtype, y_dtype, device):
+    A_f32 = torch.randn(m, n, dtype=torch.float32, device=device) * 0.1
+    A_fp8 = A_f32.to(fp8_dtype)
+    A_col_f32 = A_fp8.float().t().contiguous().t()
+
+    x_f32 = torch.randn(m * incx, dtype=torch.float32, device=device) * 0.1
+    x_fp8 = x_f32.to(fp8_dtype)
+    x_f32_ref = x_fp8.float()
+
+    y = torch.randn(n * incy, dtype=y_dtype, device=device)
+    ref_y = y.float().clone()
+
+    return A_fp8, A_col_f32, x_fp8, x_f32_ref, y, ref_y
 
 def cublas_gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
     if m == 0 or n == 0:
@@ -73,6 +104,62 @@ def cublas_gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
     
     func(handle, trans, m, n, alpha_np.ctypes.data, A.data_ptr(), lda, 
          x.data_ptr(), incx, beta_np.ctypes.data, y.data_ptr(), incy)
+
+
+def cupy_half_gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
+    if m == 0 or n == 0:
+        return
+
+    x_len = n if trans == CUBLAS_OP_N else m
+    y_len = m if trans == CUBLAS_OP_N else n
+    
+    x_contig = x[::incx][:x_len].contiguous()
+    y_contig = y[::incy][:y_len].contiguous()
+
+    CUDA_R_32F  = 0
+    CUDA_R_16F  = 2
+    CUDA_R_16BF = 14
+    
+    dtype = A.dtype
+    if dtype == torch.float16:
+        cuda_type = CUDA_R_16F
+    elif dtype == torch.bfloat16:
+        cuda_type = CUDA_R_16BF
+    else:
+        raise ValueError(f"Unsupported dtype: {dtype}")
+
+    alpha_np = np.array([alpha], dtype=np.float32)
+    beta_np = np.array([beta], dtype=np.float32)
+
+    handle = cp.cuda.device.get_cublas_handle()
+    cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+
+    if trans == CUBLAS_OP_N:
+        transA = cublas.CUBLAS_OP_T
+        transB = cublas.CUBLAS_OP_N
+        m_c, n_c, k_c = m, 1, n
+        lda_c, ldb_c, ldc_c = lda, n, m
+    else:
+        transA = cublas.CUBLAS_OP_N
+        transB = cublas.CUBLAS_OP_N
+        m_c, n_c, k_c = n, 1, m
+        lda_c, ldb_c, ldc_c = lda, m, n
+
+    cublas.gemmEx(
+        handle,
+        transA, transB,
+        m_c, n_c, k_c,
+        alpha_np.ctypes.data,
+        A.data_ptr(), cuda_type, lda_c,
+        x_contig.data_ptr(), cuda_type, ldb_c,
+        beta_np.ctypes.data,
+        y_contig.data_ptr(), cuda_type, ldc_c,
+        CUDA_R_32F,
+        0
+    )
+
+    y[::incy][:y_len].copy_(y_contig)
+
 
 @pytest.mark.sgemv
 @pytest.mark.parametrize("m,n", GEMV_SHAPES)
@@ -259,24 +346,6 @@ def test_accuracy_zgemv(m, n, trans, beta):
     torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
 
-def torch_hgemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
-    """Reference implementation using torch.addmv for hgemv (float16)."""
-    if m == 0 or n == 0:
-        return
-
-    x_len = n if trans == CUBLAS_OP_N else m
-    y_len = m if trans == CUBLAS_OP_N else n
-    x_vec = x[::incx][:x_len]
-    y_slice = y[::incy][:y_len]
-
-    A_mat = A[:m * lda].view(m, lda)[:, :n]
-
-    if trans == CUBLAS_OP_N:
-        torch.addmv(y_slice, A_mat, x_vec, alpha=alpha, beta=beta, out=y_slice)
-    else:
-        torch.addmv(y_slice, A_mat.t(), x_vec, alpha=alpha, beta=beta, out=y_slice)
-
-
 @pytest.mark.hgemv
 @pytest.mark.parametrize("m,n", GEMV_SHAPES)
 @pytest.mark.parametrize("trans", [CUBLAS_OP_N, CUBLAS_OP_T])
@@ -292,11 +361,12 @@ def test_accuracy_hgemv(m, n, trans, beta):
 
     ref_y = y.clone()
 
-    torch_hgemv_reference(trans, m, n, alpha, A, n, x, 1, beta, ref_y, 1)
+    cupy_half_gemv_reference(trans, m, n, alpha, A, n, x, 1, beta, ref_y, 1)
     flag_blas.ops.hgemv(trans, m, n, alpha, A, n, x, 1, beta, y, 1)
 
-    tol = min(1e-3 * (x_len ** 0.5), 5e-2)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    rtol = 1e-3 
+    atol = 3e-3 * (x_len ** 0.5)
+    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
 
 
 @pytest.mark.hgemv
@@ -313,30 +383,12 @@ def test_accuracy_hgemv_stride(m, n, trans, incx, incy):
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
     ref_y = y.clone()
 
-    torch_hgemv_reference(trans, m, n, alpha, A, n, x, incx, beta, ref_y, incy)
+    cupy_half_gemv_reference(trans, m, n, alpha, A, n, x, incx, beta, ref_y, incy)
     flag_blas.ops.hgemv(trans, m, n, alpha, A, n, x, incx, beta, y, incy)
 
-    tol = min(1e-3 * (x_len ** 0.5), 5e-2)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
-
-
-def torch_bfgemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
-    """Reference implementation using torch.addmv for bfgemv (bfloat16)."""
-    if m == 0 or n == 0:
-        return
-
-    x_len = n if trans == CUBLAS_OP_N else m
-    y_len = m if trans == CUBLAS_OP_N else n
-    x_vec = x[::incx][:x_len]
-    y_slice = y[::incy][:y_len]
-
-    A_mat = A[:m * lda].view(m, lda)[:, :n]
-
-    if trans == CUBLAS_OP_N:
-        torch.addmv(y_slice, A_mat, x_vec, alpha=alpha, beta=beta, out=y_slice)
-    else:
-        torch.addmv(y_slice, A_mat.t(), x_vec, alpha=alpha, beta=beta, out=y_slice)
-
+    rtol = 1e-3 
+    atol = 3e-3 * (x_len ** 0.5)
+    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
 
 @pytest.mark.bfgemv
 @pytest.mark.parametrize("m,n", GEMV_SHAPES)
@@ -353,12 +405,12 @@ def test_accuracy_bfgemv(m, n, trans, beta):
 
     ref_y = y.clone()
 
-    torch_bfgemv_reference(trans, m, n, alpha, A, n, x, 1, beta, ref_y, 1)
+    cupy_half_gemv_reference(trans, m, n, alpha, A, n, x, 1, beta, ref_y, 1)
     flag_blas.ops.bfgemv(trans, m, n, alpha, A, n, x, 1, beta, y, 1)
-
-    tol = min(1e-3 * (x_len ** 0.5), 5e-2)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
-
+    
+    rtol = 1.6e-2
+    atol = 3e-2 * (x_len ** 0.5)
+    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
 
 @pytest.mark.bfgemv
 @pytest.mark.parametrize("m,n", [(64, 128), (128, 64), (256, 256)])
@@ -374,8 +426,173 @@ def test_accuracy_bfgemv_stride(m, n, trans, incx, incy):
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
     ref_y = y.clone()
 
-    torch_bfgemv_reference(trans, m, n, alpha, A, n, x, incx, beta, ref_y, incy)
+    cupy_half_gemv_reference(trans, m, n, alpha, A, n, x, incx, beta, ref_y, incy)
     flag_blas.ops.bfgemv(trans, m, n, alpha, A, n, x, incx, beta, y, incy)
 
-    tol = min(1e-3 * (x_len ** 0.5), 5e-2)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    rtol = 1.6e-2
+    atol = 3e-2 * (x_len ** 0.5)
+    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+
+
+@pytest.mark.fp8gemv
+@pytest.mark.parametrize("m,n", FP8_GEMV_SHAPES)
+@pytest.mark.parametrize("beta", [0.0, 0.5])
+def test_accuracy_fp8_gemv_e4m3(m, n, beta):
+    fp8_dtype = torch.float8_e4m3fn
+    alpha = 1.5
+    trans = CUBLAS_OP_T
+
+    A_fp8, A_col_f32, x_fp8, x_f32_ref, y, ref_y = prepare_fp8_gemv_data(m, n, 1, 1, fp8_dtype, torch.float32, flag_blas.device)
+
+    cublas_gemv_reference(trans, m, n, alpha, A_col_f32, m, x_f32_ref, 1, beta, ref_y, 1)
+    flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, 1, beta, y, 1)
+
+    rtol = 1e-3
+    atol = 3e-3 * (m ** 0.5)
+    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+
+@pytest.mark.fp8gemv
+@pytest.mark.parametrize("m,n", [(64, 128), (128, 64), (256, 256)])
+@pytest.mark.parametrize("incx,incy", STRIDES)
+def test_accuracy_fp8_gemv_e4m3_stride(m, n, incx, incy):
+    fp8_dtype = torch.float8_e4m3fn
+    alpha, beta = 2.0, 0.5
+    trans = CUBLAS_OP_T
+
+    A_fp8, A_col_f32, x_fp8, x_f32_ref, y, ref_y = prepare_fp8_gemv_data(m, n, incx, incy, fp8_dtype, torch.float32, flag_blas.device)
+
+    cublas_gemv_reference(trans, m, n, alpha, A_col_f32, m, x_f32_ref, incx, beta, ref_y, incy)
+    flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, incx, beta, y, incy)
+
+    rtol = 1e-3
+    atol = 3e-3 * (m ** 0.5)
+    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+
+@pytest.mark.fp8gemv
+@pytest.mark.parametrize("m,n", FP8_GEMV_SHAPES)
+@pytest.mark.parametrize("beta", [0.0, 0.5])
+def test_accuracy_fp8_gemv_e5m2(m, n, beta):
+    fp8_dtype = torch.float8_e5m2
+    alpha = 1.5
+    trans = CUBLAS_OP_T
+
+    A_fp8, A_col_f32, x_fp8, x_f32_ref, y, ref_y = prepare_fp8_gemv_data(m, n, 1, 1, fp8_dtype, torch.float32, flag_blas.device)
+
+    cublas_gemv_reference(trans, m, n, alpha, A_col_f32, m, x_f32_ref, 1, beta, ref_y, 1)
+    flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, 1, beta, y, 1)
+
+    rtol = 1e-3
+    atol = 3e-3 * (m ** 0.5)
+    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+
+@pytest.mark.fp8gemv
+@pytest.mark.parametrize("m,n", [(64, 128), (128, 64), (256, 256)])
+@pytest.mark.parametrize("incx,incy", STRIDES)
+def test_accuracy_fp8_gemv_e5m2_stride(m, n, incx, incy):
+    fp8_dtype = torch.float8_e5m2
+    alpha, beta = 2.0, 0.5
+    trans = CUBLAS_OP_T
+
+    A_fp8, A_col_f32, x_fp8, x_f32_ref, y, ref_y = prepare_fp8_gemv_data(m, n, incx, incy, fp8_dtype, torch.float32, flag_blas.device)
+
+    cublas_gemv_reference(trans, m, n, alpha, A_col_f32, m, x_f32_ref, incx, beta, ref_y, incy)
+    flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, incx, beta, y, incy)
+
+    rtol = 1e-3
+    atol = 3e-3 * (m ** 0.5)
+    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+
+@pytest.mark.fp8gemv
+@pytest.mark.parametrize("m,n", [(256, 256), (1024, 1024), (4096, 4096)]) 
+@pytest.mark.parametrize("y_dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_fp8_gemv_output_dtype(m, n, y_dtype):
+    fp8_dtype = torch.float8_e4m3fn
+    alpha, beta = 1.0, 0.0
+    trans = CUBLAS_OP_T
+
+    A_fp8, A_col_f32, x_fp8, x_f32_ref, y, ref_y = prepare_fp8_gemv_data(m, n, 1, 1, fp8_dtype, y_dtype, flag_blas.device)
+
+    cublas_gemv_reference(trans, m, n, alpha, A_col_f32, m, x_f32_ref, 1, beta, ref_y, 1)
+    flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, 1, beta, y, 1)
+
+    rtol = 1e-3 if y_dtype == torch.float16 else 1.6e-2
+    atol = (3e-3 if y_dtype == torch.float16 else 3e-2) * (m ** 0.5)
+    torch.testing.assert_close(y.float(), ref_y, rtol=rtol, atol=atol)
+
+@pytest.mark.fp8gemv
+def test_fp8_gemv_alpha_zero():
+    m, n = 128, 256
+    fp8_dtype = torch.float8_e4m3fn
+
+    A_f32 = torch.randn(m, n, dtype=torch.float32, device=flag_blas.device)
+    A_fp8 = A_f32.to(fp8_dtype)
+
+    x_f32 = torch.randn(m, dtype=torch.float32, device=flag_blas.device)
+    x_fp8 = x_f32.to(fp8_dtype)
+
+    y = torch.randn(n, dtype=torch.float32, device=flag_blas.device)
+    y_orig = y.clone()
+
+    flag_blas.ops.fp8_gemv(CUBLAS_OP_T, m, n, 0.0, A_fp8, n, x_fp8, 1, 2.0, y, 1)
+
+    torch.testing.assert_close(y, y_orig * 2.0)
+
+@pytest.mark.fp8gemv
+def test_fp8_gemv_beta_zero():
+    m, n = 128, 256
+    fp8_dtype = torch.float8_e4m3fn
+
+    A_f32 = torch.randn(m, n, dtype=torch.float32, device=flag_blas.device)
+    A_fp8 = A_f32.to(fp8_dtype)
+
+    x_f32 = torch.randn(m, dtype=torch.float32, device=flag_blas.device)
+    x_fp8 = x_f32.to(fp8_dtype)
+
+    y_nan = torch.full((n,), float('nan'), dtype=torch.float32, device=flag_blas.device)
+    y_zero = torch.zeros(n, dtype=torch.float32, device=flag_blas.device)
+
+    flag_blas.ops.fp8_gemv(CUBLAS_OP_T, m, n, 1.0, A_fp8, n, x_fp8, 1, 0.0, y_nan, 1)
+    flag_blas.ops.fp8_gemv(CUBLAS_OP_T, m, n, 1.0, A_fp8, n, x_fp8, 1, 0.0, y_zero, 1)
+
+    torch.testing.assert_close(y_nan, y_zero)
+
+@pytest.mark.fp8gemv
+def test_fp8_gemv_empty():
+    fp8_dtype = torch.float8_e4m3fn
+    device = flag_blas.device
+
+    m, n = 0, 64
+    A_fp8 = torch.zeros(m, n, dtype=fp8_dtype, device=device)
+    x_fp8 = torch.zeros(m, dtype=fp8_dtype, device=device)
+    
+    y = torch.randn(n, dtype=torch.float32, device=device)
+    y_orig = y.clone()
+
+    flag_blas.ops.fp8_gemv(CUBLAS_OP_T, m, n, 1.0, A_fp8, n, x_fp8, 1, 0.0, y, 1)
+    torch.testing.assert_close(y, y_orig)
+
+@pytest.mark.fp8gemv
+@pytest.mark.parametrize("m,n", [(256, 256), (1024, 1024)])
+def test_accuracy_fp8_gemv_mixed_dtype(m, n):
+    alpha, beta = 1.0, 0.0
+    device = flag_blas.device
+    trans = CUBLAS_OP_T
+
+    A_f32 = torch.randn(m, n, dtype=torch.float32, device=device) * 0.1
+    A_fp8_e4m3 = A_f32.to(torch.float8_e4m3fn)
+
+    A_col_f32 = A_fp8_e4m3.float().t().contiguous().t()
+
+    x_f32 = torch.randn(m, dtype=torch.float32, device=device) * 0.1
+    x_fp8_e4m3 = x_f32.to(torch.float8_e4m3fn)
+    x_f32_ref = x_fp8_e4m3.float()
+
+    y = torch.zeros(n, dtype=torch.float32, device=device)
+    ref_y = torch.zeros(n, dtype=torch.float32, device=device)
+
+    cublas_gemv_reference(trans, m, n, alpha, A_col_f32, m, x_f32_ref, 1, beta, ref_y, 1)
+    flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8_e4m3, n, x_fp8_e4m3, 1, beta, y, 1)
+
+    rtol = 1e-3
+    atol = 3e-3 * (m ** 0.5)
+    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
