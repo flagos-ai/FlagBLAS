@@ -40,77 +40,353 @@ GEMM_SHAPES = [
 ]
 
 
-def cublas_sgemm(A_col, B_col, C_col, transa, transb, m, n, k, alpha,
-                 A_row, B_row, C_row, lda_cublas, ldb_cublas, ldc_cublas,
-                 lda_flag, ldb_flag, ldc_flag, beta, handle, alpha_ptr, beta_ptr):
-    cublas.sgemm(handle, transa, transb, m, n, k,
-                 alpha_ptr, A_col.data_ptr(), lda_cublas,
-                 B_col.data_ptr(), ldb_cublas,
-                 beta_ptr, C_col.data_ptr(), ldc_cublas)
+def cublas_sgemm(
+    A_col,
+    B_col,
+    C_col,
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha,
+    A_row,
+    B_row,
+    C_row,
+    lda_cublas,
+    ldb_cublas,
+    ldc_cublas,
+    lda_flag,
+    ldb_flag,
+    ldc_flag,
+    beta,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    cublas.sgemm(
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha_ptr,
+        A_col.data_ptr(),
+        lda_cublas,
+        B_col.data_ptr(),
+        ldb_cublas,
+        beta_ptr,
+        C_col.data_ptr(),
+        ldc_cublas,
+    )
     return C_col
 
 
-def gems_sgemm_wrapper(A_col, B_col, C_col, transa, transb, m, n, k, alpha,
-                        A_row, B_row, C_row, lda_cublas, ldb_cublas, ldc_cublas,
-                        lda_flag, ldb_flag, ldc_flag, beta, handle, alpha_ptr, beta_ptr):
-    flag_blas.ops.sgemm(transa, transb, m, n, k, alpha,
-                        A_row, lda_flag, B_row, ldb_flag, beta, C_row, ldc_flag)
+def gems_sgemm_wrapper(
+    A_col,
+    B_col,
+    C_col,
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha,
+    A_row,
+    B_row,
+    C_row,
+    lda_cublas,
+    ldb_cublas,
+    ldc_cublas,
+    lda_flag,
+    ldb_flag,
+    ldc_flag,
+    beta,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    flag_blas.ops.sgemm(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_row,
+        lda_flag,
+        B_row,
+        ldb_flag,
+        beta,
+        C_row,
+        ldc_flag,
+    )
     return C_row
 
 
-def cublas_hgemm(A_col, B_col, C_col, transa, transb, m, n, k, alpha,
-                 A_row, B_row, C_row, lda_cublas, ldb_cublas, ldc_cublas,
-                 lda_flag, ldb_flag, ldc_flag, beta, handle, alpha_ptr, beta_ptr):
-    cublas.gemmEx(handle, transa, transb, m, n, k,
-                  alpha_ptr, A_col.data_ptr(), CUDA_R_16F, lda_cublas,
-                  B_col.data_ptr(), CUDA_R_16F, ldb_cublas,
-                  beta_ptr, C_col.data_ptr(), CUDA_R_16F, ldc_cublas,
-                  CUDA_R_32F, 0)
+def cublas_hgemm(
+    A_col,
+    B_col,
+    C_col,
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha,
+    A_row,
+    B_row,
+    C_row,
+    lda_cublas,
+    ldb_cublas,
+    ldc_cublas,
+    lda_flag,
+    ldb_flag,
+    ldc_flag,
+    beta,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    cublas.gemmEx(
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha_ptr,
+        A_col.data_ptr(),
+        CUDA_R_16F,
+        lda_cublas,
+        B_col.data_ptr(),
+        CUDA_R_16F,
+        ldb_cublas,
+        beta_ptr,
+        C_col.data_ptr(),
+        CUDA_R_16F,
+        ldc_cublas,
+        CUDA_R_32F,
+        0,
+    )
     return C_col
 
 
-def gems_hgemm_wrapper(A_col, B_col, C_col, transa, transb, m, n, k, alpha,
-                        A_row, B_row, C_row, lda_cublas, ldb_cublas, ldc_cublas,
-                        lda_flag, ldb_flag, ldc_flag, beta, handle, alpha_ptr, beta_ptr):
-    flag_blas.ops.hgemm(transa, transb, m, n, k, alpha,
-                        A_row, lda_flag, B_row, ldb_flag, beta, C_row, ldc_flag)
+def gems_hgemm_wrapper(
+    A_col,
+    B_col,
+    C_col,
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha,
+    A_row,
+    B_row,
+    C_row,
+    lda_cublas,
+    ldb_cublas,
+    ldc_cublas,
+    lda_flag,
+    ldb_flag,
+    ldc_flag,
+    beta,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    flag_blas.ops.hgemm(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_row,
+        lda_flag,
+        B_row,
+        ldb_flag,
+        beta,
+        C_row,
+        ldc_flag,
+    )
     return C_row
 
 
-def cublas_bfgemm(A_col, B_col, C_col, transa, transb, m, n, k, alpha,
-                  A_row, B_row, C_row, lda_cublas, ldb_cublas, ldc_cublas,
-                  lda_flag, ldb_flag, ldc_flag, beta, handle, alpha_ptr, beta_ptr):
-    cublas.gemmEx(handle, transa, transb, m, n, k,
-                  alpha_ptr, A_col.data_ptr(), CUDA_R_16BF, lda_cublas,
-                  B_col.data_ptr(), CUDA_R_16BF, ldb_cublas,
-                  beta_ptr, C_col.data_ptr(), CUDA_R_16BF, ldc_cublas,
-                  CUDA_R_32F, 0)
+def cublas_bfgemm(
+    A_col,
+    B_col,
+    C_col,
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha,
+    A_row,
+    B_row,
+    C_row,
+    lda_cublas,
+    ldb_cublas,
+    ldc_cublas,
+    lda_flag,
+    ldb_flag,
+    ldc_flag,
+    beta,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    cublas.gemmEx(
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha_ptr,
+        A_col.data_ptr(),
+        CUDA_R_16BF,
+        lda_cublas,
+        B_col.data_ptr(),
+        CUDA_R_16BF,
+        ldb_cublas,
+        beta_ptr,
+        C_col.data_ptr(),
+        CUDA_R_16BF,
+        ldc_cublas,
+        CUDA_R_32F,
+        0,
+    )
     return C_col
 
 
-def gems_bfgemm_wrapper(A_col, B_col, C_col, transa, transb, m, n, k, alpha,
-                         A_row, B_row, C_row, lda_cublas, ldb_cublas, ldc_cublas,
-                         lda_flag, ldb_flag, ldc_flag, beta, handle, alpha_ptr, beta_ptr):
-    flag_blas.ops.bfgemm(transa, transb, m, n, k, alpha,
-                         A_row, lda_flag, B_row, ldb_flag, beta, C_row, ldc_flag)
+def gems_bfgemm_wrapper(
+    A_col,
+    B_col,
+    C_col,
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha,
+    A_row,
+    B_row,
+    C_row,
+    lda_cublas,
+    ldb_cublas,
+    ldc_cublas,
+    lda_flag,
+    ldb_flag,
+    ldc_flag,
+    beta,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    flag_blas.ops.bfgemm(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_row,
+        lda_flag,
+        B_row,
+        ldb_flag,
+        beta,
+        C_row,
+        ldc_flag,
+    )
     return C_row
 
 
-def cublas_fp8gemm_baseline(A_col, B_col, C_col, transa, transb, m, n, k, alpha,
-                             A_row, B_row, C_row, lda_cublas, ldb_cublas, ldc_cublas,
-                             lda_flag, ldb_flag, ldc_flag, beta, handle, alpha_ptr, beta_ptr):
-    cublas.sgemm(handle, transa, transb, m, n, k,
-                 alpha_ptr, A_col.data_ptr(), lda_cublas,
-                 B_col.data_ptr(), ldb_cublas,
-                 beta_ptr, C_col.data_ptr(), ldc_cublas)
+def cublas_fp8gemm_baseline(
+    A_col,
+    B_col,
+    C_col,
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha,
+    A_row,
+    B_row,
+    C_row,
+    lda_cublas,
+    ldb_cublas,
+    ldc_cublas,
+    lda_flag,
+    ldb_flag,
+    ldc_flag,
+    beta,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    cublas.sgemm(
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha_ptr,
+        A_col.data_ptr(),
+        lda_cublas,
+        B_col.data_ptr(),
+        ldb_cublas,
+        beta_ptr,
+        C_col.data_ptr(),
+        ldc_cublas,
+    )
     return C_col
 
 
-def gems_fp8gemm_wrapper(A_col, B_col, C_col, transa, transb, m, n, k, alpha,
-                          A_row, B_row, C_row, lda_cublas, ldb_cublas, ldc_cublas,
-                          lda_flag, ldb_flag, ldc_flag, beta, handle, alpha_ptr, beta_ptr):
-    flag_blas.ops.fp8gemm(transa, transb, m, n, k, alpha,
-                          A_row, lda_flag, B_row, ldb_flag, beta, C_row, ldc_flag)
+def gems_fp8gemm_wrapper(
+    A_col,
+    B_col,
+    C_col,
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha,
+    A_row,
+    B_row,
+    C_row,
+    lda_cublas,
+    ldb_cublas,
+    ldc_cublas,
+    lda_flag,
+    ldb_flag,
+    ldc_flag,
+    beta,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    flag_blas.ops.fp8gemm(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_row,
+        lda_flag,
+        B_row,
+        ldb_flag,
+        beta,
+        C_row,
+        ldc_flag,
+    )
     return C_row
 
 
@@ -119,8 +395,15 @@ FP8_GEMM_SHAPES = [s for s in GEMM_SHAPES if all(d % 16 == 0 for d in s)]
 
 class GemmBenchmark(Benchmark):
 
-    def __init__(self, *args, transa=CUBLAS_OP_N, transb=CUBLAS_OP_N,
-                 alpha=1.0, beta=0.0, **kwargs):
+    def __init__(
+        self,
+        *args,
+        transa=CUBLAS_OP_N,
+        transb=CUBLAS_OP_N,
+        alpha=1.0,
+        beta=0.0,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.transa = transa
         self.transb = transb
@@ -198,9 +481,11 @@ class GemmBenchmark(Benchmark):
 
     def get_gbps(self, args, latency):
         A, B, C = args[0], args[1], args[2]
-        io_amount = (shape_utils.size_in_bytes(A)
-                     + shape_utils.size_in_bytes(B)
-                     + 2 * shape_utils.size_in_bytes(C))
+        io_amount = (
+            shape_utils.size_in_bytes(A)
+            + shape_utils.size_in_bytes(B)
+            + 2 * shape_utils.size_in_bytes(C)
+        )
         return io_amount * 1e-9 / (latency * 1e-3)
 
 
@@ -362,7 +647,9 @@ def test_perf_bfgemm_tt():
 
 class Fp8GemmBenchmark(GemmBenchmark):
 
-    def __init__(self, *args, fp8_dtype=torch.float8_e4m3fn, out_dtype=torch.float16, **kwargs):
+    def __init__(
+        self, *args, fp8_dtype=torch.float8_e4m3fn, out_dtype=torch.float16, **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.fp8_dtype = fp8_dtype
         self.out_dtype = out_dtype
@@ -386,18 +673,26 @@ class Fp8GemmBenchmark(GemmBenchmark):
             m, n, k = shape
 
             if self.transa == CUBLAS_OP_N:
-                A_f32_col = torch.randn(k, m, dtype=torch.float32, device=self.device).t()
+                A_f32_col = torch.randn(
+                    k, m, dtype=torch.float32, device=self.device
+                ).t()
                 lda_cublas, lda_flag = m, k
             else:
-                A_f32_col = torch.randn(m, k, dtype=torch.float32, device=self.device).t()
+                A_f32_col = torch.randn(
+                    m, k, dtype=torch.float32, device=self.device
+                ).t()
                 lda_cublas, lda_flag = k, m
             A_fp8_row = A_f32_col.contiguous().to(self.fp8_dtype)
 
             if self.transb == CUBLAS_OP_N:
-                B_f32_col = torch.randn(n, k, dtype=torch.float32, device=self.device).t()
+                B_f32_col = torch.randn(
+                    n, k, dtype=torch.float32, device=self.device
+                ).t()
                 ldb_cublas, ldb_flag = k, n
             else:
-                B_f32_col = torch.randn(k, n, dtype=torch.float32, device=self.device).t()
+                B_f32_col = torch.randn(
+                    k, n, dtype=torch.float32, device=self.device
+                ).t()
                 ldb_cublas, ldb_flag = n, k
             B_fp8_row = B_f32_col.contiguous().to(self.fp8_dtype)
 

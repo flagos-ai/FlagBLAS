@@ -30,7 +30,9 @@ GEMM_SHAPES = [
 ]
 
 
-def cublas_sgemm_reference(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc):
+def cublas_sgemm_reference(
+    transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc
+):
     if m == 0 or n == 0:
         return
 
@@ -41,12 +43,20 @@ def cublas_sgemm_reference(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta,
     beta_np = np.asarray(beta, dtype=np.float32)
 
     cublas.sgemm(
-        handle, transa, transb, m, n, k,
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
         alpha_np.ctypes.data,
-        A.data_ptr(), lda,
-        B.data_ptr(), ldb,
+        A.data_ptr(),
+        lda,
+        B.data_ptr(),
+        ldb,
         beta_np.ctypes.data,
-        C.data_ptr(), ldc
+        C.data_ptr(),
+        ldc,
     )
 
 
@@ -55,7 +65,9 @@ CUDA_R_16F = 2
 CUDA_R_16BF = 14
 
 
-def cublas_hgemm_reference(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc):
+def cublas_hgemm_reference(
+    transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc
+):
     if m == 0 or n == 0:
         return
 
@@ -66,28 +78,42 @@ def cublas_hgemm_reference(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta,
     beta_np = np.array([beta], dtype=np.float32)
 
     cublas.gemmEx(
-        handle, transa, transb, m, n, k,
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
         alpha_np.ctypes.data,
-        A.data_ptr(), CUDA_R_16F, lda,
-        B.data_ptr(), CUDA_R_16F, ldb,
+        A.data_ptr(),
+        CUDA_R_16F,
+        lda,
+        B.data_ptr(),
+        CUDA_R_16F,
+        ldb,
         beta_np.ctypes.data,
-        C.data_ptr(), CUDA_R_16F, ldc,
+        C.data_ptr(),
+        CUDA_R_16F,
+        ldc,
         CUDA_R_32F,
-        0
+        0,
     )
 
 
 @pytest.mark.sgemm
 @pytest.mark.parametrize("m,n,k", GEMM_SHAPES)
-@pytest.mark.parametrize("transa,transb", [
-    (CUBLAS_OP_N, CUBLAS_OP_N),
-    (CUBLAS_OP_N, CUBLAS_OP_T),
-    (CUBLAS_OP_T, CUBLAS_OP_N),
-    (CUBLAS_OP_T, CUBLAS_OP_T),
-])
+@pytest.mark.parametrize(
+    "transa,transb",
+    [
+        (CUBLAS_OP_N, CUBLAS_OP_N),
+        (CUBLAS_OP_N, CUBLAS_OP_T),
+        (CUBLAS_OP_T, CUBLAS_OP_N),
+        (CUBLAS_OP_T, CUBLAS_OP_T),
+    ],
+)
 def test_accuracy_sgemm(m, n, k, transa, transb):
     dtype, alpha, beta = torch.float32, 1.5, 0.5
-    scale = k ** -0.5
+    scale = k**-0.5
 
     if transa == CUBLAS_OP_N:
         A_col = (torch.randn(k, m, dtype=dtype, device=flag_blas.device) * scale).t()
@@ -109,10 +135,36 @@ def test_accuracy_sgemm(m, n, k, transa, transb):
     C_row = C_col.contiguous()
     ldc_cublas, ldc_flag = m, n
 
-    cublas_sgemm_reference(transa, transb, m, n, k, alpha,
-                           A_col, lda_cublas, B_col, ldb_cublas, beta, C_col, ldc_cublas)
-    flag_blas.ops.sgemm(transa, transb, m, n, k, alpha,
-                        A_row, lda_flag, B_row, ldb_flag, beta, C_row, ldc_flag)
+    cublas_sgemm_reference(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_col,
+        lda_cublas,
+        B_col,
+        ldb_cublas,
+        beta,
+        C_col,
+        ldc_cublas,
+    )
+    flag_blas.ops.sgemm(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_row,
+        lda_flag,
+        B_row,
+        ldb_flag,
+        beta,
+        C_row,
+        ldc_flag,
+    )
 
     rtol = 1e-5
     atol = 1e-5
@@ -139,11 +191,15 @@ def test_sgemm_beta_zero():
     device = flag_blas.device
     A = torch.randn(m, k, dtype=torch.float32, device=device)
     B = torch.randn(k, n, dtype=torch.float32, device=device)
-    C_nan = torch.full((m, n), float('nan'), dtype=torch.float32, device=device)
+    C_nan = torch.full((m, n), float("nan"), dtype=torch.float32, device=device)
     C_zero = torch.zeros(m, n, dtype=torch.float32, device=device)
 
-    flag_blas.ops.sgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_nan, n)
-    flag_blas.ops.sgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_zero, n)
+    flag_blas.ops.sgemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_nan, n
+    )
+    flag_blas.ops.sgemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_zero, n
+    )
 
     torch.testing.assert_close(C_nan, C_zero)
 
@@ -161,8 +217,21 @@ def test_sgemm_empty(m, n, k):
     C = torch.randn(rows_c, cols_c, dtype=torch.float32, device=device)
     C_orig = C.clone()
 
-    flag_blas.ops.sgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0,
-                        A, max(cols_a, 1), B, max(cols_b, 1), 0.5, C, max(cols_c, 1))
+    flag_blas.ops.sgemm(
+        CUBLAS_OP_N,
+        CUBLAS_OP_N,
+        m,
+        n,
+        k,
+        1.0,
+        A,
+        max(cols_a, 1),
+        B,
+        max(cols_b, 1),
+        0.5,
+        C,
+        max(cols_c, 1),
+    )
 
     torch.testing.assert_close(C, C_orig * 0.5)
 
@@ -174,7 +243,7 @@ def test_sgemm_alpha_beta(alpha, beta):
     dtype = torch.float32
     device = flag_blas.device
 
-    scale = k ** -0.5
+    scale = k**-0.5
     A_col = (torch.randn(k, m, dtype=dtype, device=device) * scale).t()
     A_row = A_col.contiguous()
     B_col = (torch.randn(n, k, dtype=dtype, device=device) * scale).t()
@@ -182,25 +251,30 @@ def test_sgemm_alpha_beta(alpha, beta):
     C_col = (torch.randn(n, m, dtype=dtype, device=device) * scale).t()
     C_row = C_col.contiguous()
 
-    cublas_sgemm_reference(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha,
-                           A_col, m, B_col, k, beta, C_col, m)
-    flag_blas.ops.sgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha,
-                        A_row, k, B_row, n, beta, C_row, n)
+    cublas_sgemm_reference(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_col, m, B_col, k, beta, C_col, m
+    )
+    flag_blas.ops.sgemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_row, k, B_row, n, beta, C_row, n
+    )
 
     torch.testing.assert_close(C_row, C_col.contiguous(), rtol=1e-5, atol=1e-5)
 
 
 @pytest.mark.hgemm
 @pytest.mark.parametrize("m,n,k", GEMM_SHAPES)
-@pytest.mark.parametrize("transa,transb", [
-    (CUBLAS_OP_N, CUBLAS_OP_N),
-    (CUBLAS_OP_N, CUBLAS_OP_T),
-    (CUBLAS_OP_T, CUBLAS_OP_N),
-    (CUBLAS_OP_T, CUBLAS_OP_T),
-])
+@pytest.mark.parametrize(
+    "transa,transb",
+    [
+        (CUBLAS_OP_N, CUBLAS_OP_N),
+        (CUBLAS_OP_N, CUBLAS_OP_T),
+        (CUBLAS_OP_T, CUBLAS_OP_N),
+        (CUBLAS_OP_T, CUBLAS_OP_T),
+    ],
+)
 def test_accuracy_hgemm(m, n, k, transa, transb):
     dtype, alpha, beta = torch.float16, 1.5, 0.5
-    scale = k ** -0.5
+    scale = k**-0.5
 
     if transa == CUBLAS_OP_N:
         A_col = (torch.randn(k, m, dtype=dtype, device=flag_blas.device) * scale).t()
@@ -222,10 +296,36 @@ def test_accuracy_hgemm(m, n, k, transa, transb):
     C_row = C_col.contiguous()
     ldc_cublas, ldc_flag = m, n
 
-    cublas_hgemm_reference(transa, transb, m, n, k, alpha,
-                           A_col, lda_cublas, B_col, ldb_cublas, beta, C_col, ldc_cublas)
-    flag_blas.ops.hgemm(transa, transb, m, n, k, alpha,
-                        A_row, lda_flag, B_row, ldb_flag, beta, C_row, ldc_flag)
+    cublas_hgemm_reference(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_col,
+        lda_cublas,
+        B_col,
+        ldb_cublas,
+        beta,
+        C_col,
+        ldc_cublas,
+    )
+    flag_blas.ops.hgemm(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_row,
+        lda_flag,
+        B_row,
+        ldb_flag,
+        beta,
+        C_row,
+        ldc_flag,
+    )
 
     rtol = 1e-3
     atol = 1e-3
@@ -252,11 +352,15 @@ def test_hgemm_beta_zero():
     device = flag_blas.device
     A = torch.randn(m, k, dtype=torch.float16, device=device)
     B = torch.randn(k, n, dtype=torch.float16, device=device)
-    C_nan = torch.full((m, n), float('nan'), dtype=torch.float16, device=device)
+    C_nan = torch.full((m, n), float("nan"), dtype=torch.float16, device=device)
     C_zero = torch.zeros(m, n, dtype=torch.float16, device=device)
 
-    flag_blas.ops.hgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_nan, n)
-    flag_blas.ops.hgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_zero, n)
+    flag_blas.ops.hgemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_nan, n
+    )
+    flag_blas.ops.hgemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_zero, n
+    )
 
     torch.testing.assert_close(C_nan, C_zero)
 
@@ -274,8 +378,21 @@ def test_hgemm_empty(m, n, k):
     C = torch.randn(rows_c, cols_c, dtype=torch.float16, device=device)
     C_orig = C.clone()
 
-    flag_blas.ops.hgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0,
-                        A, max(cols_a, 1), B, max(cols_b, 1), 0.5, C, max(cols_c, 1))
+    flag_blas.ops.hgemm(
+        CUBLAS_OP_N,
+        CUBLAS_OP_N,
+        m,
+        n,
+        k,
+        1.0,
+        A,
+        max(cols_a, 1),
+        B,
+        max(cols_b, 1),
+        0.5,
+        C,
+        max(cols_c, 1),
+    )
 
     torch.testing.assert_close(C, C_orig * 0.5)
 
@@ -286,7 +403,7 @@ def test_hgemm_alpha_beta(alpha, beta):
     m, n, k = 256, 256, 256
     dtype = torch.float16
     device = flag_blas.device
-    scale = k ** -0.5
+    scale = k**-0.5
 
     A_col = (torch.randn(k, m, dtype=dtype, device=device) * scale).t()
     A_row = A_col.contiguous()
@@ -295,15 +412,19 @@ def test_hgemm_alpha_beta(alpha, beta):
     C_col = (torch.randn(n, m, dtype=dtype, device=device) * scale).t()
     C_row = C_col.contiguous()
 
-    cublas_hgemm_reference(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha,
-                           A_col, m, B_col, k, beta, C_col, m)
-    flag_blas.ops.hgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha,
-                        A_row, k, B_row, n, beta, C_row, n)
+    cublas_hgemm_reference(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_col, m, B_col, k, beta, C_col, m
+    )
+    flag_blas.ops.hgemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_row, k, B_row, n, beta, C_row, n
+    )
 
     torch.testing.assert_close(C_row, C_col.contiguous(), rtol=1e-3, atol=1e-3)
 
 
-def cublas_bfgemm_reference(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc):
+def cublas_bfgemm_reference(
+    transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc
+):
     if m == 0 or n == 0:
         return
 
@@ -314,28 +435,42 @@ def cublas_bfgemm_reference(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta
     beta_np = np.array([beta], dtype=np.float32)
 
     cublas.gemmEx(
-        handle, transa, transb, m, n, k,
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
         alpha_np.ctypes.data,
-        A.data_ptr(), CUDA_R_16BF, lda,
-        B.data_ptr(), CUDA_R_16BF, ldb,
+        A.data_ptr(),
+        CUDA_R_16BF,
+        lda,
+        B.data_ptr(),
+        CUDA_R_16BF,
+        ldb,
         beta_np.ctypes.data,
-        C.data_ptr(), CUDA_R_16BF, ldc,
+        C.data_ptr(),
+        CUDA_R_16BF,
+        ldc,
         CUDA_R_32F,
-        0
+        0,
     )
 
 
 @pytest.mark.bfgemm
 @pytest.mark.parametrize("m,n,k", GEMM_SHAPES)
-@pytest.mark.parametrize("transa,transb", [
-    (CUBLAS_OP_N, CUBLAS_OP_N),
-    (CUBLAS_OP_N, CUBLAS_OP_T),
-    (CUBLAS_OP_T, CUBLAS_OP_N),
-    (CUBLAS_OP_T, CUBLAS_OP_T),
-])
+@pytest.mark.parametrize(
+    "transa,transb",
+    [
+        (CUBLAS_OP_N, CUBLAS_OP_N),
+        (CUBLAS_OP_N, CUBLAS_OP_T),
+        (CUBLAS_OP_T, CUBLAS_OP_N),
+        (CUBLAS_OP_T, CUBLAS_OP_T),
+    ],
+)
 def test_accuracy_bfgemm(m, n, k, transa, transb):
     dtype, alpha, beta = torch.bfloat16, 1.5, 0.5
-    scale = k ** -0.5
+    scale = k**-0.5
 
     if transa == CUBLAS_OP_N:
         A_col = (torch.randn(k, m, dtype=dtype, device=flag_blas.device) * scale).t()
@@ -357,10 +492,36 @@ def test_accuracy_bfgemm(m, n, k, transa, transb):
     C_row = C_col.contiguous()
     ldc_cublas, ldc_flag = m, n
 
-    cublas_bfgemm_reference(transa, transb, m, n, k, alpha,
-                            A_col, lda_cublas, B_col, ldb_cublas, beta, C_col, ldc_cublas)
-    flag_blas.ops.bfgemm(transa, transb, m, n, k, alpha,
-                         A_row, lda_flag, B_row, ldb_flag, beta, C_row, ldc_flag)
+    cublas_bfgemm_reference(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_col,
+        lda_cublas,
+        B_col,
+        ldb_cublas,
+        beta,
+        C_col,
+        ldc_cublas,
+    )
+    flag_blas.ops.bfgemm(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_row,
+        lda_flag,
+        B_row,
+        ldb_flag,
+        beta,
+        C_row,
+        ldc_flag,
+    )
 
     rtol = 1e-3
     atol = 1e-3
@@ -387,11 +548,15 @@ def test_bfgemm_beta_zero():
     device = flag_blas.device
     A = torch.randn(m, k, dtype=torch.bfloat16, device=device)
     B = torch.randn(k, n, dtype=torch.bfloat16, device=device)
-    C_nan = torch.full((m, n), float('nan'), dtype=torch.bfloat16, device=device)
+    C_nan = torch.full((m, n), float("nan"), dtype=torch.bfloat16, device=device)
     C_zero = torch.zeros(m, n, dtype=torch.bfloat16, device=device)
 
-    flag_blas.ops.bfgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_nan, n)
-    flag_blas.ops.bfgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_zero, n)
+    flag_blas.ops.bfgemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_nan, n
+    )
+    flag_blas.ops.bfgemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_zero, n
+    )
 
     torch.testing.assert_close(C_nan, C_zero)
 
@@ -409,8 +574,21 @@ def test_bfgemm_empty(m, n, k):
     C = torch.randn(rows_c, cols_c, dtype=torch.bfloat16, device=device)
     C_orig = C.clone()
 
-    flag_blas.ops.bfgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0,
-                         A, max(cols_a, 1), B, max(cols_b, 1), 0.5, C, max(cols_c, 1))
+    flag_blas.ops.bfgemm(
+        CUBLAS_OP_N,
+        CUBLAS_OP_N,
+        m,
+        n,
+        k,
+        1.0,
+        A,
+        max(cols_a, 1),
+        B,
+        max(cols_b, 1),
+        0.5,
+        C,
+        max(cols_c, 1),
+    )
 
     torch.testing.assert_close(C, C_orig * 0.5)
 
@@ -421,7 +599,7 @@ def test_bfgemm_alpha_beta(alpha, beta):
     m, n, k = 256, 256, 256
     dtype = torch.bfloat16
     device = flag_blas.device
-    scale = k ** -0.5
+    scale = k**-0.5
 
     A_col = (torch.randn(k, m, dtype=dtype, device=device) * scale).t()
     A_row = A_col.contiguous()
@@ -430,10 +608,12 @@ def test_bfgemm_alpha_beta(alpha, beta):
     C_col = (torch.randn(n, m, dtype=dtype, device=device) * scale).t()
     C_row = C_col.contiguous()
 
-    cublas_bfgemm_reference(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha,
-                            A_col, m, B_col, k, beta, C_col, m)
-    flag_blas.ops.bfgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha,
-                         A_row, k, B_row, n, beta, C_row, n)
+    cublas_bfgemm_reference(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_col, m, B_col, k, beta, C_col, m
+    )
+    flag_blas.ops.bfgemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_row, k, B_row, n, beta, C_row, n
+    )
 
     torch.testing.assert_close(C_row, C_col.contiguous(), rtol=1e-3, atol=1e-3)
 
@@ -462,18 +642,21 @@ FP8_GEMM_SHAPES = [
 
 @pytest.mark.fp8gemm
 @pytest.mark.parametrize("m,n,k", FP8_GEMM_SHAPES)
-@pytest.mark.parametrize("transa,transb", [
-    (CUBLAS_OP_N, CUBLAS_OP_N),
-    (CUBLAS_OP_N, CUBLAS_OP_T),
-    (CUBLAS_OP_T, CUBLAS_OP_N),
-    (CUBLAS_OP_T, CUBLAS_OP_T),
-])
+@pytest.mark.parametrize(
+    "transa,transb",
+    [
+        (CUBLAS_OP_N, CUBLAS_OP_N),
+        (CUBLAS_OP_N, CUBLAS_OP_T),
+        (CUBLAS_OP_T, CUBLAS_OP_N),
+        (CUBLAS_OP_T, CUBLAS_OP_T),
+    ],
+)
 def test_accuracy_fp8gemm_e4m3(m, n, k, transa, transb):
     fp8_dtype = torch.float8_e4m3fn
     out_dtype = torch.float16
     device = flag_blas.device
     alpha, beta = 1.5, 0.5
-    scale = k ** -0.5
+    scale = k**-0.5
 
     if transa == CUBLAS_OP_N:
         A_fp8 = (torch.randn(m, k, device=device) * scale).to(fp8_dtype)
@@ -501,12 +684,36 @@ def test_accuracy_fp8gemm_e4m3(m, n, k, transa, transb):
     C_row = C_col.contiguous().to(out_dtype)
     ldc_cublas, ldc_flag = m, n
 
-    cublas_sgemm_reference(transa, transb, m, n, k, alpha,
-                           A_f32_col, lda_cublas, B_f32_col, ldb_cublas,
-                           beta, C_col, ldc_cublas)
-    flag_blas.ops.fp8gemm(transa, transb, m, n, k, alpha,
-                          A_fp8, lda_flag, B_fp8, ldb_flag,
-                          beta, C_row, ldc_flag)
+    cublas_sgemm_reference(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_f32_col,
+        lda_cublas,
+        B_f32_col,
+        ldb_cublas,
+        beta,
+        C_col,
+        ldc_cublas,
+    )
+    flag_blas.ops.fp8gemm(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_fp8,
+        lda_flag,
+        B_fp8,
+        ldb_flag,
+        beta,
+        C_row,
+        ldc_flag,
+    )
 
     rtol = 1e-2
     atol = 1e-2
@@ -515,18 +722,21 @@ def test_accuracy_fp8gemm_e4m3(m, n, k, transa, transb):
 
 @pytest.mark.fp8gemm
 @pytest.mark.parametrize("m,n,k", FP8_GEMM_SHAPES)
-@pytest.mark.parametrize("transa,transb", [
-    (CUBLAS_OP_N, CUBLAS_OP_N),
-    (CUBLAS_OP_N, CUBLAS_OP_T),
-    (CUBLAS_OP_T, CUBLAS_OP_N),
-    (CUBLAS_OP_T, CUBLAS_OP_T),
-])
+@pytest.mark.parametrize(
+    "transa,transb",
+    [
+        (CUBLAS_OP_N, CUBLAS_OP_N),
+        (CUBLAS_OP_N, CUBLAS_OP_T),
+        (CUBLAS_OP_T, CUBLAS_OP_N),
+        (CUBLAS_OP_T, CUBLAS_OP_T),
+    ],
+)
 def test_accuracy_fp8gemm_e5m2(m, n, k, transa, transb):
     fp8_dtype = torch.float8_e5m2
     out_dtype = torch.float16
     device = flag_blas.device
     alpha, beta = 1.5, 0.5
-    scale = k ** -0.5
+    scale = k**-0.5
 
     if transa == CUBLAS_OP_N:
         A_fp8 = (torch.randn(m, k, device=device) * scale).to(fp8_dtype)
@@ -554,12 +764,36 @@ def test_accuracy_fp8gemm_e5m2(m, n, k, transa, transb):
     C_row = C_col.contiguous().to(out_dtype)
     ldc_cublas, ldc_flag = m, n
 
-    cublas_sgemm_reference(transa, transb, m, n, k, alpha,
-                           A_f32_col, lda_cublas, B_f32_col, ldb_cublas,
-                           beta, C_col, ldc_cublas)
-    flag_blas.ops.fp8gemm(transa, transb, m, n, k, alpha,
-                          A_fp8, lda_flag, B_fp8, ldb_flag,
-                          beta, C_row, ldc_flag)
+    cublas_sgemm_reference(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_f32_col,
+        lda_cublas,
+        B_f32_col,
+        ldb_cublas,
+        beta,
+        C_col,
+        ldc_cublas,
+    )
+    flag_blas.ops.fp8gemm(
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_fp8,
+        lda_flag,
+        B_fp8,
+        ldb_flag,
+        beta,
+        C_row,
+        ldc_flag,
+    )
 
     rtol = 1.6e-2
     atol = 1.6e-2
@@ -586,11 +820,15 @@ def test_fp8gemm_beta_zero():
     device = flag_blas.device
     A = torch.randn(m, k, device=device).to(torch.float8_e4m3fn)
     B = torch.randn(k, n, device=device).to(torch.float8_e4m3fn)
-    C_nan = torch.full((m, n), float('nan'), dtype=torch.float16, device=device)
+    C_nan = torch.full((m, n), float("nan"), dtype=torch.float16, device=device)
     C_zero = torch.zeros(m, n, dtype=torch.float16, device=device)
 
-    flag_blas.ops.fp8gemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_nan, n)
-    flag_blas.ops.fp8gemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_zero, n)
+    flag_blas.ops.fp8gemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_nan, n
+    )
+    flag_blas.ops.fp8gemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_zero, n
+    )
 
     torch.testing.assert_close(C_nan, C_zero)
 
@@ -602,7 +840,7 @@ def test_fp8gemm_alpha_beta(alpha, beta):
     fp8_dtype = torch.float8_e4m3fn
     out_dtype = torch.float16
     device = flag_blas.device
-    scale = k ** -0.5
+    scale = k**-0.5
 
     A_fp8 = (torch.randn(m, k, device=device) * scale).to(fp8_dtype)
     B_fp8 = (torch.randn(k, n, device=device) * scale).to(fp8_dtype)
@@ -612,12 +850,24 @@ def test_fp8gemm_alpha_beta(alpha, beta):
     C_col = (torch.randn(n, m, device=device) * scale).t().to(torch.float32)
     C_row = C_col.contiguous().to(out_dtype)
 
-    cublas_sgemm_reference(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha,
-                           A_f32_col, m, B_f32_col, k,
-                           beta, C_col, m)
-    flag_blas.ops.fp8gemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha,
-                          A_fp8, k, B_fp8, n,
-                          beta, C_row, n)
+    cublas_sgemm_reference(
+        CUBLAS_OP_N,
+        CUBLAS_OP_N,
+        m,
+        n,
+        k,
+        alpha,
+        A_f32_col,
+        m,
+        B_f32_col,
+        k,
+        beta,
+        C_col,
+        m,
+    )
+    flag_blas.ops.fp8gemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_fp8, k, B_fp8, n, beta, C_row, n
+    )
 
     torch.testing.assert_close(C_row.float(), C_col.contiguous(), rtol=1e-2, atol=1e-2)
 
@@ -627,7 +877,7 @@ def test_fp8gemm_alpha_beta(alpha, beta):
 def test_fp8gemm_output_dtypes(out_dtype):
     m, n, k = 256, 256, 256
     device = flag_blas.device
-    scale = k ** -0.5
+    scale = k**-0.5
 
     A_fp8 = (torch.randn(m, k, device=device) * scale).to(torch.float8_e4m3fn)
     B_fp8 = (torch.randn(k, n, device=device) * scale).to(torch.float8_e4m3fn)
@@ -637,12 +887,24 @@ def test_fp8gemm_output_dtypes(out_dtype):
     C_col = torch.zeros(n, m, device=device, dtype=torch.float32).t()
     C_row = torch.zeros(m, n, device=device, dtype=out_dtype)
 
-    cublas_sgemm_reference(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0,
-                           A_f32_col, m, B_f32_col, k,
-                           0.0, C_col, m)
-    flag_blas.ops.fp8gemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0,
-                          A_fp8, k, B_fp8, n,
-                          0.0, C_row, n)
+    cublas_sgemm_reference(
+        CUBLAS_OP_N,
+        CUBLAS_OP_N,
+        m,
+        n,
+        k,
+        1.0,
+        A_f32_col,
+        m,
+        B_f32_col,
+        k,
+        0.0,
+        C_col,
+        m,
+    )
+    flag_blas.ops.fp8gemm(
+        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A_fp8, k, B_fp8, n, 0.0, C_row, n
+    )
 
     assert C_row.dtype == out_dtype
     torch.testing.assert_close(C_row.float(), C_col.contiguous(), rtol=1e-2, atol=1e-2)

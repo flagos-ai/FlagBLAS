@@ -11,8 +11,8 @@ from flag_blas.utils import shape_utils
 
 def torch_rot_real(x, y, c, s, incx=1, incy=1, n=None):
     """Optimized PyTorch implementation of srot/drot as baseline."""
-    x_view = x[:n * incx:incx]
-    y_view = y[:n * incy:incy]
+    x_view = x[: n * incx : incx]
+    y_view = y[: n * incy : incy]
     new_x = c * x_view + s * y_view
     new_y = c * y_view - s * x_view
     x_view.copy_(new_x)
@@ -22,8 +22,8 @@ def torch_rot_real(x, y, c, s, incx=1, incy=1, n=None):
 
 def torch_rot_complex(x, y, c, s, incx=1, incy=1, n=None):
     """Optimized PyTorch implementation of crot/zrot as baseline."""
-    x_view = x[:n * incx:incx]
-    y_view = y[:n * incy:incy]
+    x_view = x[: n * incx : incx]
+    y_view = y[: n * incy : incy]
     s_conj = s.conjugate() if isinstance(s, complex) else s
     new_x = c * x_view + s * y_view
     new_y = c * y_view - s_conj * x_view
@@ -92,7 +92,9 @@ class RotBenchmark(Benchmark):
     def get_gbps(self, args, latency):
         inp1, inp2 = args[0], args[1]
         # rot reads x, y and writes x, y
-        io_amount = 2 * shape_utils.size_in_bytes(inp1) + 2 * shape_utils.size_in_bytes(inp2)
+        io_amount = 2 * shape_utils.size_in_bytes(inp1) + 2 * shape_utils.size_in_bytes(
+            inp2
+        )
         return io_amount * 1e-9 / (latency * 1e-3)
 
 
@@ -127,7 +129,13 @@ class RotStrideBenchmark(Benchmark):
             inp1 = torch.randn(n * self.incx, dtype=cur_dtype, device=self.device)
             inp2 = torch.randn(n * self.incy, dtype=cur_dtype, device=self.device)
             if n > 0:
-                yield inp1, inp2, {"c": self.c, "s": self.s, "incx": self.incx, "incy": self.incy, "n": n}
+                yield inp1, inp2, {
+                    "c": self.c,
+                    "s": self.s,
+                    "incx": self.incx,
+                    "incy": self.incy,
+                    "n": n,
+                }
 
     def get_gbps(self, args, latency):
         inp1, inp2 = args[0], args[1]

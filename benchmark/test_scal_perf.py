@@ -87,7 +87,12 @@ class ScalBenchmark(Benchmark):
             inp = torch.randn(shape, dtype=cur_dtype, device=self.device)
             n = inp.numel()
             if n > 0:
-                yield inp, {"alpha": self.alpha, "n": n, "handle": handle, "alpha_ptr": alpha_ptr}
+                yield inp, {
+                    "alpha": self.alpha,
+                    "n": n,
+                    "handle": handle,
+                    "alpha_ptr": alpha_ptr,
+                }
 
     def get_gbps(self, args, latency):
         inp = args[0]
@@ -135,7 +140,13 @@ class ScalStrideBenchmark(Benchmark):
             n = shape[0]
             inp = torch.randn(n * self.incx, dtype=cur_dtype, device=self.device)
             if n > 0:
-                yield inp, {"alpha": self.alpha, "incx": self.incx, "n": n, "handle": handle, "alpha_ptr": alpha_ptr}
+                yield inp, {
+                    "alpha": self.alpha,
+                    "incx": self.incx,
+                    "n": n,
+                    "handle": handle,
+                    "alpha_ptr": alpha_ptr,
+                }
 
     def get_gbps(self, args, latency):
         inp = args[0]

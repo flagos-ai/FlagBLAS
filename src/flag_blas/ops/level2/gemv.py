@@ -23,26 +23,52 @@ FP8_DTYPES = (torch.float8_e4m3fn, torch.float8_e5m2)
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def sgemv_n_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha: tl.float32, beta: tl.float32,
-    m, n, STRIDE_AM, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    INCY,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -87,30 +113,64 @@ def sgemv_n_kernel(
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AK", "INCX", "INCY", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def sgemv_t_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha: tl.float32, beta: tl.float32,
-    m, n, STRIDE_AK, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    STRIDE_AK,
+    INCX,
+    INCY,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -156,26 +216,52 @@ def sgemv_t_kernel(
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def dgemv_n_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_int: tl.int64, beta_int: tl.int64,
-    m, n, STRIDE_AM, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_int: tl.int64,
+    beta_int: tl.int64,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    INCY,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -223,27 +309,55 @@ def dgemv_n_kernel(
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AK", "INCX", "INCY", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def dgemv_t_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_int: tl.int64, beta_int: tl.int64,
-    m, n, STRIDE_AK, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_int: tl.int64,
+    beta_int: tl.int64,
+    m,
+    n,
+    STRIDE_AK,
+    INCX,
+    INCY,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -291,30 +405,63 @@ def dgemv_t_kernel(
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def cgemv_n_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_real: tl.float32, alpha_imag: tl.float32,
-    beta_real: tl.float32, beta_imag: tl.float32,
-    m, n, STRIDE_AM, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_real: tl.float32,
+    alpha_imag: tl.float32,
+    beta_real: tl.float32,
+    beta_imag: tl.float32,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    INCY,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -342,8 +489,12 @@ def cgemv_n_kernel(
         k_mask = k_offsets < n
         a_mask = row_mask[:, None] & k_mask[None, :]
 
-        a_val = tl.load(a_ptrs_int64, mask=a_mask, other=0, eviction_policy="evict_first")
-        x_val = tl.load(x_ptrs_int64, mask=k_mask, other=0, eviction_policy="evict_last")
+        a_val = tl.load(
+            a_ptrs_int64, mask=a_mask, other=0, eviction_policy="evict_first"
+        )
+        x_val = tl.load(
+            x_ptrs_int64, mask=k_mask, other=0, eviction_policy="evict_last"
+        )
 
         a_real = a_val.to(tl.int32).to(tl.float32, bitcast=True)
         a_imag = (a_val >> 32).to(tl.int32).to(tl.float32, bitcast=True)
@@ -370,8 +521,12 @@ def cgemv_n_kernel(
     else:
         y_real = tl.load(y_ptr + y_base, mask=row_mask, other=0.0)
         y_imag = tl.load(y_ptr + y_base + 1, mask=row_mask, other=0.0)
-        result_real = (alpha_real * acc_real - alpha_imag * acc_imag) + (beta_real * y_real - beta_imag * y_imag)
-        result_imag = (alpha_real * acc_imag + alpha_imag * acc_real) + (beta_real * y_imag + beta_imag * y_real)
+        result_real = (alpha_real * acc_real - alpha_imag * acc_imag) + (
+            beta_real * y_real - beta_imag * y_imag
+        )
+        result_imag = (alpha_real * acc_imag + alpha_imag * acc_real) + (
+            beta_real * y_imag + beta_imag * y_real
+        )
 
     tl.store(y_ptr + y_base, result_real, mask=row_mask)
     tl.store(y_ptr + y_base + 1, result_imag, mask=row_mask)
@@ -380,27 +535,56 @@ def cgemv_n_kernel(
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AM", "STRIDE_AN", "INCX", "INCY", "CONJ", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def cgemv_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_real: tl.float32, alpha_imag: tl.float32,
-    beta_real: tl.float32, beta_imag: tl.float32,
-    m, n, STRIDE_AM, STRIDE_AN, INCX, INCY, CONJ: tl.constexpr,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_real: tl.float32,
+    alpha_imag: tl.float32,
+    beta_real: tl.float32,
+    beta_imag: tl.float32,
+    m,
+    n,
+    STRIDE_AM,
+    STRIDE_AN,
+    INCX,
+    INCY,
+    CONJ: tl.constexpr,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -428,8 +612,12 @@ def cgemv_kernel(
         k_mask = k_offsets < n
         a_mask = row_mask[:, None] & k_mask[None, :]
 
-        a_val = tl.load(a_ptrs_int64, mask=a_mask, other=0, eviction_policy="evict_first")
-        x_val = tl.load(x_ptrs_int64, mask=k_mask, other=0, eviction_policy="evict_last")
+        a_val = tl.load(
+            a_ptrs_int64, mask=a_mask, other=0, eviction_policy="evict_first"
+        )
+        x_val = tl.load(
+            x_ptrs_int64, mask=k_mask, other=0, eviction_policy="evict_last"
+        )
 
         a_real = a_val.to(tl.int32).to(tl.float32, bitcast=True)
         a_imag = (a_val >> 32).to(tl.int32).to(tl.float32, bitcast=True)
@@ -460,8 +648,12 @@ def cgemv_kernel(
     else:
         y_real = tl.load(y_ptr + y_base, mask=row_mask, other=0.0)
         y_imag = tl.load(y_ptr + y_base + 1, mask=row_mask, other=0.0)
-        result_real = (alpha_real * acc_real - alpha_imag * acc_imag) + (beta_real * y_real - beta_imag * y_imag)
-        result_imag = (alpha_real * acc_imag + alpha_imag * acc_real) + (beta_real * y_imag + beta_imag * y_real)
+        result_real = (alpha_real * acc_real - alpha_imag * acc_imag) + (
+            beta_real * y_real - beta_imag * y_imag
+        )
+        result_imag = (alpha_real * acc_imag + alpha_imag * acc_real) + (
+            beta_real * y_imag + beta_imag * y_real
+        )
 
     tl.store(y_ptr + y_base, result_real, mask=row_mask)
     tl.store(y_ptr + y_base + 1, result_imag, mask=row_mask)
@@ -470,26 +662,51 @@ def cgemv_kernel(
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def zgemv_n_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_real_int: tl.int64, alpha_imag_int: tl.int64,
-    beta_real_int: tl.int64, beta_imag_int: tl.int64,
-    m, n, STRIDE_AM, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_real_int: tl.int64,
+    alpha_imag_int: tl.int64,
+    beta_real_int: tl.int64,
+    beta_imag_int: tl.int64,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    INCY,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -521,11 +738,19 @@ def zgemv_n_kernel(
         k_mask = k_offsets < n
         a_mask = row_mask[:, None] & k_mask[None, :]
 
-        a_real = tl.load(a_ptrs_real, mask=a_mask, other=0.0, eviction_policy="evict_first")
-        a_imag = tl.load(a_ptrs_imag, mask=a_mask, other=0.0, eviction_policy="evict_first")
+        a_real = tl.load(
+            a_ptrs_real, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        )
+        a_imag = tl.load(
+            a_ptrs_imag, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        )
 
-        x_real = tl.load(x_ptrs_real, mask=k_mask, other=0.0, eviction_policy="evict_last")
-        x_imag = tl.load(x_ptrs_imag, mask=k_mask, other=0.0, eviction_policy="evict_last")
+        x_real = tl.load(
+            x_ptrs_real, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        )
+        x_imag = tl.load(
+            x_ptrs_imag, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        )
 
         xr_block = x_real[None, :]
         xi_block = x_imag[None, :]
@@ -549,8 +774,12 @@ def zgemv_n_kernel(
     else:
         y_real = tl.load(y_ptr + y_base, mask=row_mask, other=0.0)
         y_imag = tl.load(y_ptr + y_base + 1, mask=row_mask, other=0.0)
-        result_real = (alpha_real * acc_real - alpha_imag * acc_imag) + (beta_real * y_real - beta_imag * y_imag)
-        result_imag = (alpha_real * acc_imag + alpha_imag * acc_real) + (beta_real * y_imag + beta_imag * y_real)
+        result_real = (alpha_real * acc_real - alpha_imag * acc_imag) + (
+            beta_real * y_real - beta_imag * y_imag
+        )
+        result_imag = (alpha_real * acc_imag + alpha_imag * acc_real) + (
+            beta_real * y_imag + beta_imag * y_real
+        )
 
     tl.store(y_ptr + y_base, result_real, mask=row_mask)
     tl.store(y_ptr + y_base + 1, result_imag, mask=row_mask)
@@ -559,28 +788,59 @@ def zgemv_n_kernel(
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 64}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 64}, num_warps=8, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AM", "STRIDE_AN", "INCX", "INCY", "CONJ", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def zgemv_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_real_int: tl.int64, alpha_imag_int: tl.int64,
-    beta_real_int: tl.int64, beta_imag_int: tl.int64,
-    m, n, STRIDE_AM, STRIDE_AN, INCX, INCY, CONJ: tl.constexpr,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_real_int: tl.int64,
+    alpha_imag_int: tl.int64,
+    beta_real_int: tl.int64,
+    beta_imag_int: tl.int64,
+    m,
+    n,
+    STRIDE_AM,
+    STRIDE_AN,
+    INCX,
+    INCY,
+    CONJ: tl.constexpr,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -612,11 +872,19 @@ def zgemv_kernel(
         k_mask = k_offsets < n
         a_mask = row_mask[:, None] & k_mask[None, :]
 
-        a_real = tl.load(a_ptrs_real, mask=a_mask, other=0.0, eviction_policy="evict_first")
-        a_imag = tl.load(a_ptrs_imag, mask=a_mask, other=0.0, eviction_policy="evict_first")
+        a_real = tl.load(
+            a_ptrs_real, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        )
+        a_imag = tl.load(
+            a_ptrs_imag, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        )
 
-        x_real = tl.load(x_ptrs_real, mask=k_mask, other=0.0, eviction_policy="evict_last")
-        x_imag = tl.load(x_ptrs_imag, mask=k_mask, other=0.0, eviction_policy="evict_last")
+        x_real = tl.load(
+            x_ptrs_real, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        )
+        x_imag = tl.load(
+            x_ptrs_imag, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        )
 
         xr_block = x_real[None, :]
         xi_block = x_imag[None, :]
@@ -644,8 +912,12 @@ def zgemv_kernel(
     else:
         y_real = tl.load(y_ptr + y_base, mask=row_mask, other=0.0)
         y_imag = tl.load(y_ptr + y_base + 1, mask=row_mask, other=0.0)
-        result_real = (alpha_real * acc_real - alpha_imag * acc_imag) + (beta_real * y_real - beta_imag * y_imag)
-        result_imag = (alpha_real * acc_imag + alpha_imag * acc_real) + (beta_real * y_imag + beta_imag * y_real)
+        result_real = (alpha_real * acc_real - alpha_imag * acc_imag) + (
+            beta_real * y_real - beta_imag * y_imag
+        )
+        result_imag = (alpha_real * acc_imag + alpha_imag * acc_real) + (
+            beta_real * y_imag + beta_imag * y_real
+        )
 
     tl.store(y_ptr + y_base, result_real, mask=row_mask)
     tl.store(y_ptr + y_base + 1, result_imag, mask=row_mask)
@@ -654,26 +926,52 @@ def zgemv_kernel(
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def hgemv_n_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha: tl.float32, beta: tl.float32,
-    m, n, STRIDE_AM, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    INCY,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -694,8 +992,12 @@ def hgemv_n_kernel(
         k_mask = k_offsets < n
         a_mask = row_mask[:, None] & k_mask[None, :]
 
-        a_block = tl.load(a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first").to(tl.float32)
-        x_block = tl.load(x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last").to(tl.float32)
+        a_block = tl.load(
+            a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        ).to(tl.float32)
+        x_block = tl.load(
+            x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        ).to(tl.float32)
 
         acc_2d += a_block * x_block[None, :]
 
@@ -718,31 +1020,67 @@ def hgemv_n_kernel(
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=3),
-        triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=3
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AK", "INCX", "INCY", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def hgemv_t_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha: tl.float32, beta: tl.float32,
-    m, n, STRIDE_AK, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    STRIDE_AK,
+    INCX,
+    INCY,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -764,8 +1102,12 @@ def hgemv_t_kernel(
         k_mask = k_offsets < n
         a_mask = row_mask[:, None] & k_mask[None, :]
 
-        a_block = tl.load(a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first").to(tl.float32)
-        x_block = tl.load(x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last").to(tl.float32)
+        a_block = tl.load(
+            a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        ).to(tl.float32)
+        x_block = tl.load(
+            x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        ).to(tl.float32)
 
         acc_2d += a_block * x_block[None, :]
 
@@ -788,26 +1130,52 @@ def hgemv_t_kernel(
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def bfgemv_n_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha: tl.float32, beta: tl.float32,
-    m, n, STRIDE_AM, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    INCY,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -828,8 +1196,12 @@ def bfgemv_n_kernel(
         k_mask = k_offsets < n
         a_mask = row_mask[:, None] & k_mask[None, :]
 
-        a_block = tl.load(a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first").to(tl.float32)
-        x_block = tl.load(x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last").to(tl.float32)
+        a_block = tl.load(
+            a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        ).to(tl.float32)
+        x_block = tl.load(
+            x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        ).to(tl.float32)
 
         acc_2d += a_block * x_block[None, :]
 
@@ -852,32 +1224,70 @@ def bfgemv_n_kernel(
 @libentry()
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=2),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 64}, num_warps=8, num_stages=2),
-        triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2),
-        triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=2),
-        triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=2
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 64}, num_warps=8, num_stages=2
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=2
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
     ],
     key=["m", "n", "STRIDE_AK", "INCX", "INCY", "BETA_IS_ZERO"],
     restore_value=["y_ptr"],
 )
 @triton.jit
 def bfgemv_t_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha: tl.float32, beta: tl.float32,
-    m, n, STRIDE_AK, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    STRIDE_AK,
+    INCX,
+    INCY,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -899,8 +1309,12 @@ def bfgemv_t_kernel(
         k_mask = k_offsets < n
         a_mask = row_mask[:, None] & k_mask[None, :]
 
-        a_block = tl.load(a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first").to(tl.float32)
-        x_block = tl.load(x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last").to(tl.float32)
+        a_block = tl.load(
+            a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        ).to(tl.float32)
+        x_block = tl.load(
+            x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        ).to(tl.float32)
 
         acc_2d += a_block * x_block[None, :]
 
@@ -920,7 +1334,19 @@ def bfgemv_t_kernel(
     tl.store(y_ptrs, result.to(tl.bfloat16), mask=row_mask)
 
 
-def sgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: int, x: torch.Tensor, incx: int, beta: ScalarType, y: torch.Tensor, incy: int) -> None:
+def sgemv(
+    trans: int,
+    m: int,
+    n: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
+) -> None:
     assert A.is_contiguous()
     assert x.is_contiguous()
     assert y.is_contiguous()
@@ -949,21 +1375,37 @@ def sgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: i
         len_x, len_y = n, m
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
-        beta_is_zero = (beta == 0.0)
+        beta_is_zero = beta == 0.0
         grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
         with torch_device_fn.device(A.device):
-            sgemv_n_kernel[grid](A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero)
+            sgemv_n_kernel[grid](
+                A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero
+            )
     else:
         len_x, len_y = m, n
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
-        beta_is_zero = (beta == 0.0)
+        beta_is_zero = beta == 0.0
         grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
         with torch_device_fn.device(A.device):
-            sgemv_t_kernel[grid](A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero)
+            sgemv_t_kernel[grid](
+                A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero
+            )
 
 
-def dgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: int, x: torch.Tensor, incx: int, beta: ScalarType, y: torch.Tensor, incy: int) -> None:
+def dgemv(
+    trans: int,
+    m: int,
+    n: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
+) -> None:
     assert A.is_contiguous()
     assert x.is_contiguous()
     assert y.is_contiguous()
@@ -980,7 +1422,7 @@ def dgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: i
 
     alpha_val = float(alpha.item() if isinstance(alpha, torch.Tensor) else alpha)
     beta_val = float(beta.item() if isinstance(beta, torch.Tensor) else beta)
-    
+
     if alpha_val == 0.0:
         if beta_val == 0.0:
             y.zero_()
@@ -995,21 +1437,37 @@ def dgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: i
         len_x, len_y = n, m
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
-        beta_is_zero = (beta_val == 0.0)
+        beta_is_zero = beta_val == 0.0
         grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
         with torch_device_fn.device(A.device):
-            dgemv_n_kernel[grid](A, x, y, alpha_int, beta_int, m, n, lda, incx, incy, beta_is_zero)
+            dgemv_n_kernel[grid](
+                A, x, y, alpha_int, beta_int, m, n, lda, incx, incy, beta_is_zero
+            )
     else:
         len_x, len_y = m, n
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
-        beta_is_zero = (beta_val == 0.0)
+        beta_is_zero = beta_val == 0.0
         grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
         with torch_device_fn.device(A.device):
-            dgemv_t_kernel[grid](A, x, y, alpha_int, beta_int, n, m, lda, incx, incy, beta_is_zero)
+            dgemv_t_kernel[grid](
+                A, x, y, alpha_int, beta_int, n, m, lda, incx, incy, beta_is_zero
+            )
 
 
-def cgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: int, x: torch.Tensor, incx: int, beta: ScalarType, y: torch.Tensor, incy: int) -> None:
+def cgemv(
+    trans: int,
+    m: int,
+    n: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
+) -> None:
     assert A.is_contiguous()
     assert x.is_contiguous()
     assert y.is_contiguous()
@@ -1053,7 +1511,7 @@ def cgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: i
     assert x.numel() >= 1 + (len_x - 1) * incx
     assert y.numel() >= 1 + (len_y - 1) * incy
 
-    beta_is_zero = (beta_real == 0.0 and beta_imag == 0.0)
+    beta_is_zero = beta_real == 0.0 and beta_imag == 0.0
     A_real = torch.view_as_real(A)
     x_real = torch.view_as_real(x)
     y_real = torch.view_as_real(y)
@@ -1061,12 +1519,54 @@ def cgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: i
     grid = lambda meta: (triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),)
     with torch_device_fn.device(A.device):
         if trans == CUBLAS_OP_N:
-            cgemv_n_kernel[grid](A_real, x_real, y_real, alpha_real, alpha_imag, beta_real, beta_imag, eff_m, eff_n, stride_am, incx, incy, beta_is_zero)
+            cgemv_n_kernel[grid](
+                A_real,
+                x_real,
+                y_real,
+                alpha_real,
+                alpha_imag,
+                beta_real,
+                beta_imag,
+                eff_m,
+                eff_n,
+                stride_am,
+                incx,
+                incy,
+                beta_is_zero,
+            )
         else:
-            cgemv_kernel[grid](A_real, x_real, y_real, alpha_real, alpha_imag, beta_real, beta_imag, eff_m, eff_n, stride_am, stride_an, incx, incy, conj, beta_is_zero)
+            cgemv_kernel[grid](
+                A_real,
+                x_real,
+                y_real,
+                alpha_real,
+                alpha_imag,
+                beta_real,
+                beta_imag,
+                eff_m,
+                eff_n,
+                stride_am,
+                stride_an,
+                incx,
+                incy,
+                conj,
+                beta_is_zero,
+            )
 
 
-def zgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: int, x: torch.Tensor, incx: int, beta: ScalarType, y: torch.Tensor, incy: int) -> None:
+def zgemv(
+    trans: int,
+    m: int,
+    n: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
+) -> None:
     assert A.is_contiguous()
     assert x.is_contiguous()
     assert y.is_contiguous()
@@ -1095,10 +1595,18 @@ def zgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: i
             y.mul_(beta)
         return
 
-    alpha_real_int = torch.tensor(alpha_real, dtype=torch.float64).view(torch.int64).item()
-    alpha_imag_int = torch.tensor(alpha_imag, dtype=torch.float64).view(torch.int64).item()
-    beta_real_int = torch.tensor(beta_real, dtype=torch.float64).view(torch.int64).item()
-    beta_imag_int = torch.tensor(beta_imag, dtype=torch.float64).view(torch.int64).item()
+    alpha_real_int = (
+        torch.tensor(alpha_real, dtype=torch.float64).view(torch.int64).item()
+    )
+    alpha_imag_int = (
+        torch.tensor(alpha_imag, dtype=torch.float64).view(torch.int64).item()
+    )
+    beta_real_int = (
+        torch.tensor(beta_real, dtype=torch.float64).view(torch.int64).item()
+    )
+    beta_imag_int = (
+        torch.tensor(beta_imag, dtype=torch.float64).view(torch.int64).item()
+    )
 
     conj = 0
     if trans == CUBLAS_OP_N:
@@ -1115,7 +1623,7 @@ def zgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: i
     assert x.numel() >= 1 + (len_x - 1) * incx
     assert y.numel() >= 1 + (len_y - 1) * incy
 
-    beta_is_zero = (beta_real == 0.0 and beta_imag == 0.0)
+    beta_is_zero = beta_real == 0.0 and beta_imag == 0.0
     A_real = torch.view_as_real(A)
     x_real = torch.view_as_real(x)
     y_real = torch.view_as_real(y)
@@ -1123,12 +1631,54 @@ def zgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: i
     grid = lambda meta: (triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),)
     with torch_device_fn.device(A.device):
         if trans == CUBLAS_OP_N:
-            zgemv_n_kernel[grid](A_real, x_real, y_real, alpha_real_int, alpha_imag_int, beta_real_int, beta_imag_int, eff_m, eff_n, stride_am, incx, incy, beta_is_zero)
+            zgemv_n_kernel[grid](
+                A_real,
+                x_real,
+                y_real,
+                alpha_real_int,
+                alpha_imag_int,
+                beta_real_int,
+                beta_imag_int,
+                eff_m,
+                eff_n,
+                stride_am,
+                incx,
+                incy,
+                beta_is_zero,
+            )
         else:
-            zgemv_kernel[grid](A_real, x_real, y_real, alpha_real_int, alpha_imag_int, beta_real_int, beta_imag_int, eff_m, eff_n, stride_am, stride_an, incx, incy, conj, beta_is_zero)
-            
+            zgemv_kernel[grid](
+                A_real,
+                x_real,
+                y_real,
+                alpha_real_int,
+                alpha_imag_int,
+                beta_real_int,
+                beta_imag_int,
+                eff_m,
+                eff_n,
+                stride_am,
+                stride_an,
+                incx,
+                incy,
+                conj,
+                beta_is_zero,
+            )
 
-def hgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: int, x: torch.Tensor, incx: int, beta: ScalarType, y: torch.Tensor, incy: int) -> None:
+
+def hgemv(
+    trans: int,
+    m: int,
+    n: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
+) -> None:
     assert A.is_contiguous()
     assert x.is_contiguous()
     assert y.is_contiguous()
@@ -1157,21 +1707,37 @@ def hgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: i
         len_x, len_y = n, m
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
-        beta_is_zero = (beta == 0.0)
+        beta_is_zero = beta == 0.0
         grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
         with torch_device_fn.device(A.device):
-            hgemv_n_kernel[grid](A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero)
+            hgemv_n_kernel[grid](
+                A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero
+            )
     else:
         len_x, len_y = m, n
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
-        beta_is_zero = (beta == 0.0)
+        beta_is_zero = beta == 0.0
         grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
         with torch_device_fn.device(A.device):
-            hgemv_t_kernel[grid](A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero)
+            hgemv_t_kernel[grid](
+                A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero
+            )
 
 
-def bfgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: int, x: torch.Tensor, incx: int, beta: ScalarType, y: torch.Tensor, incy: int) -> None:
+def bfgemv(
+    trans: int,
+    m: int,
+    n: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
+) -> None:
     assert A.is_contiguous()
     assert x.is_contiguous()
     assert y.is_contiguous()
@@ -1200,34 +1766,62 @@ def bfgemv(trans: int, m: int, n: int, alpha: ScalarType, A: torch.Tensor, lda: 
         len_x, len_y = n, m
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
-        beta_is_zero = (beta == 0.0)
+        beta_is_zero = beta == 0.0
         grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
         with torch_device_fn.device(A.device):
-            bfgemv_n_kernel[grid](A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero)
+            bfgemv_n_kernel[grid](
+                A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero
+            )
     else:
         len_x, len_y = m, n
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
-        beta_is_zero = (beta == 0.0)
+        beta_is_zero = beta == 0.0
         grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
         with torch_device_fn.device(A.device):
-            bfgemv_t_kernel[grid](A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero)
+            bfgemv_t_kernel[grid](
+                A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero
+            )
 
 
 def get_fp8_gemv_configs():
     return [
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 2048}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4),
-        triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 2048}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
+        ),
+        triton.Config(
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
+        ),
     ]
 
 
@@ -1239,12 +1833,19 @@ def get_fp8_gemv_configs():
 )
 @triton.jit
 def fp8_gemv_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha: tl.float32, beta: tl.float32,
-    m, n, STRIDE_AK,
-    INCX: tl.constexpr, INCY: tl.constexpr,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    STRIDE_AK,
+    INCX: tl.constexpr,
+    INCY: tl.constexpr,
     BETA_IS_ZERO: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
 ):
     pid = tle.program_id(0)
     row_start = pid * BLOCK_SIZE_M
@@ -1267,7 +1868,9 @@ def fp8_gemv_kernel(
         k_mask = k_offsets < n
         a_mask = k_mask[:, None] & row_mask[None, :]
 
-        a_block_load = tl.load(a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first")
+        a_block_load = tl.load(
+            a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        )
         a_block = tl.trans(a_block_load)
 
         x_block = tl.load(x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last")
@@ -1313,8 +1916,12 @@ def fp8_gemv(
     assert x.dtype in FP8_DTYPES, f"x must be FP8 dtype, got {x.dtype}"
     assert y.dtype in (torch.float32, torch.float16, torch.bfloat16)
     assert A.device == x.device == y.device
-    assert m % 16 == 0, f"Matrix dimension m ({m}) must be a multiple of 16 for 16-byte alignment"
-    assert n % 16 == 0, f"Matrix dimension n ({n}) must be a multiple of 16 for 16-byte alignment"
+    assert (
+        m % 16 == 0
+    ), f"Matrix dimension m ({m}) must be a multiple of 16 for 16-byte alignment"
+    assert (
+        n % 16 == 0
+    ), f"Matrix dimension n ({n}) must be a multiple of 16 for 16-byte alignment"
     assert lda % 16 == 0, f"lda ({lda}) must be a multiple of 16 for 16-byte alignment"
     assert A.data_ptr() % 16 == 0, "Pointer to A must be 16-byte aligned"
     assert x.data_ptr() % 16 == 0, "Pointer to x must be 16-byte aligned"
@@ -1330,14 +1937,20 @@ def fp8_gemv(
             y.mul_(beta)
         return
 
-    beta_is_zero = (beta == 0.0)
+    beta_is_zero = beta == 0.0
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
     with torch_device_fn.device(A.device):
         fp8_gemv_kernel[grid](
-            A, x, y,
-            alpha, beta,
-            n, m, lda,
-            incx, incy,
+            A,
+            x,
+            y,
+            alpha,
+            beta,
+            n,
+            m,
+            lda,
+            incx,
+            incy,
             beta_is_zero,
         )

@@ -2,7 +2,6 @@
 flag_blas - BLAS operations implemented with Triton
 """
 
-
 import torch
 import triton
 from packaging import version
@@ -19,6 +18,7 @@ from flag_blas import testing
 from flag_blas.ops import *
 from flag_blas.config import aten_patch_list, resolve_user_setting
 from flag_blas.runtime.register import Register
+
 device = runtime.device.name
 vendor_name = runtime.device.vendor_name
 aten_lib = torch.library.Library("aten", "IMPL")
@@ -28,8 +28,7 @@ runtime.replace_customized_ops(globals())
 
 __version__ = "0.1.0"
 
-_FULL_CONFIG = (
-    )
+_FULL_CONFIG = ()
 
 FULL_CONFIG_BY_FUNC = {}
 for _item in _FULL_CONFIG:
@@ -76,7 +75,7 @@ def enable(
         cpp_patched_ops=list(set(aten_patch_list)),
         lib=lib,
     )
-    #setup_flagblas_logging(path=path, record=record, once=once)
+    # setup_flagblas_logging(path=path, record=record, once=once)
 
 
 def only_enable(
@@ -131,7 +130,7 @@ def only_enable(
         full_config_by_func=FULL_CONFIG_BY_FUNC,
         lib=lib,
     )
-    #setup_flagblas_logging(path=path, record=record, once=once)
+    # setup_flagblas_logging(path=path, record=record, once=once)
 
 
 class use_blas:
@@ -180,7 +179,6 @@ class use_blas:
         del current_work_registrar
         # if self.record:
         #     teardown_flagblas_logging()
-
 
 
 def all_registered_ops():

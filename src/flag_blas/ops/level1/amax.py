@@ -141,14 +141,22 @@ def amax_kernel2(
     tl.store(out_ptr, final_idx + 1)
 
 
-def _amax_impl(n: int, x: torch.Tensor, incx: int, result: torch.Tensor, is_complex: bool, val_dtype: torch.dtype) -> None:
+def _amax_impl(
+    n: int,
+    x: torch.Tensor,
+    incx: int,
+    result: torch.Tensor,
+    is_complex: bool,
+    val_dtype: torch.dtype,
+) -> None:
     if n <= 0 or incx <= 0:
         result.zero_()
         return
 
     required_size = 1 + (n - 1) * incx
-    assert x.numel() >= required_size, \
-        f"x is too short: need at least {required_size} elements for n={n}, incx={incx}, got {x.numel()}"
+    assert (
+        x.numel() >= required_size
+    ), f"x is too short: need at least {required_size} elements for n={n}, incx={incx}, got {x.numel()}"
 
     assert x.is_contiguous(), "x must be contiguous"
     result.zero_()

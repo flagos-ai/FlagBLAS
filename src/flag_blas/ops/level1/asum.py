@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 ScalarType = Union[float, int, complex, torch.Tensor]
 
+
 @libentry()
 @triton.jit
 def asum_kernel1_real(
@@ -34,6 +35,7 @@ def asum_kernel1_real(
     block_sum = tl.sum(abs_x)
 
     tl.store(mid_ptr + pid, block_sum)
+
 
 @libentry()
 @triton.jit
@@ -57,20 +59,17 @@ def asum_kernel1_complex(
 
     tl.store(mid_ptr + pid, block_sum)
 
+
 @libentry()
 @triton.jit
-def asum_kernel2(
-    mid_ptr,
-    out_ptr,
-    mid_size,
-    BLOCK_MID: tl.constexpr
-):
+def asum_kernel2(mid_ptr, out_ptr, mid_size, BLOCK_MID: tl.constexpr):
     offset = tl.arange(0, BLOCK_MID)
     mask = offset < mid_size
     mid_val = tl.load(mid_ptr + offset, mask=mask, other=0.0)
 
     final_sum = tl.sum(mid_val)
     tl.store(out_ptr, final_sum)
+
 
 @libentry()
 @triton.jit
@@ -92,6 +91,7 @@ def asum_kernel_atomic_real(
     block_sum = tl.sum(abs_x, axis=0)
 
     tl.atomic_add(out_ptr, block_sum)
+
 
 @libentry()
 @triton.jit
@@ -115,14 +115,18 @@ def asum_kernel_atomic_complex(
 
     tl.atomic_add(out_ptr, block_sum)
 
-def _asum_impl(n: int, x: torch.Tensor, incx: int, result: torch.Tensor, is_complex: bool) -> None:
+
+def _asum_impl(
+    n: int, x: torch.Tensor, incx: int, result: torch.Tensor, is_complex: bool
+) -> None:
     if n <= 0 or incx <= 0:
         result.zero_()
         return
 
     required_size = 1 + (n - 1) * incx
-    assert x.numel() >= required_size, \
-        f"x is too short: need at least {required_size} elements for n={n}, incx={incx}, got {x.numel()}"
+    assert (
+        x.numel() >= required_size
+    ), f"x is too short: need at least {required_size} elements for n={n}, incx={incx}, got {x.numel()}"
 
     assert x.is_contiguous(), "x must be contiguous"
     result.zero_()
@@ -136,9 +140,13 @@ def _asum_impl(n: int, x: torch.Tensor, incx: int, result: torch.Tensor, is_comp
         with torch_device_fn.device(x.device):
             if is_complex:
                 x_real = torch.view_as_real(x)
-                asum_kernel_atomic_complex[(grid_size, 1, 1)](x_real, result, n, incx, block_size)
+                asum_kernel_atomic_complex[(grid_size, 1, 1)](
+                    x_real, result, n, incx, block_size
+                )
             else:
-                asum_kernel_atomic_real[(grid_size, 1, 1)](x, result, n, incx, block_size)
+                asum_kernel_atomic_real[(grid_size, 1, 1)](
+                    x, result, n, incx, block_size
+                )
     else:
         block_size = triton.next_power_of_2(math.ceil(math.sqrt(n)))
         block_size = min(block_size, 16384)
@@ -157,11 +165,13 @@ def _asum_impl(n: int, x: torch.Tensor, incx: int, result: torch.Tensor, is_comp
 
             asum_kernel2[(1, 1, 1)](mid, result, mid_size, block_mid)
 
+
 def sasum(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
     logger.debug("FLAG_BLAS SASUM")
     assert x.dtype == torch.float32, "x must be float32"
     assert result.dtype == torch.float32, "result must be float32"
     _asum_impl(n, x, incx, result, is_complex=False)
+
 
 def dasum(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
     logger.debug("FLAG_BLAS DASUM")
@@ -169,11 +179,13 @@ def dasum(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
     assert result.dtype == torch.float64, "result must be float64"
     _asum_impl(n, x, incx, result, is_complex=False)
 
+
 def scasum(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
     logger.debug("FLAG_BLAS SCASUM")
     assert x.dtype == torch.complex64, "x must be complex64"
     assert result.dtype == torch.float32, "result for scasum must be float32"
     _asum_impl(n, x, incx, result, is_complex=True)
+
 
 def dzasum(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
     logger.debug("FLAG_BLAS DZASUM")
