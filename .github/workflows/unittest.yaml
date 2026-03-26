@@ -1,0 +1,16 @@
+name: CI Auto Test
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  test-nvidia:
+    uses: ./.github/workflows/backend-test.yaml
+    with:
+      vendor: 'nvidia'
+      runner_label: 'self-hosted-nvidia'
+      gpu_check_script: 'tools/check_nvidia_gpu.sh'
+      test_script: 'tools/run_tests.sh'
