@@ -14,15 +14,18 @@ FlagBLAS is a high-performance general-purpose operator library implemented usin
 - Flexible multi-backend support mechanism
 
 ## Quick Installation
+
 ### Install Dependencies
+
 ```shell
 pip install -U scikit-build-core>=0.11 pybind11 ninja cmake
 ```
 ### Install FlagBLAS
+
 ```shell
 git clone https://github.com/flagos-ai/FlagBLAS.git
 cd FlagBLAS
 pip install  .
 ```
 
-This project is licensed under the [Apache License (version 2.0)](./LICENSE).
+This project is licensed under the [BSD 2-Clause License](./LICENSE).
