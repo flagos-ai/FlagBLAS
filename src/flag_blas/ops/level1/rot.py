@@ -193,7 +193,15 @@ def zrot_kernel(
     tl.store(y_ptr + y_base_offset + 1, new_y_imag, mask=mask)
 
 
-def srot(n: int, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int, c: ScalarType, s: ScalarType) -> None:
+def srot(
+    n: int,
+    x: torch.Tensor,
+    incx: int,
+    y: torch.Tensor,
+    incy: int,
+    c: ScalarType,
+    s: ScalarType,
+) -> None:
     logger.debug("FLAG_BLAS SROT")
 
     assert x.device == y.device, "x and y must be on the same device"
@@ -213,15 +221,27 @@ def srot(n: int, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int, c: Scal
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy
-    assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
-    assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
+    assert (
+        y.numel() >= req_size_y
+    ), f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
         srot_kernel[grid](x, y, c, s, n, incx, incy)
 
 
-def drot(n: int, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int, c: ScalarType, s: ScalarType) -> None:
+def drot(
+    n: int,
+    x: torch.Tensor,
+    incx: int,
+    y: torch.Tensor,
+    incy: int,
+    c: ScalarType,
+    s: ScalarType,
+) -> None:
     logger.debug("FLAG_BLAS DROT")
 
     assert x.device == y.device, "x and y must be on the same device"
@@ -243,15 +263,27 @@ def drot(n: int, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int, c: Scal
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy
-    assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
-    assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
+    assert (
+        y.numel() >= req_size_y
+    ), f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
         drot_kernel[grid](x, y, c_int, s_int, n, incx, incy)
 
 
-def crot(n: int, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int, c: ScalarType, s: ScalarType) -> None:
+def crot(
+    n: int,
+    x: torch.Tensor,
+    incx: int,
+    y: torch.Tensor,
+    incy: int,
+    c: ScalarType,
+    s: ScalarType,
+) -> None:
     logger.debug("FLAG_BLAS CROT")
 
     assert x.device == y.device, "x and y must be on the same device"
@@ -273,8 +305,12 @@ def crot(n: int, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int, c: Scal
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy
-    assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
-    assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
+    assert (
+        y.numel() >= req_size_y
+    ), f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
 
     x_real = torch.view_as_real(x)
     y_real = torch.view_as_real(y)
@@ -284,7 +320,15 @@ def crot(n: int, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int, c: Scal
         crot_kernel[grid](x_real, y_real, c, s_real, s_imag, n, incx, incy)
 
 
-def zrot(n: int, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int, c: ScalarType, s: ScalarType) -> None:
+def zrot(
+    n: int,
+    x: torch.Tensor,
+    incx: int,
+    y: torch.Tensor,
+    incy: int,
+    c: ScalarType,
+    s: ScalarType,
+) -> None:
     logger.debug("FLAG_BLAS ZROT")
 
     assert x.device == y.device, "x and y must be on the same device"
@@ -310,8 +354,12 @@ def zrot(n: int, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int, c: Scal
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy
-    assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
-    assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
+    assert (
+        y.numel() >= req_size_y
+    ), f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
 
     x_real = torch.view_as_real(x)
     y_real = torch.view_as_real(y)

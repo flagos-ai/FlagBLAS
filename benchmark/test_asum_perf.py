@@ -84,7 +84,9 @@ class AsumBenchmark(Benchmark):
             n = inp.numel()
 
             if cur_dtype in [torch.complex64, torch.complex128]:
-                result_dtype = torch.float32 if cur_dtype == torch.complex64 else torch.float64
+                result_dtype = (
+                    torch.float32 if cur_dtype == torch.complex64 else torch.float64
+                )
             else:
                 result_dtype = cur_dtype
 
@@ -130,14 +132,21 @@ class AsumStrideBenchmark(Benchmark):
             inp = torch.randn(n * self.incx, dtype=cur_dtype, device=self.device)
 
             if cur_dtype in [torch.complex64, torch.complex128]:
-                result_dtype = torch.float32 if cur_dtype == torch.complex64 else torch.float64
+                result_dtype = (
+                    torch.float32 if cur_dtype == torch.complex64 else torch.float64
+                )
             else:
                 result_dtype = cur_dtype
 
             result = torch.zeros(1, dtype=result_dtype, device=self.device)
 
             if n > 0:
-                yield inp, {"incx": self.incx, "n": n, "handle": handle, "result": result}
+                yield inp, {
+                    "incx": self.incx,
+                    "n": n,
+                    "handle": handle,
+                    "result": result,
+                }
 
     def get_gbps(self, args, latency):
         inp = args[0]

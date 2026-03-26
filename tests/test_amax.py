@@ -59,8 +59,9 @@ def test_accuracy_amax_real(dtype, shape, incx):
     else:
         flag_blas.ops.damax(n, x, incx, result)
 
-    assert result.item() == ref_result.item(), \
-        f"expected {ref_result.item()}, got {result.item()}"
+    assert (
+        result.item() == ref_result.item()
+    ), f"expected {ref_result.item()}, got {result.item()}"
 
 
 @pytest.mark.amax
@@ -85,14 +86,20 @@ def test_accuracy_amax_complex(dtype, shape, incx):
     else:
         flag_blas.ops.zamax(n, x, incx, result)
 
-    assert result.item() == ref_result.item(), \
-        f"expected {ref_result.item()}, got {result.item()}"
+    assert (
+        result.item() == ref_result.item()
+    ), f"expected {ref_result.item()}, got {result.item()}"
 
 
 @pytest.mark.amax
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.complex64, torch.complex128])
+@pytest.mark.parametrize(
+    "dtype", [torch.float32, torch.float64, torch.complex64, torch.complex128]
+)
 def test_accuracy_amax_empty_tensor(dtype):
-    if dtype in [torch.float64, torch.complex128] and not flag_blas.runtime.device.support_fp64:
+    if (
+        dtype in [torch.float64, torch.complex128]
+        and not flag_blas.runtime.device.support_fp64
+    ):
         pytest.skip("Device does not support float64")
 
     x = torch.randn(0, dtype=dtype, device=flag_blas.device)
@@ -116,7 +123,9 @@ def test_accuracy_amax_empty_tensor(dtype):
 
 @pytest.mark.amax
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("n,vec_size", [(1, 10), (5, 10), (10, 10), (10, 20), (100, 1000)])
+@pytest.mark.parametrize(
+    "n,vec_size", [(1, 10), (5, 10), (10, 10), (10, 20), (100, 1000)]
+)
 def test_accuracy_amax_different_n_real(dtype, n, vec_size):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -134,13 +143,16 @@ def test_accuracy_amax_different_n_real(dtype, n, vec_size):
     else:
         flag_blas.ops.damax(n, x, 1, result)
 
-    assert result.item() == ref_result.item(), \
-        f"expected {ref_result.item()}, got {result.item()}"
+    assert (
+        result.item() == ref_result.item()
+    ), f"expected {ref_result.item()}, got {result.item()}"
 
 
 @pytest.mark.amax
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-@pytest.mark.parametrize("n,vec_size", [(1, 10), (5, 10), (10, 10), (10, 20), (100, 1000)])
+@pytest.mark.parametrize(
+    "n,vec_size", [(1, 10), (5, 10), (10, 10), (10, 20), (100, 1000)]
+)
 def test_accuracy_amax_different_n_complex(dtype, n, vec_size):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -158,18 +170,22 @@ def test_accuracy_amax_different_n_complex(dtype, n, vec_size):
     else:
         flag_blas.ops.zamax(n, x, 1, result)
 
-    assert result.item() == ref_result.item(), \
-        f"expected {ref_result.item()}, got {result.item()}"
+    assert (
+        result.item() == ref_result.item()
+    ), f"expected {ref_result.item()}, got {result.item()}"
 
 
 @pytest.mark.amax
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("n,vec_size,incx", [
-    (5, 20, 2),
-    (5, 20, 3),
-    (10, 50, 2),
-    (10, 100, 5),
-])
+@pytest.mark.parametrize(
+    "n,vec_size,incx",
+    [
+        (5, 20, 2),
+        (5, 20, 3),
+        (10, 50, 2),
+        (10, 100, 5),
+    ],
+)
 def test_accuracy_amax_different_n_with_stride_real(dtype, n, vec_size, incx):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -187,18 +203,22 @@ def test_accuracy_amax_different_n_with_stride_real(dtype, n, vec_size, incx):
     else:
         flag_blas.ops.damax(n, x, incx, result)
 
-    assert result.item() == ref_result.item(), \
-        f"expected {ref_result.item()}, got {result.item()}"
+    assert (
+        result.item() == ref_result.item()
+    ), f"expected {ref_result.item()}, got {result.item()}"
 
 
 @pytest.mark.amax
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-@pytest.mark.parametrize("n,vec_size,incx", [
-    (5, 20, 2),
-    (5, 20, 3),
-    (10, 50, 2),
-    (10, 100, 5),
-])
+@pytest.mark.parametrize(
+    "n,vec_size,incx",
+    [
+        (5, 20, 2),
+        (5, 20, 3),
+        (10, 50, 2),
+        (10, 100, 5),
+    ],
+)
 def test_accuracy_amax_different_n_with_stride_complex(dtype, n, vec_size, incx):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -216,5 +236,6 @@ def test_accuracy_amax_different_n_with_stride_complex(dtype, n, vec_size, incx)
     else:
         flag_blas.ops.zamax(n, x, incx, result)
 
-    assert result.item() == ref_result.item(), \
-        f"expected {ref_result.item()}, got {result.item()}"
+    assert (
+        result.item() == ref_result.item()
+    ), f"expected {ref_result.item()}, got {result.item()}"

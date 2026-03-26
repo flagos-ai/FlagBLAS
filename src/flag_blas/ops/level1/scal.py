@@ -123,7 +123,9 @@ def sscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
     alpha = alpha.item() if isinstance(alpha, torch.Tensor) else float(alpha)
 
     req_size_x = 1 + (n - 1) * incx
-    assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
@@ -145,7 +147,9 @@ def dscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
     alpha_int = torch.tensor(alpha_val, dtype=torch.float64).view(torch.int64).item()
 
     req_size_x = 1 + (n - 1) * incx
-    assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
@@ -168,7 +172,9 @@ def cscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
     alpha_imag = float(alpha.imag) if isinstance(alpha, complex) else 0.0
 
     req_size_x = 1 + (n - 1) * incx
-    assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
 
     x_real = torch.view_as_real(x)
 

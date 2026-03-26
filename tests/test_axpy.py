@@ -9,10 +9,11 @@ import flag_blas
 from .accuracy_utils import SCALARS, AXPY_SHAPES, gems_assert_close, to_reference
 
 
-#SHAPES = [(32,), (1024,), (5333,), (16384,), (1024 * 1024,)]
+# SHAPES = [(32,), (1024,), (5333,), (16384,), (1024 * 1024,)]
 STRIDES = [(1, 1), (2, 2), (2, 3), (3, 2), (3, 3)]
 
 COMPLEX_SCALARS = [1.0 + 2.0j, -0.5 + 1.5j]
+
 
 def cublas_axpy_reference(n, alpha, x, incx, y, incy):
     assert x.dtype == y.dtype, "x and y must have the same dtype"
@@ -96,9 +97,14 @@ def test_accuracy_axpy_complex(dtype, shape, alpha, incx, incy):
 
 
 @pytest.mark.axpy
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.complex64, torch.complex128])
+@pytest.mark.parametrize(
+    "dtype", [torch.float32, torch.float64, torch.complex64, torch.complex128]
+)
 def test_accuracy_axpy_empty_tensor(dtype):
-    if dtype in [torch.float64, torch.complex128] and not flag_blas.runtime.device.support_fp64:
+    if (
+        dtype in [torch.float64, torch.complex128]
+        and not flag_blas.runtime.device.support_fp64
+    ):
         pytest.skip("Device does not support float64")
 
     x = torch.randn(0, dtype=dtype, device=flag_blas.device)

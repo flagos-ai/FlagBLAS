@@ -127,7 +127,12 @@ class AmaxStrideBenchmark(Benchmark):
             result = torch.zeros(1, dtype=torch.int32, device=self.device)
 
             if n > 0:
-                yield inp, {"incx": self.incx, "n": n, "handle": handle, "result": result}
+                yield inp, {
+                    "incx": self.incx,
+                    "n": n,
+                    "handle": handle,
+                    "result": result,
+                }
 
     def get_gbps(self, args, latency):
         inp = args[0]

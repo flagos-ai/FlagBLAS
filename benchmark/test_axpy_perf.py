@@ -32,22 +32,30 @@ def cublas_zaxpy(x, y, alpha, incx=1, incy=1, n=None, handle=None, alpha_ptr=Non
     return y
 
 
-def gems_saxpy_wrapper(x, y, alpha, incx=1, incy=1, n=None, handle=None, alpha_ptr=None):
+def gems_saxpy_wrapper(
+    x, y, alpha, incx=1, incy=1, n=None, handle=None, alpha_ptr=None
+):
     flag_blas.ops.saxpy(n, alpha, x, incx, y, incy)
     return y
 
 
-def gems_daxpy_wrapper(x, y, alpha, incx=1, incy=1, n=None, handle=None, alpha_ptr=None):
+def gems_daxpy_wrapper(
+    x, y, alpha, incx=1, incy=1, n=None, handle=None, alpha_ptr=None
+):
     flag_blas.ops.daxpy(n, alpha, x, incx, y, incy)
     return y
 
 
-def gems_caxpy_wrapper(x, y, alpha, incx=1, incy=1, n=None, handle=None, alpha_ptr=None):
+def gems_caxpy_wrapper(
+    x, y, alpha, incx=1, incy=1, n=None, handle=None, alpha_ptr=None
+):
     flag_blas.ops.caxpy(n, alpha, x, incx, y, incy)
     return y
 
 
-def gems_zaxpy_wrapper(x, y, alpha, incx=1, incy=1, n=None, handle=None, alpha_ptr=None):
+def gems_zaxpy_wrapper(
+    x, y, alpha, incx=1, incy=1, n=None, handle=None, alpha_ptr=None
+):
     flag_blas.ops.zaxpy(n, alpha, x, incx, y, incy)
     return y
 
@@ -100,11 +108,18 @@ class AxpyBenchmark(Benchmark):
             inp2 = torch.randn(shape, dtype=cur_dtype, device=self.device)
             n = inp1.numel()
             if n > 0:
-                yield inp1, inp2, {"alpha": self.alpha, "n": n, "handle": handle, "alpha_ptr": alpha_ptr}
+                yield inp1, inp2, {
+                    "alpha": self.alpha,
+                    "n": n,
+                    "handle": handle,
+                    "alpha_ptr": alpha_ptr,
+                }
 
     def get_gbps(self, args, latency):
         inp1, inp2 = args[0], args[1]
-        io_amount = shape_utils.size_in_bytes(inp1) + 2 * shape_utils.size_in_bytes(inp2)
+        io_amount = shape_utils.size_in_bytes(inp1) + 2 * shape_utils.size_in_bytes(
+            inp2
+        )
         return io_amount * 1e-9 / (latency * 1e-3)
 
 
@@ -152,7 +167,14 @@ class AxpyStrideBenchmark(Benchmark):
             inp1 = torch.randn(n * self.incx, dtype=cur_dtype, device=self.device)
             inp2 = torch.randn(n * self.incy, dtype=cur_dtype, device=self.device)
             if n > 0:
-                yield inp1, inp2, {"alpha": self.alpha, "incx": self.incx, "incy": self.incy, "n": n, "handle": handle, "alpha_ptr": alpha_ptr}
+                yield inp1, inp2, {
+                    "alpha": self.alpha,
+                    "incx": self.incx,
+                    "incy": self.incy,
+                    "n": n,
+                    "handle": handle,
+                    "alpha_ptr": alpha_ptr,
+                }
 
     def get_gbps(self, args, latency):
         inp1, inp2 = args[0], args[1]

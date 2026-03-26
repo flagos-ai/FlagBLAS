@@ -8,14 +8,16 @@ import torch
 import flag_blas
 import os
 import sys
+
 QUICK_MODE = False
 TO_CPU = False
 GEN_SHAPE = False
 try:
     import conftest
-    if hasattr(conftest, 'QUICK_MODE'):
+
+    if hasattr(conftest, "QUICK_MODE"):
         QUICK_MODE = conftest.QUICK_MODE
-    if hasattr(conftest, 'TO_CPU'):
+    if hasattr(conftest, "TO_CPU"):
         TO_CPU = conftest.TO_CPU
 except (ImportError, AttributeError):
     pass
@@ -27,58 +29,65 @@ int64_is_supported = flag_blas.runtime.device.support_int64
 from .conftest import L1_n_start
 from .conftest import L1_n_end
 from .conftest import L1_n_step
+
 L1_n_start_val = int(L1_n_start)
 L1_n_end_val = int(L1_n_end)
 L1_n_step_val = int(L1_n_step)
 print(L1_n_start_val)
 print(L1_n_end_val)
 print(L1_n_step_val)
+
+
 def gen_shape_N(n_start, n_end, n_inc):
     shape_list = [(num,) for num in range(n_start, n_end + 1, n_inc)]
     print(shape_list)
     return shape_list
 
-DEFAULT_SHAPES = [(1024,),
-            (5333,),
-            (65536,),
-            (100000,),
-            (1048576,),
-            (3000000,),
-            (4194304,),
-            (10000000,),
-            (16777216,),
-            (33554432,),
-            (50000000,),
-            (67108864,),
-            (134217728,),]
+
+DEFAULT_SHAPES = [
+    (1024,),
+    (5333,),
+    (65536,),
+    (100000,),
+    (1048576,),
+    (3000000,),
+    (4194304,),
+    (10000000,),
+    (16777216,),
+    (33554432,),
+    (50000000,),
+    (67108864,),
+    (134217728,),
+]
 
 ### axpy shape
 AXPY_SHAPES = DEFAULT_SHAPES
 if GEN_SHAPE:
     AXPY_SHAPES.clear()
-    AXPY_SHAPES=gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
+    AXPY_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
 ###
 
 ### amax shape
 AMAX_SHAPES = DEFAULT_SHAPES
 if GEN_SHAPE:
     AMAX_SHAPES.clear()
-    AMAX_SHAPES=gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
+    AMAX_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
 ###
 
 ### asum shape
 ASUM_SHAPES = DEFAULT_SHAPES
 if GEN_SHAPE:
     ASUM_SHAPES.clear()
-    ASUM_SHAPES=gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
+    ASUM_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
 ###
 
 ### scal shape
 SCAL_SHAPES = DEFAULT_SHAPES
 if GEN_SHAPE:
     SCAL_SHAPES.clear()
-    SCAL_SHAPES=gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
+    SCAL_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
 ###
+
 
 def TestForwardOnly():
     return flag_blas.vendor_name in []
@@ -290,15 +299,18 @@ def to_cpu(res, ref):
         assert ref.device == torch.device("cpu")
     return res
 
+
 def gems_assert_close(res, ref, dtype, equal_nan=False, reduce_dim=1, atol=1e-4):
     res = to_cpu(res, ref)
     flag_blas.testing.assert_close(
         res, ref, dtype, equal_nan=equal_nan, reduce_dim=reduce_dim, atol=atol
     )
 
+
 def gems_assert_equal(res, ref, equal_nan=False):
     res = to_cpu(res, ref)
     flag_blas.testing.assert_equal(res, ref, equal_nan=equal_nan)
+
 
 def unsqueeze_tuple(t, max_len):
     for _ in range(len(t), max_len):

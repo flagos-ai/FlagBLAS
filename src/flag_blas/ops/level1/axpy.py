@@ -170,7 +170,9 @@ def zaxpy_kernel(
     tl.store(y_ptr + y_base_offset + 1, out_imag, mask=mask)
 
 
-def saxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int) -> None:
+def saxpy(
+    n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int
+) -> None:
     logger.debug("FLAG_BLAS SAXPY")
 
     assert x.device == y.device, "x and y must be on the same device"
@@ -187,15 +189,21 @@ def saxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy
-    assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
-    assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
+    assert (
+        y.numel() >= req_size_y
+    ), f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
         saxpy_kernel[grid](x, y, alpha, n, incx, incy)
 
 
-def daxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int) -> None:
+def daxpy(
+    n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int
+) -> None:
     logger.debug("FLAG_BLAS DAXPY")
 
     assert x.device == y.device, "x and y must be on the same device"
@@ -213,15 +221,21 @@ def daxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy
-    assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
-    assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
+    assert (
+        y.numel() >= req_size_y
+    ), f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
         daxpy_kernel[grid](x, y, alpha_int, n, incx, incy)
 
 
-def caxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int) -> None:
+def caxpy(
+    n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int
+) -> None:
     logger.debug("FLAG_BLAS CAXPY")
 
     assert x.device == y.device, "x and y must be on the same device"
@@ -240,8 +254,12 @@ def caxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy
-    assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
-    assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
+    assert (
+        y.numel() >= req_size_y
+    ), f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
 
     x_real = torch.view_as_real(x)
     y_real = torch.view_as_real(y)
@@ -251,7 +269,9 @@ def caxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor
         caxpy_kernel[grid](x_real, y_real, alpha_real, alpha_imag, n, incx, incy)
 
 
-def zaxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int) -> None:
+def zaxpy(
+    n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int
+) -> None:
     logger.debug("FLAG_BLAS ZAXPY")
 
     assert x.device == y.device, "x and y must be on the same device"
@@ -268,17 +288,27 @@ def zaxpy(n: int, alpha: ScalarType, x: torch.Tensor, incx: int, y: torch.Tensor
     alpha_real = float(alpha.real) if isinstance(alpha, complex) else float(alpha)
     alpha_imag = float(alpha.imag) if isinstance(alpha, complex) else 0.0
 
-    alpha_real_int = torch.tensor(alpha_real, dtype=torch.float64).view(torch.int64).item()
-    alpha_imag_int = torch.tensor(alpha_imag, dtype=torch.float64).view(torch.int64).item()
+    alpha_real_int = (
+        torch.tensor(alpha_real, dtype=torch.float64).view(torch.int64).item()
+    )
+    alpha_imag_int = (
+        torch.tensor(alpha_imag, dtype=torch.float64).view(torch.int64).item()
+    )
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy
-    assert x.numel() >= req_size_x, f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
-    assert y.numel() >= req_size_y, f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
+    assert (
+        y.numel() >= req_size_y
+    ), f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
 
     x_real = torch.view_as_real(x)
     y_real = torch.view_as_real(y)
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
-        zaxpy_kernel[grid](x_real, y_real, alpha_real_int, alpha_imag_int, n, incx, incy)
+        zaxpy_kernel[grid](
+            x_real, y_real, alpha_real_int, alpha_imag_int, n, incx, incy
+        )

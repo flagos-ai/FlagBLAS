@@ -13,27 +13,165 @@ from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
 
 
-def cublas_sgemv(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx, beta, incy, handle, alpha_ptr, beta_ptr):
-    cublas.sgemv(handle, trans, m, n, alpha_ptr, A.data_ptr(), lda_col, x.data_ptr(), incx, beta_ptr, y.data_ptr(), incy)
+def cublas_sgemv(
+    A,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_row,
+    lda_col,
+    lda_row,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    cublas.sgemv(
+        handle,
+        trans,
+        m,
+        n,
+        alpha_ptr,
+        A.data_ptr(),
+        lda_col,
+        x.data_ptr(),
+        incx,
+        beta_ptr,
+        y.data_ptr(),
+        incy,
+    )
     return y
 
 
-def cublas_dgemv(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx, beta, incy, handle, alpha_ptr, beta_ptr):
-    cublas.dgemv(handle, trans, m, n, alpha_ptr, A.data_ptr(), lda_col, x.data_ptr(), incx, beta_ptr, y.data_ptr(), incy)
+def cublas_dgemv(
+    A,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_row,
+    lda_col,
+    lda_row,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    cublas.dgemv(
+        handle,
+        trans,
+        m,
+        n,
+        alpha_ptr,
+        A.data_ptr(),
+        lda_col,
+        x.data_ptr(),
+        incx,
+        beta_ptr,
+        y.data_ptr(),
+        incy,
+    )
     return y
 
 
-def cublas_cgemv(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx, beta, incy, handle, alpha_ptr, beta_ptr):
-    cublas.cgemv(handle, trans, m, n, alpha_ptr, A.data_ptr(), lda_col, x.data_ptr(), incx, beta_ptr, y.data_ptr(), incy)
+def cublas_cgemv(
+    A,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_row,
+    lda_col,
+    lda_row,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    cublas.cgemv(
+        handle,
+        trans,
+        m,
+        n,
+        alpha_ptr,
+        A.data_ptr(),
+        lda_col,
+        x.data_ptr(),
+        incx,
+        beta_ptr,
+        y.data_ptr(),
+        incy,
+    )
     return y
 
 
-def cublas_zgemv(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx, beta, incy, handle, alpha_ptr, beta_ptr):
-    cublas.zgemv(handle, trans, m, n, alpha_ptr, A.data_ptr(), lda_col, x.data_ptr(), incx, beta_ptr, y.data_ptr(), incy)
+def cublas_zgemv(
+    A,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_row,
+    lda_col,
+    lda_row,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    cublas.zgemv(
+        handle,
+        trans,
+        m,
+        n,
+        alpha_ptr,
+        A.data_ptr(),
+        lda_col,
+        x.data_ptr(),
+        incx,
+        beta_ptr,
+        y.data_ptr(),
+        incy,
+    )
     return y
 
 
-def cublas_half_gemv(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx, beta, incy, handle, alpha_ptr, beta_ptr, cuda_type):
+def cublas_half_gemv(
+    A,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_row,
+    lda_col,
+    lda_row,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+    cuda_type,
+):
     CUDA_R_32F = 0
     if trans == CUBLAS_OP_N:
         transA = cublas.CUBLAS_OP_T
@@ -48,45 +186,158 @@ def cublas_half_gemv(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx,
 
     cublas.gemmEx(
         handle,
-        transA, transB,
-        m_c, n_c, k_c,
+        transA,
+        transB,
+        m_c,
+        n_c,
+        k_c,
         alpha_ptr,
-        A_row.data_ptr(), cuda_type, lda_c,
-        x.data_ptr(), cuda_type, ldb_c,
+        A_row.data_ptr(),
+        cuda_type,
+        lda_c,
+        x.data_ptr(),
+        cuda_type,
+        ldb_c,
         beta_ptr,
-        y.data_ptr(), cuda_type, ldc_c,
+        y.data_ptr(),
+        cuda_type,
+        ldc_c,
         CUDA_R_32F,
-        0
+        0,
     )
     return y
 
 
-def gems_sgemv_wrapper(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx, beta, incy, handle, alpha_ptr, beta_ptr):
+def gems_sgemv_wrapper(
+    A,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_row,
+    lda_col,
+    lda_row,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
     flag_blas.ops.sgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
 
-def gems_dgemv_wrapper(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx, beta, incy, handle, alpha_ptr, beta_ptr):
+def gems_dgemv_wrapper(
+    A,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_row,
+    lda_col,
+    lda_row,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
     flag_blas.ops.dgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
 
-def gems_cgemv_wrapper(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx, beta, incy, handle, alpha_ptr, beta_ptr):
+def gems_cgemv_wrapper(
+    A,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_row,
+    lda_col,
+    lda_row,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
     flag_blas.ops.cgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
 
-def gems_zgemv_wrapper(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx, beta, incy, handle, alpha_ptr, beta_ptr):
+def gems_zgemv_wrapper(
+    A,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_row,
+    lda_col,
+    lda_row,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
     flag_blas.ops.zgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
 
-def gems_hgemv_wrapper(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx, beta, incy, handle, alpha_ptr, beta_ptr, cuda_type=None):
+def gems_hgemv_wrapper(
+    A,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_row,
+    lda_col,
+    lda_row,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+    cuda_type=None,
+):
     flag_blas.ops.hgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
 
-def gems_bfgemv_wrapper(A, x, y, trans, m, n, alpha, A_row, lda_col, lda_row, incx, beta, incy, handle, alpha_ptr, beta_ptr, cuda_type=None):
+def gems_bfgemv_wrapper(
+    A,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_row,
+    lda_col,
+    lda_row,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+    cuda_type=None,
+):
     flag_blas.ops.bfgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
@@ -166,7 +417,7 @@ class GemvBenchmark(Benchmark):
 
         for shape in self.shapes:
             m, n = shape
-            
+
             A_col = torch.randn(n, m, dtype=cur_dtype, device=self.device).t()
             A_row = A_col.contiguous()
 
@@ -200,8 +451,13 @@ class GemvBenchmark(Benchmark):
 
     def get_gbps(self, args, latency):
         A, x, y = args[0], args[1], args[2]
-        io_amount = shape_utils.size_in_bytes(A) + shape_utils.size_in_bytes(x) + 2 * shape_utils.size_in_bytes(y)
+        io_amount = (
+            shape_utils.size_in_bytes(A)
+            + shape_utils.size_in_bytes(x)
+            + 2 * shape_utils.size_in_bytes(y)
+        )
         return io_amount * 1e-9 / (latency * 1e-3)
+
 
 @pytest.mark.gemv
 def test_perf_sgemv():
@@ -382,7 +638,7 @@ class HalfGemvBenchmark(GemvBenchmark):
                 "handle": handle,
                 "alpha_ptr": alpha_ptr,
                 "beta_ptr": beta_ptr,
-                "cuda_type": cuda_type
+                "cuda_type": cuda_type,
             }
 
 
@@ -434,29 +690,75 @@ def test_perf_bfgemv_trans():
     bench.run()
 
 
-def cublas_sgemv_fp8_baseline(A_fp8, x_fp8, y,
-                              trans, m, n, alpha,
-                              A_col_f32, x_f32_ref, lda,
-                              incx, beta, incy,
-                              handle, alpha_ptr, beta_ptr):
-    cublas.sgemv(handle, trans, m, n, alpha_ptr, A_col_f32.data_ptr(), lda,
-                 x_f32_ref.data_ptr(), incx, beta_ptr, y.data_ptr(), incy)
+def cublas_sgemv_fp8_baseline(
+    A_fp8,
+    x_fp8,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_col_f32,
+    x_f32_ref,
+    lda,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    cublas.sgemv(
+        handle,
+        trans,
+        m,
+        n,
+        alpha_ptr,
+        A_col_f32.data_ptr(),
+        lda,
+        x_f32_ref.data_ptr(),
+        incx,
+        beta_ptr,
+        y.data_ptr(),
+        incy,
+    )
     return y
 
 
-def gems_fp8_gemv_wrapper(A_fp8, x_fp8, y,
-                          trans, m, n, alpha,
-                          A_col_f32, x_f32_ref, lda,
-                          incx, beta, incy,
-                          handle, alpha_ptr, beta_ptr, **kwargs):
+def gems_fp8_gemv_wrapper(
+    A_fp8,
+    x_fp8,
+    y,
+    trans,
+    m,
+    n,
+    alpha,
+    A_col_f32,
+    x_f32_ref,
+    lda,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+    **kwargs,
+):
     flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, incx, beta, y, incy)
     return y
 
 
 class Fp8GemvBenchmark(Benchmark):
 
-    def __init__(self, *args, trans=CUBLAS_OP_N, alpha=1.5, beta=0.5,
-                 fp8_dtype=torch.float8_e4m3fn, **kwargs):
+    def __init__(
+        self,
+        *args,
+        trans=CUBLAS_OP_N,
+        alpha=1.5,
+        beta=0.5,
+        fp8_dtype=torch.float8_e4m3fn,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.trans = trans
         self.alpha = alpha
@@ -468,12 +770,31 @@ class Fp8GemvBenchmark(Benchmark):
 
     def set_more_shapes(self):
         shapes = [
-            (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024),
-            (3584, 3584), (4096, 4096), (7168, 7168), (8192, 8192),
-            (16384, 16384), (18432, 18432), (1024, 4096), (3584, 18944),
-            (4096, 14336), (6144, 16384), (7168, 18432), (8192, 28672),
-            (16384, 53248), (4096, 1024), (18944, 3584), (14336, 4096),
-            (16384, 6144), (18432, 7168), (28672, 8192), (53248, 16384),
+            (64, 64),
+            (128, 128),
+            (256, 256),
+            (512, 512),
+            (1024, 1024),
+            (3584, 3584),
+            (4096, 4096),
+            (7168, 7168),
+            (8192, 8192),
+            (16384, 16384),
+            (18432, 18432),
+            (1024, 4096),
+            (3584, 18944),
+            (4096, 14336),
+            (6144, 16384),
+            (7168, 18432),
+            (8192, 28672),
+            (16384, 53248),
+            (4096, 1024),
+            (18944, 3584),
+            (14336, 4096),
+            (16384, 6144),
+            (18432, 7168),
+            (28672, 8192),
+            (53248, 16384),
         ]
         self.shapes = [(m, n) for m, n in shapes if m % 16 == 0 and n % 16 == 0]
         return None
@@ -524,9 +845,11 @@ class Fp8GemvBenchmark(Benchmark):
 
     def get_gbps(self, args, latency):
         A_fp8, x_fp8, y = args[0], args[1], args[2]
-        io_amount = (shape_utils.size_in_bytes(A_fp8)
-                     + shape_utils.size_in_bytes(x_fp8)
-                     + 2 * shape_utils.size_in_bytes(y))
+        io_amount = (
+            shape_utils.size_in_bytes(A_fp8)
+            + shape_utils.size_in_bytes(x_fp8)
+            + 2 * shape_utils.size_in_bytes(y)
+        )
         return io_amount * 1e-9 / (latency * 1e-3)
 
 

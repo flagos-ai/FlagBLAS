@@ -97,13 +97,22 @@ def test_accuracy_asum_complex(dtype, shape, incx):
 
 
 @pytest.mark.asum
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.complex64, torch.complex128])
+@pytest.mark.parametrize(
+    "dtype", [torch.float32, torch.float64, torch.complex64, torch.complex128]
+)
 def test_accuracy_asum_empty_tensor(dtype):
-    if dtype in [torch.float64, torch.complex128] and not flag_blas.runtime.device.support_fp64:
+    if (
+        dtype in [torch.float64, torch.complex128]
+        and not flag_blas.runtime.device.support_fp64
+    ):
         pytest.skip("Device does not support float64")
 
     x = torch.randn(0, dtype=dtype, device=flag_blas.device)
-    result_dtype = dtype if dtype in [torch.float32, torch.float64] else (torch.float32 if dtype == torch.complex64 else torch.float64)
+    result_dtype = (
+        dtype
+        if dtype in [torch.float32, torch.float64]
+        else (torch.float32 if dtype == torch.complex64 else torch.float64)
+    )
     result = torch.zeros(1, dtype=result_dtype, device=flag_blas.device)
 
     n = 0
@@ -124,7 +133,9 @@ def test_accuracy_asum_empty_tensor(dtype):
 
 @pytest.mark.asum
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("n,vec_size", [(1, 10), (5, 10), (10, 10), (10, 20), (100, 1000)])
+@pytest.mark.parametrize(
+    "n,vec_size", [(1, 10), (5, 10), (10, 10), (10, 20), (100, 1000)]
+)
 def test_accuracy_asum_different_n_real(dtype, n, vec_size):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -147,7 +158,9 @@ def test_accuracy_asum_different_n_real(dtype, n, vec_size):
 
 @pytest.mark.asum
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-@pytest.mark.parametrize("n,vec_size", [(1, 10), (5, 10), (10, 10), (10, 20), (100, 1000)])
+@pytest.mark.parametrize(
+    "n,vec_size", [(1, 10), (5, 10), (10, 10), (10, 20), (100, 1000)]
+)
 def test_accuracy_asum_different_n_complex(dtype, n, vec_size):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -171,12 +184,15 @@ def test_accuracy_asum_different_n_complex(dtype, n, vec_size):
 
 @pytest.mark.asum
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("n,vec_size,incx", [
-    (5, 20, 2),
-    (5, 20, 3),
-    (10, 50, 2),
-    (10, 100, 5),
-])
+@pytest.mark.parametrize(
+    "n,vec_size,incx",
+    [
+        (5, 20, 2),
+        (5, 20, 3),
+        (10, 50, 2),
+        (10, 100, 5),
+    ],
+)
 def test_accuracy_asum_different_n_with_stride_real(dtype, n, vec_size, incx):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -199,12 +215,15 @@ def test_accuracy_asum_different_n_with_stride_real(dtype, n, vec_size, incx):
 
 @pytest.mark.asum
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-@pytest.mark.parametrize("n,vec_size,incx", [
-    (5, 20, 2),
-    (5, 20, 3),
-    (10, 50, 2),
-    (10, 100, 5),
-])
+@pytest.mark.parametrize(
+    "n,vec_size,incx",
+    [
+        (5, 20, 2),
+        (5, 20, 3),
+        (10, 50, 2),
+        (10, 100, 5),
+    ],
+)
 def test_accuracy_asum_different_n_with_stride_complex(dtype, n, vec_size, incx):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
