@@ -28,4 +28,4 @@ cd FlagBLAS
 pip install  .
 ```
 
-This project is licensed under the [BSD 2-Clause License](./LICENSE).
+This project is licensed under the [Apache (Version 2.0) License](./LICENSE).
