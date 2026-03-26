@@ -13,20 +13,19 @@ FlagBLAS 是一个使用 OpenAI 推出的[Triton 编程语言](https://github.co
 - Triton kernel 调用优化
 - 灵活的多后端支持机制
 
-
 ## 快速安装
+
 ### 安装依赖
+
 ```shell
 pip install -U scikit-build-core>=0.11 pybind11 ninja cmake
 ```
 ### 安装FlagBLAS
+
 ```shell
 git clone https://github.com/flagos-ai/FlagBLAS.git
 cd FlagBLAS
 pip install  .
 ```
 
-
-
-
-本项目采用 [Apache License (version 2.0)](./LICENSE) 授权许可。
+本项目采用 [BSD 2-Clause License](./LICENSE) 授权许可。
