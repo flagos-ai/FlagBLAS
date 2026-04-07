@@ -27,6 +27,7 @@ from flag_blas.ops.level1.rot import (
     zrot,
 )
 from flag_blas.ops.level1.scal import (
+    zscal,
     cscal,
     dscal,
     sscal,
@@ -67,6 +68,7 @@ __all__ = [
     "saxpy",
     "zaxpy",
     # scal
+    "zscal",
     "cscal",
     "dscal",
     "sscal",
