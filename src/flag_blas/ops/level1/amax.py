@@ -141,6 +141,62 @@ def amax_kernel2(
     tl.store(out_ptr, final_idx + 1)
 
 
+
+@libentry()
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_SIZE": 64},  num_warps=1, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=1, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 1024}, num_warps=4, num_stages=1),
+    ],
+    key=["n", "INCX"],
+)
+@triton.jit
+def amax_kernel_small_real(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr):
+    idx = tl.arange(0, BLOCK_SIZE)
+    mask = idx < n
+    x = tl.load(x_ptr + idx * INCX, mask=mask, other=0.0)
+    abs_x = tl.abs(x)
+
+    max_val = tl.max(abs_x, axis=0)
+    is_max = (abs_x == max_val) & mask
+    candidate_idx = tl.where(is_max, idx, 2147483647)
+    final_idx = tl.min(candidate_idx, axis=0)
+    tl.store(out_ptr, final_idx + 1)
+
+
+@libentry()
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_SIZE": 64},  num_warps=1, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=1, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 1024}, num_warps=4, num_stages=1),
+    ],
+    key=["n", "INCX"],
+)
+@triton.jit
+def amax_kernel_small_complex(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr):
+    idx = tl.arange(0, BLOCK_SIZE)
+    idx = idx.to(tl.int32)
+    mask = idx < n
+    x_base_offset = idx * INCX * 2
+    x_real = tl.load(x_ptr + x_base_offset,     mask=mask, other=0.0)
+    x_imag = tl.load(x_ptr + x_base_offset + 1, mask=mask, other=0.0)
+    abs_x = tl.abs(x_real) + tl.abs(x_imag)
+
+    max_val = tl.max(abs_x, axis=0)
+    is_max = (abs_x == max_val) & mask
+    candidate_idx = tl.where(is_max, idx, 2147483647)
+    final_idx = tl.min(candidate_idx, axis=0)
+    tl.store(out_ptr, final_idx + 1)
+
+SMALL_N_THRESHOLD = 2048
+
+
 def _amax_impl(
     n: int,
     x: torch.Tensor,
@@ -159,22 +215,26 @@ def _amax_impl(
     ), f"x is too short: need at least {required_size} elements for n={n}, incx={incx}, got {x.numel()}"
 
     assert x.is_contiguous(), "x must be contiguous"
-    result.zero_()
-
-    grid_size = min(triton.cdiv(n, 256), MAX_NUM_BLOCKS)
-    block_mid = triton.next_power_of_2(grid_size)
-
-    mid_val = torch.empty((grid_size,), dtype=val_dtype, device=x.device)
-    mid_idx = torch.empty((grid_size,), dtype=torch.int32, device=x.device)
+    # result.zero_()
 
     with torch_device_fn.device(x.device):
-        if is_complex:
-            x_real = torch.view_as_real(x)
-            amax_kernel1_complex[(grid_size, 1, 1)](x_real, mid_val, mid_idx, n, incx)
+        if n <= SMALL_N_THRESHOLD:
+            if is_complex:
+                x_real = torch.view_as_real(x)
+                amax_kernel_small_complex[(1, 1, 1)](x_real, result, n, incx)
+            else:
+                amax_kernel_small_real[(1, 1, 1)](x, result, n, incx)
         else:
-            amax_kernel1_real[(grid_size, 1, 1)](x, mid_val, mid_idx, n, incx)
-
-        amax_kernel2[(1, 1, 1)](mid_val, mid_idx, result, grid_size, block_mid)
+            grid_size = min(triton.cdiv(n, 256), MAX_NUM_BLOCKS)
+            block_mid = triton.next_power_of_2(grid_size)
+            mid_val = torch.empty((grid_size,), dtype=val_dtype, device=x.device)
+            mid_idx = torch.empty((grid_size,), dtype=torch.int32, device=x.device)
+            if is_complex:
+                x_real = torch.view_as_real(x)
+                amax_kernel1_complex[(grid_size, 1, 1)](x_real, mid_val, mid_idx, n, incx)
+            else:
+                amax_kernel1_real[(grid_size, 1, 1)](x, mid_val, mid_idx, n, incx)
+            amax_kernel2[(1, 1, 1)](mid_val, mid_idx, result, grid_size, block_mid)
 
 
 def samax(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
