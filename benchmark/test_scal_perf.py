@@ -30,6 +30,15 @@ def cublas_zscal(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     cublas.zscal(handle, n, alpha_ptr, x.data_ptr(), incx)
     return x
 
+def cublas_csscal(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
+    cublas.csscal(handle, n, alpha_ptr, x.data_ptr(), incx)
+    return x
+
+def cublas_zdscal(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
+    cublas.zdscal(handle, n, alpha_ptr, x.data_ptr(), incx)
+    return x
+
+
 def gems_sscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     flag_blas.ops.sscal(n, alpha, x, incx)
     return x
@@ -46,6 +55,15 @@ def gems_cscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=Non
 
 def gems_zscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     flag_blas.ops.zscal(n, alpha, x, incx)
+    return x
+
+def gems_csscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
+    flag_blas.ops.csscal(n, alpha, x, incx)
+    return x
+
+
+def gems_zdscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
+    flag_blas.ops.zdscal(n, alpha, x, incx)
     return x
 
 class ScalBenchmark(Benchmark):
@@ -219,6 +237,30 @@ def test_perf_zscal():
     bench.run()
 
 @pytest.mark.scal
+def test_perf_csscal():
+    bench = ScalBenchmark(
+        op_name="csscal",
+        torch_op=cublas_csscal,
+        gems_op=gems_csscal_wrapper,
+        dtypes=[torch.complex64],
+        alpha=0.01,
+    )
+    bench.run()
+
+@pytest.mark.scal
+def test_perf_zdscal():
+    if not flag_blas.runtime.device.support_fp64:
+        pytest.skip("Device does not support float64/complex128")
+    bench = ScalBenchmark(
+        op_name="zdscal",
+        torch_op=cublas_zdscal,
+        gems_op=gems_zdscal_wrapper,
+        dtypes=[torch.complex128],
+        alpha=0.01,
+    )
+    bench.run()
+
+@pytest.mark.scal
 @pytest.mark.parametrize("incx", [2, 3, 5])
 def test_perf_sscal_stride(incx):
     bench = ScalStrideBenchmark(
@@ -271,5 +313,34 @@ def test_perf_zscal_stride(incx):
         dtypes=[torch.complex128],
         incx=incx,
         alpha=0.01 + 0.01j,
+    )
+    bench.run()
+
+
+@pytest.mark.scal
+@pytest.mark.parametrize("incx", [2, 3, 5])
+def test_perf_csscal_stride(incx):
+    bench = ScalStrideBenchmark(
+        op_name=f"csscal_stride_incx{incx}",
+        torch_op=cublas_csscal,
+        gems_op=gems_csscal_wrapper,
+        dtypes=[torch.complex64],
+        incx=incx,
+        alpha=0.01,
+    )
+    bench.run()
+
+@pytest.mark.scal
+@pytest.mark.parametrize("incx", [2, 3, 5])
+def test_perf_zdscal_stride(incx):
+    if not flag_blas.runtime.device.support_fp64:
+        pytest.skip("Device does not support float64/complex128")
+    bench = ScalStrideBenchmark(
+        op_name=f"zdscal_stride_incx{incx}",
+        torch_op=cublas_zdscal,
+        gems_op=gems_zdscal_wrapper,
+        dtypes=[torch.complex128],
+        incx=incx,
+        alpha=0.01,
     )
     bench.run()
