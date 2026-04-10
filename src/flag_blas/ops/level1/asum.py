@@ -186,13 +186,6 @@ def scasum(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
     assert result.dtype == torch.float32, "result for scasum must be float32"
     _asum_impl(n, x, incx, result, is_complex=True)
 
-
-# def dzasum(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
-#     logger.debug("FLAG_BLAS DZASUM")
-#     assert x.dtype == torch.complex128, "x must be complex128"
-#     assert result.dtype == torch.float64, "result for dzasum must be float64"
-#     _asum_impl(n, x, incx, result, is_complex=True)
-
 @libentry()
 @triton.jit
 def dzasum_stage1_contig_kernel(

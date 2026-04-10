@@ -103,28 +103,29 @@ def test_accuracy_zdscal(shape, alpha, incx):
 
     flag_blas.ops.zdscal(n, alpha, x, incx)
     torch.testing.assert_close(x, ref_x, rtol=1e-15, atol=1e-15)
-# @pytest.mark.scal
-# @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-# @pytest.mark.parametrize("shape", SCAL_SHAPES)
-# @pytest.mark.parametrize("alpha", SCALARS)
-# @pytest.mark.parametrize("incx", STRIDES)
-# def test_accuracy_scal_real(dtype, shape, alpha, incx):
-#     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
-#         pytest.skip("Device does not support float64")
 
-#     n = shape[0]
-#     x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+@pytest.mark.scal
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("shape", SCAL_SHAPES)
+@pytest.mark.parametrize("alpha", SCALARS)
+@pytest.mark.parametrize("incx", STRIDES)
+def test_accuracy_scal_real(dtype, shape, alpha, incx):
+    if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
+        pytest.skip("Device does not support float64")
 
-#     ref_x = x.clone()
+    n = shape[0]
+    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
 
-#     cublas_scal_reference(n, alpha, ref_x, incx)
+    ref_x = x.clone()
 
-#     if dtype == torch.float32:
-#         flag_blas.ops.sscal(n, alpha, x, incx)
-#         torch.testing.assert_close(x, ref_x, rtol=1e-5, atol=1e-5)
-#     else:
-#         flag_blas.ops.dscal(n, alpha, x, incx)
-#         torch.testing.assert_close(x, ref_x, rtol=1e-15, atol=1e-15)
+    cublas_scal_reference(n, alpha, ref_x, incx)
+
+    if dtype == torch.float32:
+        flag_blas.ops.sscal(n, alpha, x, incx)
+        torch.testing.assert_close(x, ref_x, rtol=1e-5, atol=1e-5)
+    else:
+        flag_blas.ops.dscal(n, alpha, x, incx)
+        torch.testing.assert_close(x, ref_x, rtol=1e-15, atol=1e-15)
 
 
 @pytest.mark.scal
@@ -201,26 +202,26 @@ def test_accuracy_zdscal_empty_tensor():
 
     torch.testing.assert_close(x, ref_x)
 
-# @pytest.mark.scal
-# @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-# @pytest.mark.parametrize("n, vec_size", [(1, 10), (5, 10), (10, 10), (10, 20), (100, 1000)])
-# def test_accuracy_scal_different_n_real(dtype, n, vec_size):
-#     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
-#         pytest.skip("Device does not support float64")
+@pytest.mark.scal
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("n, vec_size", [(1, 10), (5, 10), (10, 10), (10, 20), (100, 1000)])
+def test_accuracy_scal_different_n_real(dtype, n, vec_size):
+    if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
+        pytest.skip("Device does not support float64")
 
-#     alpha = 2.5
-#     x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    alpha = 2.5
+    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
 
-#     ref_x = x.clone()
+    ref_x = x.clone()
 
-#     cublas_scal_reference(n, alpha, ref_x, 1)
+    cublas_scal_reference(n, alpha, ref_x, 1)
 
-#     if dtype == torch.float32:
-#         flag_blas.ops.sscal(n, alpha, x, 1)
-#         torch.testing.assert_close(x, ref_x, rtol=1e-5, atol=1e-5)
-#     else:
-#         flag_blas.ops.dscal(n, alpha, x, 1)
-#         torch.testing.assert_close(x, ref_x, rtol=1e-15, atol=1e-15)
+    if dtype == torch.float32:
+        flag_blas.ops.sscal(n, alpha, x, 1)
+        torch.testing.assert_close(x, ref_x, rtol=1e-5, atol=1e-5)
+    else:
+        flag_blas.ops.dscal(n, alpha, x, 1)
+        torch.testing.assert_close(x, ref_x, rtol=1e-15, atol=1e-15)
 
 
 @pytest.mark.scal
@@ -272,31 +273,32 @@ def test_accuracy_zdscal_different_n(n, vec_size):
 
     flag_blas.ops.zdscal(n, alpha, x, 1)
     torch.testing.assert_close(x, ref_x, rtol=1e-15, atol=1e-15)
-# @pytest.mark.scal
-# @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-# @pytest.mark.parametrize("n, vec_size, incx", [
-#     (5, 20, 2),
-#     (5, 30, 3),
-#     (10, 50, 2),
-#     (10, 100, 5),
-# ])
-# def test_accuracy_scal_different_n_with_stride_real(dtype, n, vec_size, incx):
-#     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
-#         pytest.skip("Device does not support float64")
 
-#     alpha = -0.75
-#     x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+@pytest.mark.scal
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("n, vec_size, incx", [
+    (5, 20, 2),
+    (5, 30, 3),
+    (10, 50, 2),
+    (10, 100, 5),
+])
+def test_accuracy_scal_different_n_with_stride_real(dtype, n, vec_size, incx):
+    if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
+        pytest.skip("Device does not support float64")
 
-#     ref_x = x.clone()
+    alpha = -0.75
+    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
 
-#     cublas_scal_reference(n, alpha, ref_x, incx)
+    ref_x = x.clone()
 
-#     if dtype == torch.float32:
-#         flag_blas.ops.sscal(n, alpha, x, incx)
-#         torch.testing.assert_close(x, ref_x, rtol=1e-5, atol=1e-5)
-#     else:
-#         flag_blas.ops.dscal(n, alpha, x, incx)
-#         torch.testing.assert_close(x, ref_x, rtol=1e-15, atol=1e-15)
+    cublas_scal_reference(n, alpha, ref_x, incx)
+
+    if dtype == torch.float32:
+        flag_blas.ops.sscal(n, alpha, x, incx)
+        torch.testing.assert_close(x, ref_x, rtol=1e-5, atol=1e-5)
+    else:
+        flag_blas.ops.dscal(n, alpha, x, incx)
+        torch.testing.assert_close(x, ref_x, rtol=1e-15, atol=1e-15)
 
 
 @pytest.mark.scal

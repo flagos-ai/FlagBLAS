@@ -194,7 +194,7 @@ def amax_kernel_small_complex(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr)
     final_idx = tl.min(candidate_idx, axis=0)
     tl.store(out_ptr, final_idx + 1)
 
-SMALL_N_THRESHOLD = 2048
+SMALL_N_THRESHOLD = 4096
 
 
 def _amax_impl(
