@@ -237,7 +237,9 @@ def test_sgemm_empty(m, n, k):
 
 
 @pytest.mark.sgemm
-@pytest.mark.parametrize("alpha,beta", [(1.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)])
+@pytest.mark.parametrize(
+    "alpha,beta", [(1.0, 0.0), (2.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)]
+)
 def test_sgemm_alpha_beta(alpha, beta):
     m, n, k = 256, 256, 256
     dtype = torch.float32
@@ -398,7 +400,9 @@ def test_hgemm_empty(m, n, k):
 
 
 @pytest.mark.hgemm
-@pytest.mark.parametrize("alpha,beta", [(1.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)])
+@pytest.mark.parametrize(
+    "alpha,beta", [(1.0, 0.0), (2.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)]
+)
 def test_hgemm_alpha_beta(alpha, beta):
     m, n, k = 256, 256, 256
     dtype = torch.float16
@@ -594,7 +598,9 @@ def test_bfgemm_empty(m, n, k):
 
 
 @pytest.mark.bfgemm
-@pytest.mark.parametrize("alpha,beta", [(1.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)])
+@pytest.mark.parametrize(
+    "alpha,beta", [(1.0, 0.0), (2.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)]
+)
 def test_bfgemm_alpha_beta(alpha, beta):
     m, n, k = 256, 256, 256
     dtype = torch.bfloat16
@@ -834,7 +840,9 @@ def test_fp8gemm_beta_zero():
 
 
 @pytest.mark.fp8gemm
-@pytest.mark.parametrize("alpha,beta", [(1.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)])
+@pytest.mark.parametrize(
+    "alpha,beta", [(1.0, 0.0), (2.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)]
+)
 def test_fp8gemm_alpha_beta(alpha, beta):
     m, n, k = 256, 256, 256
     fp8_dtype = torch.float8_e4m3fn
