@@ -14,6 +14,12 @@ from flag_blas.ops.level1.asum import (
     sasum,
     scasum,
 )
+from flag_blas.ops.level1.nrm2 import (
+    snrm2,
+    dnrm2,
+    scnrm2,
+    dznrm2
+)
 from flag_blas.ops.level1.axpy import (
     caxpy,
     daxpy,
@@ -64,6 +70,11 @@ __all__ = [
     "dzasum",
     "sasum",
     "scasum",
+    # nrm2
+    "snrm2",
+    "dnrm2",
+    "scnrm2",
+    "dznrm2",
     # axpy
     "caxpy",
     "daxpy",
