@@ -31,6 +31,8 @@ from flag_blas.ops.level1.scal import (
     cscal,
     dscal,
     sscal,
+    csscal,
+    zdscal
 )
 from flag_blas.ops.level2.gemv import (
     sgemv,
@@ -72,6 +74,8 @@ __all__ = [
     "cscal",
     "dscal",
     "sscal",
+    "csscal",
+    "zdscal",
     # rot
     "srot",
     "drot",
