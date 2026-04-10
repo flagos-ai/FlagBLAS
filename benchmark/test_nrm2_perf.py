@@ -11,69 +11,53 @@ from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
 
 
-def cublas_isamax(x, incx=1, n=None, handle=None, result=None):
-    cublas.isamax(handle, n, x.data_ptr(), incx, result.data_ptr())
+def cublas_snrm2(x, incx=1, n=None, handle=None, result=None):
+    cublas.snrm2(handle, n, x.data_ptr(), incx, result.data_ptr())
     return result
 
 
-def cublas_idamax(x, incx=1, n=None, handle=None, result=None):
-    cublas.idamax(handle, n, x.data_ptr(), incx, result.data_ptr())
+def cublas_dnrm2(x, incx=1, n=None, handle=None, result=None):
+    cublas.dnrm2(handle, n, x.data_ptr(), incx, result.data_ptr())
     return result
 
 
-def cublas_icamax(x, incx=1, n=None, handle=None, result=None):
-    cublas.icamax(handle, n, x.data_ptr(), incx, result.data_ptr())
+def cublas_scnrm2(x, incx=1, n=None, handle=None, result=None):
+    cublas.scnrm2(handle, n, x.data_ptr(), incx, result.data_ptr())
     return result
 
 
-def cublas_izamax(x, incx=1, n=None, handle=None, result=None):
-    cublas.izamax(handle, n, x.data_ptr(), incx, result.data_ptr())
+def cublas_dznrm2(x, incx=1, n=None, handle=None, result=None):
+    cublas.dznrm2(handle, n, x.data_ptr(), incx, result.data_ptr())
     return result
 
 
-def gems_samax_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.ops.samax(n, x, incx, result)
+def gems_snrm2_wrapper(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.ops.snrm2(n, x, incx, result)
     return result
 
 
-def gems_damax_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.ops.damax(n, x, incx, result)
+def gems_dnrm2_wrapper(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.ops.dnrm2(n, x, incx, result)
     return result
 
 
-def gems_camax_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.ops.camax(n, x, incx, result)
+def gems_scnrm2_wrapper(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.ops.scnrm2(n, x, incx, result)
     return result
 
 
-def gems_zamax_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.ops.zamax(n, x, incx, result)
+def gems_dznrm2_wrapper(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.ops.dznrm2(n, x, incx, result)
     return result
 
 
-class AmaxBenchmark(Benchmark):
+class Nrm2Benchmark(Benchmark):
 
     def set_more_metrics(self):
         return ["gbps"]
 
     def set_more_shapes(self):
         shapes = [
-
-            (256,),
-            (512,),
-            (768,),
-
-            # around small-kernel threshold
-            (1280,),
-            (1536,),
-            (1792,),
-            (2048,),
-            (2304,),
-            (2560,),
-            (3072,),
-            (3584,),
-            (4096,),
-
             (1024,),
             (5333,),
             (65536,),
@@ -99,7 +83,14 @@ class AmaxBenchmark(Benchmark):
             inp = torch.randn(shape, dtype=cur_dtype, device=self.device)
             n = inp.numel()
 
-            result = torch.zeros(1, dtype=torch.int32, device=self.device)
+            if cur_dtype in [torch.complex64, torch.complex128]:
+                result_dtype = (
+                    torch.float32 if cur_dtype == torch.complex64 else torch.float64
+                )
+            else:
+                result_dtype = cur_dtype
+
+            result = torch.zeros(1, dtype=result_dtype, device=self.device)
 
             if n > 0:
                 yield inp, {"n": n, "handle": handle, "result": result}
@@ -110,7 +101,7 @@ class AmaxBenchmark(Benchmark):
         return io_amount * 1e-9 / (latency * 1e-3)
 
 
-class AmaxStrideBenchmark(Benchmark):
+class Nrm2StrideBenchmark(Benchmark):
 
     def __init__(self, *args, incx=1, **kwargs):
         super().__init__(*args, **kwargs)
@@ -121,21 +112,6 @@ class AmaxStrideBenchmark(Benchmark):
 
     def set_more_shapes(self):
         shapes_1d = [
-            
-            (256,),
-            (512,),
-            (768,),
-
-            # around small-kernel threshold
-            (1280,),
-            (1536,),
-            (1792,),
-            (2048,),
-            (2304,),
-            (2560,),
-            (3072,),
-            (3584,),
-            (4096,),
             (1024,),
             (5333,),
             (65536,),
@@ -155,7 +131,14 @@ class AmaxStrideBenchmark(Benchmark):
             n = shape[0]
             inp = torch.randn(n * self.incx, dtype=cur_dtype, device=self.device)
 
-            result = torch.zeros(1, dtype=torch.int32, device=self.device)
+            if cur_dtype in [torch.complex64, torch.complex128]:
+                result_dtype = (
+                    torch.float32 if cur_dtype == torch.complex64 else torch.float64
+                )
+            else:
+                result_dtype = cur_dtype
+
+            result = torch.zeros(1, dtype=result_dtype, device=self.device)
 
             if n > 0:
                 yield inp, {
@@ -173,104 +156,104 @@ class AmaxStrideBenchmark(Benchmark):
         return io_amount * 1e-9 / (latency * 1e-3)
 
 
-@pytest.mark.amax
-def test_perf_samax():
-    bench = AmaxBenchmark(
-        op_name="samax",
-        torch_op=cublas_isamax,
-        gems_op=gems_samax_wrapper,
+@pytest.mark.nrm2
+def test_perf_snrm2():
+    bench = Nrm2Benchmark(
+        op_name="snrm2",
+        torch_op=cublas_snrm2,
+        gems_op=gems_snrm2_wrapper,
         dtypes=[torch.float32],
     )
     bench.run()
 
 
-@pytest.mark.amax
-def test_perf_damax():
+@pytest.mark.nrm2
+def test_perf_dnrm2():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
-    bench = AmaxBenchmark(
-        op_name="damax",
-        torch_op=cublas_idamax,
-        gems_op=gems_damax_wrapper,
+    bench = Nrm2Benchmark(
+        op_name="dnrm2",
+        torch_op=cublas_dnrm2,
+        gems_op=gems_dnrm2_wrapper,
         dtypes=[torch.float64],
     )
     bench.run()
 
 
-@pytest.mark.amax
-def test_perf_camax():
-    bench = AmaxBenchmark(
-        op_name="camax",
-        torch_op=cublas_icamax,
-        gems_op=gems_camax_wrapper,
+@pytest.mark.nrm2
+def test_perf_scnrm2():
+    bench = Nrm2Benchmark(
+        op_name="scnrm2",
+        torch_op=cublas_scnrm2,
+        gems_op=gems_scnrm2_wrapper,
         dtypes=[torch.complex64],
     )
     bench.run()
 
 
-@pytest.mark.amax
-def test_perf_zamax():
+@pytest.mark.nrm2
+def test_perf_dznrm2():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
-    bench = AmaxBenchmark(
-        op_name="zamax",
-        torch_op=cublas_izamax,
-        gems_op=gems_zamax_wrapper,
+    bench = Nrm2Benchmark(
+        op_name="dznrm2",
+        torch_op=cublas_dznrm2,
+        gems_op=gems_dznrm2_wrapper,
         dtypes=[torch.complex128],
     )
     bench.run()
 
 
-@pytest.mark.amax
+@pytest.mark.nrm2
 @pytest.mark.parametrize("incx", [2, 3, 5])
-def test_perf_samax_stride(incx):
-    bench = AmaxStrideBenchmark(
-        op_name=f"samax_stride_incx{incx}",
-        torch_op=cublas_isamax,
-        gems_op=gems_samax_wrapper,
+def test_perf_snrm2_stride(incx):
+    bench = Nrm2StrideBenchmark(
+        op_name=f"snrm2_stride_incx{incx}",
+        torch_op=cublas_snrm2,
+        gems_op=gems_snrm2_wrapper,
         dtypes=[torch.float32],
         incx=incx,
     )
     bench.run()
 
 
-@pytest.mark.amax
+@pytest.mark.nrm2
 @pytest.mark.parametrize("incx", [2, 3, 5])
-def test_perf_damax_stride(incx):
+def test_perf_dnrm2_stride(incx):
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
-    bench = AmaxStrideBenchmark(
-        op_name=f"damax_stride_incx{incx}",
-        torch_op=cublas_idamax,
-        gems_op=gems_damax_wrapper,
+    bench = Nrm2StrideBenchmark(
+        op_name=f"dnrm2_stride_incx{incx}",
+        torch_op=cublas_dnrm2,
+        gems_op=gems_dnrm2_wrapper,
         dtypes=[torch.float64],
         incx=incx,
     )
     bench.run()
 
 
-@pytest.mark.amax
+@pytest.mark.nrm2
 @pytest.mark.parametrize("incx", [2, 3, 5])
-def test_perf_camax_stride(incx):
-    bench = AmaxStrideBenchmark(
-        op_name=f"camax_stride_incx{incx}",
-        torch_op=cublas_icamax,
-        gems_op=gems_camax_wrapper,
+def test_perf_scnrm2_stride(incx):
+    bench = Nrm2StrideBenchmark(
+        op_name=f"scnrm2_stride_incx{incx}",
+        torch_op=cublas_scnrm2,
+        gems_op=gems_scnrm2_wrapper,
         dtypes=[torch.complex64],
         incx=incx,
     )
     bench.run()
 
 
-@pytest.mark.amax
+@pytest.mark.nrm2
 @pytest.mark.parametrize("incx", [2, 3, 5])
-def test_perf_zamax_stride(incx):
+def test_perf_dznrm2_stride(incx):
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
-    bench = AmaxStrideBenchmark(
-        op_name=f"zamax_stride_incx{incx}",
-        torch_op=cublas_izamax,
-        gems_op=gems_zamax_wrapper,
+    bench = Nrm2StrideBenchmark(
+        op_name=f"dznrm2_stride_incx{incx}",
+        torch_op=cublas_dznrm2,
+        gems_op=gems_dznrm2_wrapper,
         dtypes=[torch.complex128],
         incx=incx,
     )
