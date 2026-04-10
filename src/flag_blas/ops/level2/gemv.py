@@ -5,8 +5,9 @@ import torch
 import triton
 import triton.language as tl
 
+from flag_blas import runtime
 from flag_blas.runtime import torch_device_fn
-from flag_blas.utils import libentry
+from flag_blas.utils import libentry, libtuner
 from flag_blas.utils import triton_lang_extension as tle
 
 logger = logging.getLogger(__name__)
@@ -19,39 +20,33 @@ CUBLAS_OP_C = 2
 
 FP8_DTYPES = (torch.float8_e4m3fn, torch.float8_e5m2)
 
+_GEMV_N_KEY = ["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"]
+_GEMV_T_KEY = ["m", "n", "STRIDE_AK", "INCX", "INCY", "BETA_IS_ZERO"]
+_CGEMV_KEY = [
+    "m",
+    "n",
+    "STRIDE_AM",
+    "STRIDE_AN",
+    "INCX",
+    "INCY",
+    "CONJ",
+    "BETA_IS_ZERO",
+]
+_GEMV_N_SPLITK_KEY = ["m", "n", "STRIDE_AM", "INCX"]
+_GEMV_T_SPLITK_KEY = ["m", "n", "STRIDE_AK", "INCX"]
+_CGEMV_N_SPLITK_KEY = ["m", "n", "STRIDE_AM", "INCX"]
+_CGEMV_SPLITK_KEY = ["m", "n", "STRIDE_AM", "STRIDE_AN", "INCX", "CONJ"]
+_ZGEMV_N_SPLITK_KEY = ["m", "n", "STRIDE_AM", "INCX"]
+_ZGEMV_SPLITK_KEY = ["m", "n", "STRIDE_AM", "STRIDE_AN", "INCX", "CONJ"]
+
+SPLITK_M_THRESHOLD = 64
+SPLITK_K_THRESHOLD = 4096
+
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("sgemv_n"),
+    key=_GEMV_N_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -111,49 +106,9 @@ def sgemv_n_kernel(
 
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AK", "INCX", "INCY", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("sgemv_t"),
+    key=_GEMV_T_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -214,37 +169,155 @@ def sgemv_t_kernel(
 
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("sgemv_n_splitk"),
+    key=_GEMV_N_SPLITK_KEY,
+)
+@triton.jit
+def sgemv_n_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_ptr,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    num_k_splits,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_ptrs = (
+        a_ptr + row_offsets[:, None] * STRIDE_AM + (k_begin + k_offsets_init)[None, :]
+    )
+    x_ptrs = x_ptr + (k_begin + k_offsets_init) * INCX
+
+    acc_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_block = tl.load(a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first")
+        x_block = tl.load(x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last")
+
+        acc_2d += a_block * x_block[None, :]
+
+        a_ptrs += BLOCK_SIZE_K
+        x_ptrs += BLOCK_SIZE_K * INCX
+
+    acc = tl.sum(acc_2d, axis=1)
+
+    partial_ptrs = partial_ptr + pid_k * m + row_offsets
+    tl.store(partial_ptrs, acc, mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("sgemv_t_splitk"),
+    key=_GEMV_T_SPLITK_KEY,
+)
+@triton.jit
+def sgemv_t_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_ptr,
+    m,
+    n,
+    STRIDE_AK,
+    INCX,
+    num_k_splits,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_ptrs = (
+        a_ptr + row_offsets[:, None] + (k_begin + k_offsets_init)[None, :] * STRIDE_AK
+    )
+    x_ptrs = x_ptr + (k_begin + k_offsets_init) * INCX
+
+    acc_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+
+    step_a = BLOCK_SIZE_K * STRIDE_AK
+    step_x = BLOCK_SIZE_K * INCX
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_block = tl.load(a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first")
+        x_block = tl.load(x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last")
+
+        acc_2d += a_block * x_block[None, :]
+
+        a_ptrs += step_a
+        x_ptrs += step_x
+
+    acc = tl.sum(acc_2d, axis=1)
+
+    partial_ptrs = partial_ptr + pid_k * m + row_offsets
+    tl.store(partial_ptrs, acc, mask=row_mask)
+
+
+@libentry()
+@triton.jit
+def sgemv_splitk_reduce_kernel(
+    partial_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    num_k_splits,
+    INCY,
+    BETA_IS_ZERO: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+):
+    pid = tle.program_id(0)
+    row_offsets = pid * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    acc = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
+    for k in range(num_k_splits):
+        vals = tl.load(partial_ptr + k * m + row_offsets, mask=row_mask, other=0.0)
+        acc += vals
+
+    y_ptrs = y_ptr + row_offsets * INCY
+
+    if BETA_IS_ZERO:
+        result = alpha * acc
+    else:
+        y_vals = tl.load(y_ptrs, mask=row_mask, other=0.0)
+        result = alpha * acc + beta * y_vals
+
+    tl.store(y_ptrs, result, mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("dgemv_n"),
+    key=_GEMV_N_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -307,40 +380,9 @@ def dgemv_n_kernel(
 
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AK", "INCX", "INCY", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("dgemv_t"),
+    key=_GEMV_T_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -403,46 +445,158 @@ def dgemv_t_kernel(
 
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("dgemv_n_splitk"),
+    key=_GEMV_N_SPLITK_KEY,
+)
+@triton.jit
+def dgemv_n_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_ptr,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    num_k_splits,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_ptrs = (
+        a_ptr + row_offsets[:, None] * STRIDE_AM + (k_begin + k_offsets_init)[None, :]
+    )
+    x_ptrs = x_ptr + (k_begin + k_offsets_init) * INCX
+
+    acc_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float64)
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_block = tl.load(a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first")
+        x_block = tl.load(x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last")
+
+        acc_2d += a_block * x_block[None, :]
+
+        a_ptrs += BLOCK_SIZE_K
+        x_ptrs += BLOCK_SIZE_K * INCX
+
+    acc = tl.sum(acc_2d, axis=1)
+
+    partial_ptrs = partial_ptr + pid_k * m + row_offsets
+    tl.store(partial_ptrs, acc, mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("dgemv_t_splitk"),
+    key=_GEMV_T_SPLITK_KEY,
+)
+@triton.jit
+def dgemv_t_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_ptr,
+    m,
+    n,
+    STRIDE_AK,
+    INCX,
+    num_k_splits,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_ptrs = (
+        a_ptr + row_offsets[:, None] + (k_begin + k_offsets_init)[None, :] * STRIDE_AK
+    )
+    x_ptrs = x_ptr + (k_begin + k_offsets_init) * INCX
+
+    acc_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float64)
+
+    step_a = BLOCK_SIZE_K * STRIDE_AK
+    step_x = BLOCK_SIZE_K * INCX
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_block = tl.load(a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first")
+        x_block = tl.load(x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last")
+
+        acc_2d += a_block * x_block[None, :]
+
+        a_ptrs += step_a
+        x_ptrs += step_x
+
+    acc = tl.sum(acc_2d, axis=1)
+
+    partial_ptrs = partial_ptr + pid_k * m + row_offsets
+    tl.store(partial_ptrs, acc, mask=row_mask)
+
+
+@libentry()
+@triton.jit
+def dgemv_splitk_reduce_kernel(
+    partial_ptr,
+    y_ptr,
+    alpha_int: tl.int64,
+    beta_int: tl.int64,
+    m,
+    num_k_splits,
+    INCY,
+    BETA_IS_ZERO: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+):
+    pid = tle.program_id(0)
+    row_offsets = pid * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    alpha = alpha_int.to(tl.float64, bitcast=True)
+    beta = beta_int.to(tl.float64, bitcast=True)
+
+    acc = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float64)
+    for k in range(num_k_splits):
+        vals = tl.load(partial_ptr + k * m + row_offsets, mask=row_mask, other=0.0)
+        acc += vals
+
+    y_ptrs = y_ptr + row_offsets * INCY
+
+    if BETA_IS_ZERO:
+        result = alpha * acc
+    else:
+        y_vals = tl.load(y_ptrs, mask=row_mask, other=0.0)
+        result = alpha * acc + beta * y_vals
+
+    tl.store(y_ptrs, result, mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("cgemv_n"),
+    key=_GEMV_N_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -533,37 +687,9 @@ def cgemv_n_kernel(
 
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AM", "STRIDE_AN", "INCX", "INCY", "CONJ", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("cgemv"),
+    key=_CGEMV_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -660,34 +786,226 @@ def cgemv_kernel(
 
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("cgemv_n_splitk"),
+    key=_CGEMV_N_SPLITK_KEY,
+)
+@triton.jit
+def cgemv_n_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_real_ptr,
+    partial_imag_ptr,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    num_k_splits,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_base = row_offsets[:, None] * STRIDE_AM + (k_begin + k_offsets_init)[None, :]
+    x_base = (k_begin + k_offsets_init) * INCX
+
+    a_ptr_int64 = a_ptr.to(tl.pointer_type(tl.int64))
+    x_ptr_int64 = x_ptr.to(tl.pointer_type(tl.int64))
+
+    a_ptrs_int64 = a_ptr_int64 + a_base
+    x_ptrs_int64 = x_ptr_int64 + x_base
+
+    acc_real_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+    acc_imag_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+
+    step_a = BLOCK_SIZE_K
+    step_x = BLOCK_SIZE_K * INCX
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_val = tl.load(
+            a_ptrs_int64, mask=a_mask, other=0, eviction_policy="evict_first"
+        )
+        x_val = tl.load(
+            x_ptrs_int64, mask=k_mask, other=0, eviction_policy="evict_last"
+        )
+
+        a_real = a_val.to(tl.int32).to(tl.float32, bitcast=True)
+        a_imag = (a_val >> 32).to(tl.int32).to(tl.float32, bitcast=True)
+
+        x_real = x_val.to(tl.int32).to(tl.float32, bitcast=True)
+        x_imag = (x_val >> 32).to(tl.int32).to(tl.float32, bitcast=True)
+
+        xr_block = x_real[None, :]
+        xi_block = x_imag[None, :]
+
+        acc_real_2d += a_real * xr_block - a_imag * xi_block
+        acc_imag_2d += a_real * xi_block + a_imag * xr_block
+
+        a_ptrs_int64 += step_a
+        x_ptrs_int64 += step_x
+
+    acc_real = tl.sum(acc_real_2d, axis=1)
+    acc_imag = tl.sum(acc_imag_2d, axis=1)
+
+    partial_offset = pid_k * m + row_offsets
+    tl.store(partial_real_ptr + partial_offset, acc_real, mask=row_mask)
+    tl.store(partial_imag_ptr + partial_offset, acc_imag, mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("cgemv_splitk"),
+    key=_CGEMV_SPLITK_KEY,
+)
+@triton.jit
+def cgemv_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_real_ptr,
+    partial_imag_ptr,
+    m,
+    n,
+    STRIDE_AM,
+    STRIDE_AN,
+    INCX,
+    num_k_splits,
+    CONJ: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_base = (
+        row_offsets[:, None] * STRIDE_AM
+        + (k_begin + k_offsets_init)[None, :] * STRIDE_AN
+    )
+    x_base = (k_begin + k_offsets_init) * INCX
+
+    a_ptr_int64 = a_ptr.to(tl.pointer_type(tl.int64))
+    x_ptr_int64 = x_ptr.to(tl.pointer_type(tl.int64))
+
+    a_ptrs_int64 = a_ptr_int64 + a_base
+    x_ptrs_int64 = x_ptr_int64 + x_base
+
+    acc_real_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+    acc_imag_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+
+    step_a = BLOCK_SIZE_K * STRIDE_AN
+    step_x = BLOCK_SIZE_K * INCX
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_val = tl.load(
+            a_ptrs_int64, mask=a_mask, other=0, eviction_policy="evict_first"
+        )
+        x_val = tl.load(
+            x_ptrs_int64, mask=k_mask, other=0, eviction_policy="evict_last"
+        )
+
+        a_real = a_val.to(tl.int32).to(tl.float32, bitcast=True)
+        a_imag = (a_val >> 32).to(tl.int32).to(tl.float32, bitcast=True)
+
+        x_real = x_val.to(tl.int32).to(tl.float32, bitcast=True)
+        x_imag = (x_val >> 32).to(tl.int32).to(tl.float32, bitcast=True)
+
+        xr_block = x_real[None, :]
+        xi_block = x_imag[None, :]
+
+        if CONJ == 1:
+            acc_real_2d += a_real * xr_block + a_imag * xi_block
+            acc_imag_2d += a_real * xi_block - a_imag * xr_block
+        else:
+            acc_real_2d += a_real * xr_block - a_imag * xi_block
+            acc_imag_2d += a_real * xi_block + a_imag * xr_block
+
+        a_ptrs_int64 += step_a
+        x_ptrs_int64 += step_x
+
+    acc_real = tl.sum(acc_real_2d, axis=1)
+    acc_imag = tl.sum(acc_imag_2d, axis=1)
+
+    partial_offset = pid_k * m + row_offsets
+    tl.store(partial_real_ptr + partial_offset, acc_real, mask=row_mask)
+    tl.store(partial_imag_ptr + partial_offset, acc_imag, mask=row_mask)
+
+
+@libentry()
+@triton.jit
+def cgemv_splitk_reduce_kernel(
+    partial_real_ptr,
+    partial_imag_ptr,
+    y_ptr,
+    alpha_real: tl.float32,
+    alpha_imag: tl.float32,
+    beta_real: tl.float32,
+    beta_imag: tl.float32,
+    m,
+    num_k_splits,
+    INCY,
+    BETA_IS_ZERO: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+):
+    pid = tle.program_id(0)
+    row_offsets = pid * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    acc_real = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
+    acc_imag = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
+    for k in range(num_k_splits):
+        offset = k * m + row_offsets
+        vals_real = tl.load(partial_real_ptr + offset, mask=row_mask, other=0.0)
+        vals_imag = tl.load(partial_imag_ptr + offset, mask=row_mask, other=0.0)
+        acc_real += vals_real
+        acc_imag += vals_imag
+
+    y_base = row_offsets * INCY * 2
+
+    if BETA_IS_ZERO:
+        result_real = alpha_real * acc_real - alpha_imag * acc_imag
+        result_imag = alpha_real * acc_imag + alpha_imag * acc_real
+    else:
+        y_real = tl.load(y_ptr + y_base, mask=row_mask, other=0.0)
+        y_imag = tl.load(y_ptr + y_base + 1, mask=row_mask, other=0.0)
+        result_real = (alpha_real * acc_real - alpha_imag * acc_imag) + (
+            beta_real * y_real - beta_imag * y_imag
+        )
+        result_imag = (alpha_real * acc_imag + alpha_imag * acc_real) + (
+            beta_real * y_imag + beta_imag * y_real
+        )
+
+    tl.store(y_ptr + y_base, result_real, mask=row_mask)
+    tl.store(y_ptr + y_base + 1, result_imag, mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("zgemv_n"),
+    key=_GEMV_N_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -786,40 +1104,9 @@ def zgemv_n_kernel(
 
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 64}, num_warps=8, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AM", "STRIDE_AN", "INCX", "INCY", "CONJ", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("zgemv"),
+    key=_CGEMV_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -924,37 +1211,235 @@ def zgemv_kernel(
 
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("zgemv_n_splitk"),
+    key=_ZGEMV_N_SPLITK_KEY,
+)
+@triton.jit
+def zgemv_n_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_real_ptr,
+    partial_imag_ptr,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    num_k_splits,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_base = row_offsets[:, None] * STRIDE_AM + (k_begin + k_offsets_init)[None, :]
+    x_base = (k_begin + k_offsets_init) * INCX
+
+    a_ptrs_real = a_ptr + a_base * 2
+    a_ptrs_imag = a_ptr + a_base * 2 + 1
+    x_ptrs_real = x_ptr + x_base * 2
+    x_ptrs_imag = x_ptr + x_base * 2 + 1
+
+    acc_real_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float64)
+    acc_imag_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float64)
+
+    step_a = BLOCK_SIZE_K * 2
+    step_x = BLOCK_SIZE_K * INCX * 2
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_real = tl.load(
+            a_ptrs_real, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        )
+        a_imag = tl.load(
+            a_ptrs_imag, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        )
+
+        x_real = tl.load(
+            x_ptrs_real, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        )
+        x_imag = tl.load(
+            x_ptrs_imag, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        )
+
+        xr_block = x_real[None, :]
+        xi_block = x_imag[None, :]
+
+        acc_real_2d += a_real * xr_block - a_imag * xi_block
+        acc_imag_2d += a_real * xi_block + a_imag * xr_block
+
+        a_ptrs_real += step_a
+        a_ptrs_imag += step_a
+        x_ptrs_real += step_x
+        x_ptrs_imag += step_x
+
+    acc_real = tl.sum(acc_real_2d, axis=1)
+    acc_imag = tl.sum(acc_imag_2d, axis=1)
+
+    partial_offset = pid_k * m + row_offsets
+    tl.store(partial_real_ptr + partial_offset, acc_real, mask=row_mask)
+    tl.store(partial_imag_ptr + partial_offset, acc_imag, mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("zgemv_splitk"),
+    key=_ZGEMV_SPLITK_KEY,
+)
+@triton.jit
+def zgemv_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_real_ptr,
+    partial_imag_ptr,
+    m,
+    n,
+    STRIDE_AM,
+    STRIDE_AN,
+    INCX,
+    num_k_splits,
+    CONJ: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_base = (
+        row_offsets[:, None] * STRIDE_AM
+        + (k_begin + k_offsets_init)[None, :] * STRIDE_AN
+    )
+    x_base = (k_begin + k_offsets_init) * INCX
+
+    a_ptrs_real = a_ptr + a_base * 2
+    a_ptrs_imag = a_ptr + a_base * 2 + 1
+    x_ptrs_real = x_ptr + x_base * 2
+    x_ptrs_imag = x_ptr + x_base * 2 + 1
+
+    acc_real_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float64)
+    acc_imag_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float64)
+
+    step_a = BLOCK_SIZE_K * STRIDE_AN * 2
+    step_x = BLOCK_SIZE_K * INCX * 2
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_real = tl.load(
+            a_ptrs_real, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        )
+        a_imag = tl.load(
+            a_ptrs_imag, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        )
+
+        x_real = tl.load(
+            x_ptrs_real, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        )
+        x_imag = tl.load(
+            x_ptrs_imag, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        )
+
+        xr_block = x_real[None, :]
+        xi_block = x_imag[None, :]
+
+        if CONJ == 1:
+            acc_real_2d += a_real * xr_block + a_imag * xi_block
+            acc_imag_2d += a_real * xi_block - a_imag * xr_block
+        else:
+            acc_real_2d += a_real * xr_block - a_imag * xi_block
+            acc_imag_2d += a_real * xi_block + a_imag * xr_block
+
+        a_ptrs_real += step_a
+        a_ptrs_imag += step_a
+        x_ptrs_real += step_x
+        x_ptrs_imag += step_x
+
+    acc_real = tl.sum(acc_real_2d, axis=1)
+    acc_imag = tl.sum(acc_imag_2d, axis=1)
+
+    partial_offset = pid_k * m + row_offsets
+    tl.store(partial_real_ptr + partial_offset, acc_real, mask=row_mask)
+    tl.store(partial_imag_ptr + partial_offset, acc_imag, mask=row_mask)
+
+
+@libentry()
+@triton.jit
+def zgemv_splitk_reduce_kernel(
+    partial_real_ptr,
+    partial_imag_ptr,
+    y_ptr,
+    alpha_real_int: tl.int64,
+    alpha_imag_int: tl.int64,
+    beta_real_int: tl.int64,
+    beta_imag_int: tl.int64,
+    m,
+    num_k_splits,
+    INCY,
+    BETA_IS_ZERO: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+):
+    pid = tle.program_id(0)
+    row_offsets = pid * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    alpha_real = alpha_real_int.to(tl.float64, bitcast=True)
+    alpha_imag = alpha_imag_int.to(tl.float64, bitcast=True)
+    beta_real = beta_real_int.to(tl.float64, bitcast=True)
+    beta_imag = beta_imag_int.to(tl.float64, bitcast=True)
+
+    acc_real = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float64)
+    acc_imag = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float64)
+    for k in range(num_k_splits):
+        offset = k * m + row_offsets
+        vals_real = tl.load(partial_real_ptr + offset, mask=row_mask, other=0.0)
+        vals_imag = tl.load(partial_imag_ptr + offset, mask=row_mask, other=0.0)
+        acc_real += vals_real
+        acc_imag += vals_imag
+
+    y_base = row_offsets * INCY * 2
+
+    if BETA_IS_ZERO:
+        result_real = alpha_real * acc_real - alpha_imag * acc_imag
+        result_imag = alpha_real * acc_imag + alpha_imag * acc_real
+    else:
+        y_real = tl.load(y_ptr + y_base, mask=row_mask, other=0.0)
+        y_imag = tl.load(y_ptr + y_base + 1, mask=row_mask, other=0.0)
+        result_real = (alpha_real * acc_real - alpha_imag * acc_imag) + (
+            beta_real * y_real - beta_imag * y_imag
+        )
+        result_imag = (alpha_real * acc_imag + alpha_imag * acc_real) + (
+            beta_real * y_imag + beta_imag * y_real
+        )
+
+    tl.store(y_ptr + y_base, result_real, mask=row_mask)
+    tl.store(y_ptr + y_base + 1, result_imag, mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("hgemv_n"),
+    key=_GEMV_N_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -1018,52 +1503,9 @@ def hgemv_n_kernel(
 
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=3
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AK", "INCX", "INCY", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("hgemv_t"),
+    key=_GEMV_T_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -1128,37 +1570,317 @@ def hgemv_t_kernel(
 
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AM", "INCX", "INCY", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("hgemv_n_splitk"),
+    key=_GEMV_N_SPLITK_KEY,
+)
+@triton.jit
+def hgemv_n_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_ptr,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    num_k_splits,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_ptrs = (
+        a_ptr + row_offsets[:, None] * STRIDE_AM + (k_begin + k_offsets_init)[None, :]
+    )
+    x_ptrs = x_ptr + (k_begin + k_offsets_init) * INCX
+
+    acc_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_block = tl.load(
+            a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        ).to(tl.float32)
+        x_block = tl.load(
+            x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        ).to(tl.float32)
+
+        acc_2d += a_block * x_block[None, :]
+
+        a_ptrs += BLOCK_SIZE_K
+        x_ptrs += BLOCK_SIZE_K * INCX
+
+    acc = tl.sum(acc_2d, axis=1)
+
+    partial_ptrs = partial_ptr + pid_k * m + row_offsets
+    tl.store(partial_ptrs, acc, mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("hgemv_t_splitk"),
+    key=_GEMV_T_SPLITK_KEY,
+)
+@triton.jit
+def hgemv_t_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_ptr,
+    m,
+    n,
+    STRIDE_AK,
+    INCX,
+    num_k_splits,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_ptrs = (
+        a_ptr + row_offsets[:, None] + (k_begin + k_offsets_init)[None, :] * STRIDE_AK
+    )
+    x_ptrs = x_ptr + (k_begin + k_offsets_init) * INCX
+
+    acc_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+
+    step_a = BLOCK_SIZE_K * STRIDE_AK
+    step_x = BLOCK_SIZE_K * INCX
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_block = tl.load(
+            a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        ).to(tl.float32)
+        x_block = tl.load(
+            x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        ).to(tl.float32)
+
+        acc_2d += a_block * x_block[None, :]
+
+        a_ptrs += step_a
+        x_ptrs += step_x
+
+    acc = tl.sum(acc_2d, axis=1)
+
+    partial_ptrs = partial_ptr + pid_k * m + row_offsets
+    tl.store(partial_ptrs, acc, mask=row_mask)
+
+
+@libentry()
+@triton.jit
+def hgemv_splitk_reduce_kernel(
+    partial_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    num_k_splits,
+    INCY,
+    BETA_IS_ZERO: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+):
+    pid = tle.program_id(0)
+    row_offsets = pid * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    acc = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
+    for k in range(num_k_splits):
+        vals = tl.load(partial_ptr + k * m + row_offsets, mask=row_mask, other=0.0)
+        acc += vals
+
+    y_ptrs = y_ptr + row_offsets * INCY
+
+    if BETA_IS_ZERO:
+        result = alpha * acc
+    else:
+        y_vals = tl.load(y_ptrs, mask=row_mask, other=0.0).to(tl.float32)
+        result = alpha * acc + beta * y_vals
+
+    tl.store(y_ptrs, result.to(tl.float16), mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("bfgemv_n_splitk"),
+    key=_GEMV_N_SPLITK_KEY,
+)
+@triton.jit
+def bfgemv_n_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_ptr,
+    m,
+    n,
+    STRIDE_AM,
+    INCX,
+    num_k_splits,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_ptrs = (
+        a_ptr + row_offsets[:, None] * STRIDE_AM + (k_begin + k_offsets_init)[None, :]
+    )
+    x_ptrs = x_ptr + (k_begin + k_offsets_init) * INCX
+
+    acc_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_block = tl.load(
+            a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        ).to(tl.float32)
+        x_block = tl.load(
+            x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        ).to(tl.float32)
+
+        acc_2d += a_block * x_block[None, :]
+
+        a_ptrs += BLOCK_SIZE_K
+        x_ptrs += BLOCK_SIZE_K * INCX
+
+    acc = tl.sum(acc_2d, axis=1)
+
+    partial_ptrs = partial_ptr + pid_k * m + row_offsets
+    tl.store(partial_ptrs, acc, mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("bfgemv_t_splitk"),
+    key=_GEMV_T_SPLITK_KEY,
+)
+@triton.jit
+def bfgemv_t_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_ptr,
+    m,
+    n,
+    STRIDE_AK,
+    INCX,
+    num_k_splits,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+    a_ptrs = (
+        a_ptr + row_offsets[:, None] + (k_begin + k_offsets_init)[None, :] * STRIDE_AK
+    )
+    x_ptrs = x_ptr + (k_begin + k_offsets_init) * INCX
+
+    acc_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+
+    step_a = BLOCK_SIZE_K * STRIDE_AK
+    step_x = BLOCK_SIZE_K * INCX
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = row_mask[:, None] & k_mask[None, :]
+
+        a_block = tl.load(
+            a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        ).to(tl.float32)
+        x_block = tl.load(
+            x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last"
+        ).to(tl.float32)
+
+        acc_2d += a_block * x_block[None, :]
+
+        a_ptrs += step_a
+        x_ptrs += step_x
+
+    acc = tl.sum(acc_2d, axis=1)
+
+    partial_ptrs = partial_ptr + pid_k * m + row_offsets
+    tl.store(partial_ptrs, acc, mask=row_mask)
+
+
+@libentry()
+@triton.jit
+def bfgemv_splitk_reduce_kernel(
+    partial_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    num_k_splits,
+    INCY,
+    BETA_IS_ZERO: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+):
+    pid = tle.program_id(0)
+    row_offsets = pid * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    acc = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
+    for k in range(num_k_splits):
+        vals = tl.load(partial_ptr + k * m + row_offsets, mask=row_mask, other=0.0)
+        acc += vals
+
+    y_ptrs = y_ptr + row_offsets * INCY
+
+    if BETA_IS_ZERO:
+        result = alpha * acc
+    else:
+        y_vals = tl.load(y_ptrs, mask=row_mask, other=0.0).to(tl.float32)
+        result = alpha * acc + beta * y_vals
+
+    tl.store(y_ptrs, result.to(tl.bfloat16), mask=row_mask)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("bfgemv_n"),
+    key=_GEMV_N_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -1222,55 +1944,9 @@ def bfgemv_n_kernel(
 
 
 @libentry()
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=2
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 64}, num_warps=8, num_stages=2
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=2
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-    ],
-    key=["m", "n", "STRIDE_AK", "INCX", "INCY", "BETA_IS_ZERO"],
+@libtuner(
+    configs=runtime.get_tuned_config("bfgemv_t"),
+    key=_GEMV_T_KEY,
     restore_value=["y_ptr"],
 )
 @triton.jit
@@ -1376,21 +2052,75 @@ def sgemv(
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
         beta_is_zero = beta == 0.0
-        grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
-        with torch_device_fn.device(A.device):
-            sgemv_n_kernel[grid](
-                A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero
+        if m <= SPLITK_M_THRESHOLD and n >= SPLITK_K_THRESHOLD:
+            num_k_splits = min(triton.cdiv(n, 2048), 128)
+            partial = torch.empty(num_k_splits, m, dtype=torch.float32, device=A.device)
+            grid_sk = lambda meta: (
+                triton.cdiv(m, meta["BLOCK_SIZE_M"]),
+                num_k_splits,
             )
+            REDUCE_BLOCK = 32
+            grid_reduce = (triton.cdiv(m, REDUCE_BLOCK),)
+            with torch_device_fn.device(A.device):
+                sgemv_n_splitk_kernel[grid_sk](
+                    A, x, partial, m, n, lda, incx, num_k_splits
+                )
+                sgemv_splitk_reduce_kernel[grid_reduce](
+                    partial,
+                    y,
+                    alpha,
+                    beta,
+                    m,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+        else:
+            grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
+            with torch_device_fn.device(A.device):
+                sgemv_n_kernel[grid](
+                    A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero
+                )
     else:
         len_x, len_y = m, n
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
         beta_is_zero = beta == 0.0
-        grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
-        with torch_device_fn.device(A.device):
-            sgemv_t_kernel[grid](
-                A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero
+        if n <= SPLITK_M_THRESHOLD and m >= SPLITK_K_THRESHOLD:
+            num_k_splits = min(triton.cdiv(m, 2048), 128)
+            if n <= 4 and num_k_splits > 32:
+                num_k_splits = min(triton.cdiv(m, 8192), 32)
+            elif n <= 16 and num_k_splits > 32:
+                num_k_splits = min(triton.cdiv(m, 4096), 32)
+            partial = torch.empty(num_k_splits, n, dtype=torch.float32, device=A.device)
+            grid_sk = lambda meta: (
+                triton.cdiv(n, meta["BLOCK_SIZE_M"]),
+                num_k_splits,
             )
+            REDUCE_BLOCK = 32
+            grid_reduce = (triton.cdiv(n, REDUCE_BLOCK),)
+            with torch_device_fn.device(A.device):
+                sgemv_t_splitk_kernel[grid_sk](
+                    A, x, partial, n, m, lda, incx, num_k_splits
+                )
+                sgemv_splitk_reduce_kernel[grid_reduce](
+                    partial,
+                    y,
+                    alpha,
+                    beta,
+                    n,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+        else:
+            grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
+            with torch_device_fn.device(A.device):
+                sgemv_t_kernel[grid](
+                    A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero
+                )
 
 
 def dgemv(
@@ -1438,21 +2168,78 @@ def dgemv(
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
         beta_is_zero = beta_val == 0.0
-        grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
-        with torch_device_fn.device(A.device):
-            dgemv_n_kernel[grid](
-                A, x, y, alpha_int, beta_int, m, n, lda, incx, incy, beta_is_zero
+
+        if m <= SPLITK_M_THRESHOLD and n >= SPLITK_K_THRESHOLD:
+            num_k_splits = min(triton.cdiv(n, 2048), 64)
+            if m > 2 and num_k_splits > 32:
+                num_k_splits = min(triton.cdiv(n, 2048), 128)
+            partial = torch.empty(num_k_splits, m, dtype=torch.float64, device=A.device)
+            grid_sk = lambda meta: (
+                triton.cdiv(m, meta["BLOCK_SIZE_M"]),
+                num_k_splits,
             )
+            REDUCE_BLOCK = 32
+            grid_reduce = (triton.cdiv(m, REDUCE_BLOCK),)
+            with torch_device_fn.device(A.device):
+                dgemv_n_splitk_kernel[grid_sk](
+                    A, x, partial, m, n, lda, incx, num_k_splits
+                )
+                dgemv_splitk_reduce_kernel[grid_reduce](
+                    partial,
+                    y,
+                    alpha_int,
+                    beta_int,
+                    m,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+        else:
+            grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
+            with torch_device_fn.device(A.device):
+                dgemv_n_kernel[grid](
+                    A, x, y, alpha_int, beta_int, m, n, lda, incx, incy, beta_is_zero
+                )
     else:
         len_x, len_y = m, n
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
         beta_is_zero = beta_val == 0.0
-        grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
-        with torch_device_fn.device(A.device):
-            dgemv_t_kernel[grid](
-                A, x, y, alpha_int, beta_int, n, m, lda, incx, incy, beta_is_zero
+
+        if n <= SPLITK_M_THRESHOLD and m >= SPLITK_K_THRESHOLD:
+            num_k_splits = min(triton.cdiv(m, 4096), 64)
+            if n <= 4 and num_k_splits > 32:
+                num_k_splits = min(triton.cdiv(m, 8192), 32)
+
+            partial = torch.empty(num_k_splits, n, dtype=torch.float64, device=A.device)
+            grid_sk = lambda meta: (
+                triton.cdiv(n, meta["BLOCK_SIZE_M"]),
+                num_k_splits,
             )
+            REDUCE_BLOCK = 32
+            grid_reduce = (triton.cdiv(n, REDUCE_BLOCK),)
+            with torch_device_fn.device(A.device):
+                dgemv_t_splitk_kernel[grid_sk](
+                    A, x, partial, n, m, lda, incx, num_k_splits
+                )
+                dgemv_splitk_reduce_kernel[grid_reduce](
+                    partial,
+                    y,
+                    alpha_int,
+                    beta_int,
+                    n,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+        else:
+            grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
+            with torch_device_fn.device(A.device):
+                dgemv_t_kernel[grid](
+                    A, x, y, alpha_int, beta_int, n, m, lda, incx, incy, beta_is_zero
+                )
 
 
 def cgemv(
@@ -1516,42 +2303,125 @@ def cgemv(
     x_real = torch.view_as_real(x)
     y_real = torch.view_as_real(y)
 
-    grid = lambda meta: (triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),)
     with torch_device_fn.device(A.device):
         if trans == CUBLAS_OP_N:
-            cgemv_n_kernel[grid](
-                A_real,
-                x_real,
-                y_real,
-                alpha_real,
-                alpha_imag,
-                beta_real,
-                beta_imag,
-                eff_m,
-                eff_n,
-                stride_am,
-                incx,
-                incy,
-                beta_is_zero,
-            )
+            if eff_m <= SPLITK_M_THRESHOLD and eff_n >= SPLITK_K_THRESHOLD:
+                num_k_splits = min(triton.cdiv(eff_n, 2048), 128)
+                partial_real = torch.empty(
+                    num_k_splits, eff_m, dtype=torch.float32, device=A.device
+                )
+                partial_imag = torch.empty(
+                    num_k_splits, eff_m, dtype=torch.float32, device=A.device
+                )
+                grid_sk = lambda meta: (
+                    triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),
+                    num_k_splits,
+                )
+                REDUCE_BLOCK = 32
+                grid_reduce = (triton.cdiv(eff_m, REDUCE_BLOCK),)
+                cgemv_n_splitk_kernel[grid_sk](
+                    A_real,
+                    x_real,
+                    partial_real,
+                    partial_imag,
+                    eff_m,
+                    eff_n,
+                    stride_am,
+                    incx,
+                    num_k_splits,
+                )
+                cgemv_splitk_reduce_kernel[grid_reduce](
+                    partial_real,
+                    partial_imag,
+                    y_real,
+                    alpha_real,
+                    alpha_imag,
+                    beta_real,
+                    beta_imag,
+                    eff_m,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+            else:
+                grid = lambda meta: (triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),)
+                cgemv_n_kernel[grid](
+                    A_real,
+                    x_real,
+                    y_real,
+                    alpha_real,
+                    alpha_imag,
+                    beta_real,
+                    beta_imag,
+                    eff_m,
+                    eff_n,
+                    stride_am,
+                    incx,
+                    incy,
+                    beta_is_zero,
+                )
         else:
-            cgemv_kernel[grid](
-                A_real,
-                x_real,
-                y_real,
-                alpha_real,
-                alpha_imag,
-                beta_real,
-                beta_imag,
-                eff_m,
-                eff_n,
-                stride_am,
-                stride_an,
-                incx,
-                incy,
-                conj,
-                beta_is_zero,
-            )
+            if eff_m <= SPLITK_M_THRESHOLD and eff_n >= SPLITK_K_THRESHOLD:
+                num_k_splits = min(triton.cdiv(eff_n, 4096), 64)
+                partial_real = torch.empty(
+                    num_k_splits, eff_m, dtype=torch.float32, device=A.device
+                )
+                partial_imag = torch.empty(
+                    num_k_splits, eff_m, dtype=torch.float32, device=A.device
+                )
+                grid_sk = lambda meta: (
+                    triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),
+                    num_k_splits,
+                )
+                REDUCE_BLOCK = 32
+                grid_reduce = (triton.cdiv(eff_m, REDUCE_BLOCK),)
+                cgemv_splitk_kernel[grid_sk](
+                    A_real,
+                    x_real,
+                    partial_real,
+                    partial_imag,
+                    eff_m,
+                    eff_n,
+                    stride_am,
+                    stride_an,
+                    incx,
+                    num_k_splits,
+                    conj,
+                )
+                cgemv_splitk_reduce_kernel[grid_reduce](
+                    partial_real,
+                    partial_imag,
+                    y_real,
+                    alpha_real,
+                    alpha_imag,
+                    beta_real,
+                    beta_imag,
+                    eff_m,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+            else:
+                grid = lambda meta: (triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),)
+                cgemv_kernel[grid](
+                    A_real,
+                    x_real,
+                    y_real,
+                    alpha_real,
+                    alpha_imag,
+                    beta_real,
+                    beta_imag,
+                    eff_m,
+                    eff_n,
+                    stride_am,
+                    stride_an,
+                    incx,
+                    incy,
+                    conj,
+                    beta_is_zero,
+                )
 
 
 def zgemv(
@@ -1628,42 +2498,125 @@ def zgemv(
     x_real = torch.view_as_real(x)
     y_real = torch.view_as_real(y)
 
-    grid = lambda meta: (triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),)
     with torch_device_fn.device(A.device):
         if trans == CUBLAS_OP_N:
-            zgemv_n_kernel[grid](
-                A_real,
-                x_real,
-                y_real,
-                alpha_real_int,
-                alpha_imag_int,
-                beta_real_int,
-                beta_imag_int,
-                eff_m,
-                eff_n,
-                stride_am,
-                incx,
-                incy,
-                beta_is_zero,
-            )
+            if eff_m <= SPLITK_M_THRESHOLD and eff_n >= SPLITK_K_THRESHOLD:
+                num_k_splits = min(triton.cdiv(eff_n, 2048), 128)
+                partial_real = torch.empty(
+                    num_k_splits, eff_m, dtype=torch.float64, device=A.device
+                )
+                partial_imag = torch.empty(
+                    num_k_splits, eff_m, dtype=torch.float64, device=A.device
+                )
+                grid_sk = lambda meta: (
+                    triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),
+                    num_k_splits,
+                )
+                REDUCE_BLOCK = 32
+                grid_reduce = (triton.cdiv(eff_m, REDUCE_BLOCK),)
+                zgemv_n_splitk_kernel[grid_sk](
+                    A_real,
+                    x_real,
+                    partial_real,
+                    partial_imag,
+                    eff_m,
+                    eff_n,
+                    stride_am,
+                    incx,
+                    num_k_splits,
+                )
+                zgemv_splitk_reduce_kernel[grid_reduce](
+                    partial_real,
+                    partial_imag,
+                    y_real,
+                    alpha_real_int,
+                    alpha_imag_int,
+                    beta_real_int,
+                    beta_imag_int,
+                    eff_m,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+            else:
+                grid = lambda meta: (triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),)
+                zgemv_n_kernel[grid](
+                    A_real,
+                    x_real,
+                    y_real,
+                    alpha_real_int,
+                    alpha_imag_int,
+                    beta_real_int,
+                    beta_imag_int,
+                    eff_m,
+                    eff_n,
+                    stride_am,
+                    incx,
+                    incy,
+                    beta_is_zero,
+                )
         else:
-            zgemv_kernel[grid](
-                A_real,
-                x_real,
-                y_real,
-                alpha_real_int,
-                alpha_imag_int,
-                beta_real_int,
-                beta_imag_int,
-                eff_m,
-                eff_n,
-                stride_am,
-                stride_an,
-                incx,
-                incy,
-                conj,
-                beta_is_zero,
-            )
+            if eff_m <= SPLITK_M_THRESHOLD and eff_n >= SPLITK_K_THRESHOLD:
+                num_k_splits = min(triton.cdiv(eff_n, 4096), 64)
+                partial_real = torch.empty(
+                    num_k_splits, eff_m, dtype=torch.float64, device=A.device
+                )
+                partial_imag = torch.empty(
+                    num_k_splits, eff_m, dtype=torch.float64, device=A.device
+                )
+                grid_sk = lambda meta: (
+                    triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),
+                    num_k_splits,
+                )
+                REDUCE_BLOCK = 32
+                grid_reduce = (triton.cdiv(eff_m, REDUCE_BLOCK),)
+                zgemv_splitk_kernel[grid_sk](
+                    A_real,
+                    x_real,
+                    partial_real,
+                    partial_imag,
+                    eff_m,
+                    eff_n,
+                    stride_am,
+                    stride_an,
+                    incx,
+                    num_k_splits,
+                    conj,
+                )
+                zgemv_splitk_reduce_kernel[grid_reduce](
+                    partial_real,
+                    partial_imag,
+                    y_real,
+                    alpha_real_int,
+                    alpha_imag_int,
+                    beta_real_int,
+                    beta_imag_int,
+                    eff_m,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+            else:
+                grid = lambda meta: (triton.cdiv(eff_m, meta["BLOCK_SIZE_M"]),)
+                zgemv_kernel[grid](
+                    A_real,
+                    x_real,
+                    y_real,
+                    alpha_real_int,
+                    alpha_imag_int,
+                    beta_real_int,
+                    beta_imag_int,
+                    eff_m,
+                    eff_n,
+                    stride_am,
+                    stride_an,
+                    incx,
+                    incy,
+                    conj,
+                    beta_is_zero,
+                )
 
 
 def hgemv(
@@ -1708,21 +2661,71 @@ def hgemv(
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
         beta_is_zero = beta == 0.0
-        grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
-        with torch_device_fn.device(A.device):
-            hgemv_n_kernel[grid](
-                A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero
+        if m <= SPLITK_M_THRESHOLD and n >= SPLITK_K_THRESHOLD:
+            num_k_splits = min(triton.cdiv(n, 4096), 64)
+            partial = torch.empty(num_k_splits, m, dtype=torch.float32, device=A.device)
+            grid_sk = lambda meta: (
+                triton.cdiv(m, meta["BLOCK_SIZE_M"]),
+                num_k_splits,
             )
+            REDUCE_BLOCK = 32
+            grid_reduce = (triton.cdiv(m, REDUCE_BLOCK),)
+            with torch_device_fn.device(A.device):
+                hgemv_n_splitk_kernel[grid_sk](
+                    A, x, partial, m, n, lda, incx, num_k_splits
+                )
+                hgemv_splitk_reduce_kernel[grid_reduce](
+                    partial,
+                    y,
+                    alpha,
+                    beta,
+                    m,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+        else:
+            grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
+            with torch_device_fn.device(A.device):
+                hgemv_n_kernel[grid](
+                    A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero
+                )
     else:
         len_x, len_y = m, n
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
         beta_is_zero = beta == 0.0
-        grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
-        with torch_device_fn.device(A.device):
-            hgemv_t_kernel[grid](
-                A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero
+        if n <= SPLITK_M_THRESHOLD and m >= SPLITK_K_THRESHOLD:
+            num_k_splits = min(triton.cdiv(m, 8192), 32)
+            partial = torch.empty(num_k_splits, n, dtype=torch.float32, device=A.device)
+            grid_sk = lambda meta: (
+                triton.cdiv(n, meta["BLOCK_SIZE_M"]),
+                num_k_splits,
             )
+            REDUCE_BLOCK = 32
+            grid_reduce = (triton.cdiv(n, REDUCE_BLOCK),)
+            with torch_device_fn.device(A.device):
+                hgemv_t_splitk_kernel[grid_sk](
+                    A, x, partial, n, m, lda, incx, num_k_splits
+                )
+                hgemv_splitk_reduce_kernel[grid_reduce](
+                    partial,
+                    y,
+                    alpha,
+                    beta,
+                    n,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+        else:
+            grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
+            with torch_device_fn.device(A.device):
+                hgemv_t_kernel[grid](
+                    A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero
+                )
 
 
 def bfgemv(
@@ -1767,67 +2770,76 @@ def bfgemv(
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
         beta_is_zero = beta == 0.0
-        grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
-        with torch_device_fn.device(A.device):
-            bfgemv_n_kernel[grid](
-                A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero
+        if m <= SPLITK_M_THRESHOLD and n >= SPLITK_K_THRESHOLD:
+            num_k_splits = min(triton.cdiv(n, 4096), 64)
+            partial = torch.empty(num_k_splits, m, dtype=torch.float32, device=A.device)
+            grid_sk = lambda meta: (
+                triton.cdiv(m, meta["BLOCK_SIZE_M"]),
+                num_k_splits,
             )
+            REDUCE_BLOCK = 32
+            grid_reduce = (triton.cdiv(m, REDUCE_BLOCK),)
+            with torch_device_fn.device(A.device):
+                bfgemv_n_splitk_kernel[grid_sk](
+                    A, x, partial, m, n, lda, incx, num_k_splits
+                )
+                bfgemv_splitk_reduce_kernel[grid_reduce](
+                    partial,
+                    y,
+                    alpha,
+                    beta,
+                    m,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+        else:
+            grid = lambda meta: (triton.cdiv(m, meta["BLOCK_SIZE_M"]),)
+            with torch_device_fn.device(A.device):
+                bfgemv_n_kernel[grid](
+                    A, x, y, alpha, beta, m, n, lda, incx, incy, beta_is_zero
+                )
     else:
         len_x, len_y = m, n
         assert x.numel() >= 1 + (len_x - 1) * incx
         assert y.numel() >= 1 + (len_y - 1) * incy
         beta_is_zero = beta == 0.0
-        grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
-        with torch_device_fn.device(A.device):
-            bfgemv_t_kernel[grid](
-                A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero
+        if n <= SPLITK_M_THRESHOLD and m >= SPLITK_K_THRESHOLD:
+            num_k_splits = min(triton.cdiv(m, 8192), 32)
+            partial = torch.empty(num_k_splits, n, dtype=torch.float32, device=A.device)
+            grid_sk = lambda meta: (
+                triton.cdiv(n, meta["BLOCK_SIZE_M"]),
+                num_k_splits,
             )
-
-
-def get_fp8_gemv_configs():
-    return [
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 512}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 4, "BLOCK_SIZE_K": 2048}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 8, "BLOCK_SIZE_K": 1024}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_K": 512}, num_warps=8, num_stages=4
-        ),
-        triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_K": 256}, num_warps=8, num_stages=4
-        ),
-    ]
+            REDUCE_BLOCK = 32
+            grid_reduce = (triton.cdiv(n, REDUCE_BLOCK),)
+            with torch_device_fn.device(A.device):
+                bfgemv_t_splitk_kernel[grid_sk](
+                    A, x, partial, n, m, lda, incx, num_k_splits
+                )
+                bfgemv_splitk_reduce_kernel[grid_reduce](
+                    partial,
+                    y,
+                    alpha,
+                    beta,
+                    n,
+                    num_k_splits,
+                    incy,
+                    beta_is_zero,
+                    BLOCK_SIZE_M=REDUCE_BLOCK,
+                )
+        else:
+            grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
+            with torch_device_fn.device(A.device):
+                bfgemv_t_kernel[grid](
+                    A, x, y, alpha, beta, n, m, lda, incx, incy, beta_is_zero
+                )
 
 
 @libentry()
-@triton.autotune(
-    configs=get_fp8_gemv_configs(),
+@libtuner(
+    configs=runtime.get_tuned_config("fp8_gemv"),
     key=["m", "n"],
     restore_value=["y_ptr"],
 )
@@ -1893,6 +2905,102 @@ def fp8_gemv_kernel(
     tl.store(y_ptrs, result.to(y_ptr.dtype.element_ty), mask=row_mask)
 
 
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("fp8_gemv_splitk"),
+    key=["m", "n"],
+)
+@triton.jit
+def fp8_gemv_splitk_kernel(
+    a_ptr,
+    x_ptr,
+    partial_ptr,
+    m,
+    n,
+    STRIDE_AK,
+    INCX: tl.constexpr,
+    num_k_splits,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+):
+    pid_m = tle.program_id(0)
+    pid_k = tle.program_id(1)
+
+    row_start = pid_m * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    chunk_k = (n + num_k_splits - 1) // num_k_splits
+    k_begin = pid_k * chunk_k
+
+    k_offsets_init = tl.arange(0, BLOCK_SIZE_K)
+
+    a_ptrs = (
+        a_ptr + (k_begin + k_offsets_init)[:, None] * STRIDE_AK + row_offsets[None, :]
+    )
+    x_ptrs = x_ptr + (k_begin + k_offsets_init) * INCX
+
+    acc_2d = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+
+    step_a = BLOCK_SIZE_K * STRIDE_AK
+    step_x = BLOCK_SIZE_K * INCX
+
+    for k_offset in range(0, chunk_k, BLOCK_SIZE_K):
+        k_offsets = k_begin + k_offset + k_offsets_init
+        k_mask = k_offsets < n
+        a_mask = k_mask[:, None] & row_mask[None, :]
+
+        a_block_load = tl.load(
+            a_ptrs, mask=a_mask, other=0.0, eviction_policy="evict_first"
+        )
+        a_block = tl.trans(a_block_load)
+
+        x_block = tl.load(x_ptrs, mask=k_mask, other=0.0, eviction_policy="evict_last")
+
+        acc_2d += a_block.to(tl.float32) * x_block[None, :].to(tl.float32)
+
+        a_ptrs += step_a
+        x_ptrs += step_x
+
+    acc = tl.sum(acc_2d, axis=1)
+
+    partial_ptrs = partial_ptr + pid_k * m + row_offsets
+    tl.store(partial_ptrs, acc, mask=row_mask)
+
+
+@libentry()
+@triton.jit
+def fp8_gemv_splitk_reduce_kernel(
+    partial_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    num_k_splits,
+    INCY: tl.constexpr,
+    BETA_IS_ZERO: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+):
+    pid = tle.program_id(0)
+    row_offsets = pid * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < m
+
+    acc = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
+    for k in range(num_k_splits):
+        vals = tl.load(partial_ptr + k * m + row_offsets, mask=row_mask, other=0.0)
+        acc += vals
+
+    y_ptrs = y_ptr + row_offsets * INCY
+
+    if BETA_IS_ZERO:
+        result = alpha * acc
+    else:
+        y_vals = tl.load(y_ptrs, mask=row_mask, other=0.0).to(tl.float32)
+        result = alpha * acc + beta * y_vals
+
+    tl.store(y_ptrs, result.to(y_ptr.dtype.element_ty), mask=row_mask)
+
+
 def fp8_gemv(
     trans: int,
     m: int,
@@ -1939,18 +3047,47 @@ def fp8_gemv(
 
     beta_is_zero = beta == 0.0
 
-    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
-    with torch_device_fn.device(A.device):
-        fp8_gemv_kernel[grid](
-            A,
-            x,
-            y,
-            alpha,
-            beta,
-            n,
-            m,
-            lda,
-            incx,
-            incy,
-            beta_is_zero,
+    if n <= SPLITK_M_THRESHOLD and m >= SPLITK_K_THRESHOLD:
+        num_k_splits = min(triton.cdiv(m, 2048), 128)
+        if n <= 4 and num_k_splits > 32:
+            num_k_splits = min(triton.cdiv(m, 8192), 32)
+        elif n <= 16 and num_k_splits > 32:
+            num_k_splits = min(triton.cdiv(m, 4096), 32)
+        partial = torch.empty(num_k_splits, n, dtype=torch.float32, device=A.device)
+        grid_sk = lambda meta: (
+            triton.cdiv(n, meta["BLOCK_SIZE_M"]),
+            num_k_splits,
         )
+        REDUCE_BLOCK = 32
+        grid_reduce = (triton.cdiv(n, REDUCE_BLOCK),)
+        with torch_device_fn.device(A.device):
+            fp8_gemv_splitk_kernel[grid_sk](
+                A, x, partial, n, m, lda, incx, num_k_splits
+            )
+            fp8_gemv_splitk_reduce_kernel[grid_reduce](
+                partial,
+                y,
+                alpha,
+                beta,
+                n,
+                num_k_splits,
+                incy,
+                beta_is_zero,
+                BLOCK_SIZE_M=REDUCE_BLOCK,
+            )
+    else:
+        grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE_M"]),)
+        with torch_device_fn.device(A.device):
+            fp8_gemv_kernel[grid](
+                A,
+                x,
+                y,
+                alpha,
+                beta,
+                n,
+                m,
+                lda,
+                incx,
+                incy,
+                beta_is_zero,
+            )

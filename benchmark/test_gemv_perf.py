@@ -393,6 +393,17 @@ class GemvBenchmark(Benchmark):
             (4095, 14335),
             (4095, 1023),
             (14335, 4095),
+            # Extreme shapes
+            (1, 65536),
+            (2, 65536),
+            (3, 131071),
+            (4, 131072),
+            (64, 65536),
+            (65536, 1),
+            (65536, 2),
+            (131071, 3),
+            (131072, 4),
+            (65536, 64),
         ]
         self.shapes = shapes
         return None
@@ -459,7 +470,7 @@ class GemvBenchmark(Benchmark):
         return io_amount * 1e-9 / (latency * 1e-3)
 
 
-@pytest.mark.gemv
+@pytest.mark.sgemv
 def test_perf_sgemv():
     bench = GemvBenchmark(
         op_name="sgemv",
@@ -471,7 +482,7 @@ def test_perf_sgemv():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.sgemv
 def test_perf_sgemv_trans():
     bench = GemvBenchmark(
         op_name="sgemv_trans",
@@ -483,7 +494,7 @@ def test_perf_sgemv_trans():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.dgemv
 def test_perf_dgemv():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -497,7 +508,7 @@ def test_perf_dgemv():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.dgemv
 def test_perf_dgemv_trans():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -511,7 +522,7 @@ def test_perf_dgemv_trans():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.cgemv
 def test_perf_cgemv():
     bench = GemvBenchmark(
         op_name="cgemv",
@@ -525,7 +536,7 @@ def test_perf_cgemv():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.cgemv
 def test_perf_cgemv_trans():
     bench = GemvBenchmark(
         op_name="cgemv_trans",
@@ -539,7 +550,7 @@ def test_perf_cgemv_trans():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.cgemv
 def test_perf_cgemv_conj():
     bench = GemvBenchmark(
         op_name="cgemv_conj",
@@ -553,7 +564,7 @@ def test_perf_cgemv_conj():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.zgemv
 def test_perf_zgemv():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -569,7 +580,7 @@ def test_perf_zgemv():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.zgemv
 def test_perf_zgemv_trans():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -585,7 +596,7 @@ def test_perf_zgemv_trans():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.zgemv
 def test_perf_zgemv_conj():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -642,7 +653,7 @@ class HalfGemvBenchmark(GemvBenchmark):
             }
 
 
-@pytest.mark.gemv
+@pytest.mark.hgemv
 def test_perf_hgemv():
     bench = HalfGemvBenchmark(
         op_name="hgemv",
@@ -654,7 +665,7 @@ def test_perf_hgemv():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.hgemv
 def test_perf_hgemv_trans():
     bench = HalfGemvBenchmark(
         op_name="hgemv_trans",
@@ -666,7 +677,7 @@ def test_perf_hgemv_trans():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.bfgemv
 def test_perf_bfgemv():
     bench = HalfGemvBenchmark(
         op_name="bfgemv",
@@ -678,7 +689,7 @@ def test_perf_bfgemv():
     bench.run()
 
 
-@pytest.mark.gemv
+@pytest.mark.bfgemv
 def test_perf_bfgemv_trans():
     bench = HalfGemvBenchmark(
         op_name="bfgemv_trans",
@@ -795,6 +806,8 @@ class Fp8GemvBenchmark(Benchmark):
             (18432, 7168),
             (28672, 8192),
             (53248, 16384),
+            (64, 65536),
+            (65536, 64),
         ]
         self.shapes = [(m, n) for m, n in shapes if m % 16 == 0 and n % 16 == 0]
         return None
