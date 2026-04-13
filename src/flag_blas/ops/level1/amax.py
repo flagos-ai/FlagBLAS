@@ -184,6 +184,92 @@ def amax_kernel_small_complex(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr)
 
     tl.store(out_ptr, final_idx + 1)
 
+@libentry()
+@triton.jit
+def amax_kernel_small_chunked_real(
+    x_ptr,
+    out_ptr,
+    n,
+    INCX,
+    CHUNK_SIZE: tl.constexpr,
+    NUM_CHUNKS: tl.constexpr,
+):
+    dtype = x_ptr.dtype.element_ty
+
+    # 用和 amax_kernel1_real 一致的标量初始化方式
+    local_max_val = tl.max(tl.zeros([1], dtype=dtype), axis=0) - 1.0
+    local_max_idx = tl.max(tl.zeros([1], dtype=tl.int32), axis=0) + 2147483647
+
+    for chunk_id in tl.static_range(NUM_CHUNKS):
+        base = chunk_id * CHUNK_SIZE
+        idx = base + tl.arange(0, CHUNK_SIZE)
+        idx = idx.to(tl.int32)
+        mask = idx < n
+
+        x = tl.load(x_ptr + idx * INCX, mask=mask, other=0.0)
+        abs_x = tl.abs(x)
+
+        block_max = tl.max(abs_x, axis=0)
+
+        abs_x_masked = tl.where(mask, abs_x, -float("inf"))
+        is_max = abs_x_masked == block_max
+        candidate_idx = tl.where(is_max, idx, 2147483647)
+        chunk_best_idx = tl.min(candidate_idx, axis=0).to(tl.int32)
+
+        new_max = tl.maximum(local_max_val, block_max)
+        use_new = (block_max > local_max_val) | (
+            (block_max == local_max_val) & (chunk_best_idx < local_max_idx)
+        )
+        local_max_idx = tl.where(use_new, chunk_best_idx, local_max_idx)
+        local_max_val = new_max
+
+    tl.store(out_ptr, local_max_idx + 1)
+
+
+@libentry()
+@triton.jit
+def amax_kernel_small_chunked_complex(
+    x_ptr,
+    out_ptr,
+    n,
+    INCX,
+    CHUNK_SIZE: tl.constexpr,
+    NUM_CHUNKS: tl.constexpr,
+):
+    dtype = x_ptr.dtype.element_ty
+
+    # 用和 amax_kernel1_complex 一致的标量初始化方式
+    local_max_val = tl.max(tl.zeros([1], dtype=dtype), axis=0) - 1.0
+    local_max_idx = tl.max(tl.zeros([1], dtype=tl.int32), axis=0) + 2147483647
+
+    for chunk_id in tl.static_range(NUM_CHUNKS):
+        base = chunk_id * CHUNK_SIZE
+        idx = base + tl.arange(0, CHUNK_SIZE)
+        idx = idx.to(tl.int32)
+        mask = idx < n
+
+        off = idx * INCX
+        x_real = tl.load(x_ptr + 2 * off, mask=mask, other=0.0)
+        x_imag = tl.load(x_ptr + 2 * off + 1, mask=mask, other=0.0)
+        abs_x = tl.abs(x_real) + tl.abs(x_imag)
+
+        block_max = tl.max(abs_x, axis=0)
+
+        abs_x_masked = tl.where(mask, abs_x, -float("inf"))
+        is_max = abs_x_masked == block_max
+        candidate_idx = tl.where(is_max, idx, 2147483647)
+        chunk_best_idx = tl.min(candidate_idx, axis=0).to(tl.int32)
+
+        new_max = tl.maximum(local_max_val, block_max)
+        use_new = (block_max > local_max_val) | (
+            (block_max == local_max_val) & (chunk_best_idx < local_max_idx)
+        )
+        local_max_idx = tl.where(use_new, chunk_best_idx, local_max_idx)
+        local_max_val = new_max
+
+    tl.store(out_ptr, local_max_idx + 1)
+
+
 
 def _launch_small_kernel(
     x: torch.Tensor,
@@ -192,28 +278,104 @@ def _launch_small_kernel(
     incx: int,
     is_complex: bool,
 ) -> bool:
+    # 先判断基础 small kernel
     if n <= 256:
         block_size = 256
+        use_chunked = False
     elif n <= 512:
         block_size = 512
+        use_chunked = False
     elif n <= 1024:
         block_size = 1024
+        use_chunked = False
     elif n <= 2048:
         block_size = 2048
+        use_chunked = False
+    elif n <= 4096:
+        # 只对表现好的类型开放 chunked small path
+        # 1) float32 contiguous
+        # 2) complex64 contiguous/stride
+        # 3) float32 stride
+        #
+        # 不给:
+        # - complex128
+        # - float64 stride
+        # 走这条路径
+        if x.dtype == torch.complex128:
+            return False
+        if x.dtype == torch.float64 and incx > 1:
+            return False
+
+        block_size = 2048
+        use_chunked = True
     else:
         return False
 
-    if is_complex:
-        x_real = torch.view_as_real(x)
-        amax_kernel_small_complex[(1, 1, 1)](
-            x_real, result, n, incx, BLOCK_SIZE=block_size
-        )
+    if not use_chunked:
+        if is_complex:
+            x_real = torch.view_as_real(x)
+            amax_kernel_small_complex[(1, 1, 1)](
+                x_real, result, n, incx, BLOCK_SIZE=block_size
+            )
+        else:
+            amax_kernel_small_real[(1, 1, 1)](
+                x, result, n, incx, BLOCK_SIZE=block_size
+            )
     else:
-        amax_kernel_small_real[(1, 1, 1)](
-            x, result, n, incx, BLOCK_SIZE=block_size
-        )
+        num_chunks = triton.cdiv(n, block_size)
+
+        if is_complex:
+            x_real = torch.view_as_real(x)
+            amax_kernel_small_chunked_complex[(1, 1, 1)](
+                x_real,
+                result,
+                n,
+                incx,
+                CHUNK_SIZE=block_size,
+                NUM_CHUNKS=num_chunks,
+            )
+        else:
+            amax_kernel_small_chunked_real[(1, 1, 1)](
+                x,
+                result,
+                n,
+                incx,
+                CHUNK_SIZE=block_size,
+                NUM_CHUNKS=num_chunks,
+            )
 
     return True
+
+ 
+# def _launch_small_kernel(
+#     x: torch.Tensor,
+#     result: torch.Tensor,
+#     n: int,
+#     incx: int,
+#     is_complex: bool,
+# ) -> bool:
+#     if n <= 256:
+#         block_size = 256
+#     elif n <= 512:
+#         block_size = 512
+#     elif n <= 1024:
+#         block_size = 1024
+#     elif n <= 2048:
+#         block_size = 2048
+#     else:
+#         return False
+
+#     if is_complex:
+#         x_real = torch.view_as_real(x)
+#         amax_kernel_small_complex[(1, 1, 1)](
+#             x_real, result, n, incx, BLOCK_SIZE=block_size
+#         )
+#     else:
+#         amax_kernel_small_real[(1, 1, 1)](
+#             x, result, n, incx, BLOCK_SIZE=block_size
+#         )
+
+#     return True
 
 
 def _amax_impl(
