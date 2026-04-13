@@ -13,7 +13,8 @@ def _alloc_fn(size, alignment, stream):
     return torch.empty(size, device="cuda", dtype=torch.int8)
 
 
-triton.set_allocator(_alloc_fn)
+if hasattr(triton, "set_allocator"):
+    triton.set_allocator(_alloc_fn)
 
 
 __all__ = ["*"]
