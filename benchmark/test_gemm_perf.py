@@ -107,7 +107,7 @@ def gems_sgemm_wrapper(
     alpha_ptr,
     beta_ptr,
 ):
-    flag_blas.ops.sgemm(
+    flag_blas.sgemm(
         transa,
         transb,
         m,
@@ -197,7 +197,7 @@ def gems_hgemm_wrapper(
     alpha_ptr,
     beta_ptr,
 ):
-    flag_blas.ops.hgemm(
+    flag_blas.hgemm(
         transa,
         transb,
         m,
@@ -287,7 +287,7 @@ def gems_bfgemm_wrapper(
     alpha_ptr,
     beta_ptr,
 ):
-    flag_blas.ops.bfgemm(
+    flag_blas.bfgemm(
         transa,
         transb,
         m,
@@ -372,7 +372,7 @@ def gems_fp8gemm_wrapper(
     alpha_ptr,
     beta_ptr,
 ):
-    flag_blas.ops.fp8gemm(
+    flag_blas.fp8gemm(
         transa,
         transb,
         m,

@@ -1,4 +1,4 @@
-from . import backend, common, error
+from . import backend, common, error  # noqa: F401
 from .backend.device import DeviceDetector
 from .configloader import ConfigLoader
 
@@ -6,7 +6,8 @@ config_loader = ConfigLoader()
 device = DeviceDetector()
 
 """
-The dependency order of the sub-directory is strict, and changing the order arbitrarily may cause errors.
+The dependency order of the sub-directory is strict, and changing the order
+arbitrarily may cause errors.
 """
 
 # torch_device_fn is like 'torch.cuda' object
@@ -31,7 +32,7 @@ def replace_customized_ops(_globals):
     backend_customization_operators = backend.get_current_device_extend_op(
         device.vendor_name
     )
-    if device.vendor != common.vendors.NVIDIA:
+    if backend_customization_operators:
         try:
             for fn_name, fn in backend_customization_operators:
                 _globals[fn_name] = fn
