@@ -1,3 +1,1587 @@
+sgemm:
+  - META: {BLOCK_M: 32, BLOCK_N: 32, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 32, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 5
+  - META: {BLOCK_M: 256, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 32, BLOCK_N: 32, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 32, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+hgemm_nn:
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 6
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 4}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+hgemm_tn:
+  - META: {BLOCK_M: 64, BLOCK_N: 32, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 5
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 6
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+hgemm_nn2:
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+    num_ctas: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+    num_ctas: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 4
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 5
+    num_ctas: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 2
+hgemm_tn2:
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+    num_ctas: 1
+hgemm_nt:
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 6
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 4}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 6
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 32, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+bfgemm_nn:
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 6
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 4}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+bfgemm_tn:
+  - META: {BLOCK_M: 64, BLOCK_N: 32, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 5
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 6
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+bfgemm_nn2:
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+    num_ctas: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+    num_ctas: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 4
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 5
+    num_ctas: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 2
+bfgemm_tn2:
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+    num_ctas: 1
+bfgemm_nt:
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 6
+    num_ctas: 1
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 4}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 6
+    num_ctas: 1
+  - META: {BLOCK_M: 64, BLOCK_N: 32, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+    num_ctas: 1
+fp8gemm:
+  - META: {BLOCK_M: 32, BLOCK_N: 32, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+sgemv_n_splitk:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+
+sgemv_t_splitk:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 2048}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+sgemv_n:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+sgemv_t:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+dgemv_n_splitk:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 4
+    num_stages: 4
+
+dgemv_t_splitk:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 4
+    num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 4
+    num_stages: 2
+dgemv_n:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+dgemv_t:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 128}
+    num_warps: 8
+    num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+
+cgemv_n:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 4}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 8}
+    num_warps: 4
+    num_stages: 4
+cgemv:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+
+cgemv_n_splitk:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+cgemv_splitk:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+
+zgemv_n:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+zgemv:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 64}
+    num_warps: 8
+    num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 1024, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+zgemv_n_splitk:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 1
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 1
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+
+zgemv_splitk:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 1
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+hgemv_n_splitk:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 4
+    num_stages: 4
+hgemv_t_splitk:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 4
+    num_stages: 4
+hgemv_n:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+hgemv_t:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 128}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+bfgemv_n_splitk:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 4
+    num_stages: 4
+bfgemv_t_splitk:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 4
+    num_stages: 4
+bfgemv_n:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+bfgemv_t:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 64}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 128}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 512, BLOCK_SIZE_K: 32}
+    num_warps: 8
+    num_stages: 4
+fp8_gemv:
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 256}
+    num_warps: 8
+    num_stages: 4
+fp8_gemv_splitk:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 1024}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 256}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 128}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 64}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_K: 32}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 128, BLOCK_SIZE_K: 16}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
+    num_warps: 4
+    num_stages: 4
+
 attention:
 - gen: true
   param_map:
