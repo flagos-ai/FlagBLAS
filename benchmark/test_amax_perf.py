@@ -58,22 +58,6 @@ class AmaxBenchmark(Benchmark):
 
     def set_more_shapes(self):
         shapes = [
-
-            (256,),
-            (512,),
-            (768,),
-
-            # around small-kernel threshold
-            (1280,),
-            (1536,),
-            (1792,),
-            (2048,),
-            (2304,),
-            (2560,),
-            (3072,),
-            (3584,),
-            (4096,),
-
             (1024,),
             (5333,),
             (65536,),

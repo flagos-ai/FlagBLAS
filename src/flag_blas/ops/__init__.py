@@ -65,6 +65,13 @@ from flag_blas.ops.level1.abs import (
     cabs,
     zabs,
 )
+from flag_blas.ops.level1.copy import (
+    scopy,
+    dcopy,
+    ccopy,
+    zcopy,
+)
+
 __all__ = [
     # amax
     "samax",
@@ -119,5 +126,11 @@ __all__ = [
     "dabs",
     "cabs",
     "zabs",
+    # copy
+    "scopy",
+    "dcopy",
+    "ccopy",
+    "zcopy",
+
 
 ]
