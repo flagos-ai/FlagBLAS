@@ -146,6 +146,14 @@ def amax_kernel2(
 
 
 @libentry()
+@triton.autotune(
+    configs=[
+        triton.Config({}, num_warps=4, num_stages=3),
+        triton.Config({}, num_warps=8, num_stages=3),
+        triton.Config({}, num_warps=4, num_stages=2),
+    ],
+    key=["n", "INCX", "BLOCK_SIZE"], 
+)
 @triton.jit
 def amax_kernel_small_real(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr):
     idx = tl.arange(0, BLOCK_SIZE)
@@ -165,6 +173,14 @@ def amax_kernel_small_real(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr):
 
 
 @libentry()
+@triton.autotune(
+    configs=[
+        triton.Config({}, num_warps=4, num_stages=3),
+        triton.Config({}, num_warps=8, num_stages=3),
+        triton.Config({}, num_warps=4, num_stages=2),
+    ],
+    key=["n", "INCX", "BLOCK_SIZE"], 
+)
 @triton.jit
 def amax_kernel_small_complex(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr):
     idx = tl.arange(0, BLOCK_SIZE)
@@ -185,6 +201,163 @@ def amax_kernel_small_complex(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr)
     tl.store(out_ptr, final_idx + 1)
 
 
+@libentry()
+@triton.autotune(
+    configs=[
+        triton.Config({}, num_warps=4, num_stages=3),
+        triton.Config({}, num_warps=8, num_stages=3),
+        triton.Config({}, num_warps=4, num_stages=2),
+    ],
+    key=["n", "INCX", "BLOCK_SIZE"], 
+)
+@triton.jit
+def amax_kernel_small_chunked_real(
+    x_ptr,
+    out_ptr,
+    n,
+    INCX,
+    CHUNK_SIZE: tl.constexpr,
+    NUM_CHUNKS: tl.constexpr,
+):
+    dtype = x_ptr.dtype.element_ty
+    local_max_val = tl.max(tl.zeros([1], dtype=dtype), axis=0) - 1.0
+    local_max_idx = tl.max(tl.zeros([1], dtype=tl.int32), axis=0) + 2147483647
+
+    for chunk_id in tl.static_range(NUM_CHUNKS):
+        base = chunk_id * CHUNK_SIZE
+        idx = base + tl.arange(0, CHUNK_SIZE)
+        idx = idx.to(tl.int32)
+        mask = idx < n
+
+        x = tl.load(x_ptr + idx * INCX, mask=mask, other=0.0)
+        abs_x = tl.abs(x)
+
+        block_max = tl.max(abs_x, axis=0)
+
+        abs_x_masked = tl.where(mask, abs_x, -float("inf"))
+        is_max = abs_x_masked == block_max
+        candidate_idx = tl.where(is_max, idx, 2147483647)
+        chunk_best_idx = tl.min(candidate_idx, axis=0).to(tl.int32)
+
+        new_max = tl.maximum(local_max_val, block_max)
+        use_new = (block_max > local_max_val) | (
+            (block_max == local_max_val) & (chunk_best_idx < local_max_idx)
+        )
+        local_max_idx = tl.where(use_new, chunk_best_idx, local_max_idx)
+        local_max_val = new_max
+
+    tl.store(out_ptr, local_max_idx + 1)
+
+
+@libentry()
+@triton.autotune(
+    configs=[
+        triton.Config({}, num_warps=4, num_stages=3),
+        triton.Config({}, num_warps=8, num_stages=3),
+        triton.Config({}, num_warps=4, num_stages=2),
+    ],
+    key=["n", "INCX", "BLOCK_SIZE"], 
+)
+@triton.jit
+def amax_kernel_small_chunked_complex(
+    x_ptr,
+    out_ptr,
+    n,
+    INCX,
+    CHUNK_SIZE: tl.constexpr,
+    NUM_CHUNKS: tl.constexpr,
+):
+    dtype = x_ptr.dtype.element_ty
+    local_max_val = tl.max(tl.zeros([1], dtype=dtype), axis=0) - 1.0
+    local_max_idx = tl.max(tl.zeros([1], dtype=tl.int32), axis=0) + 2147483647
+
+    for chunk_id in tl.static_range(NUM_CHUNKS):
+        base = chunk_id * CHUNK_SIZE
+        idx = base + tl.arange(0, CHUNK_SIZE)
+        idx = idx.to(tl.int32)
+        mask = idx < n
+
+        off = idx * INCX
+        x_real = tl.load(x_ptr + 2 * off, mask=mask, other=0.0)
+        x_imag = tl.load(x_ptr + 2 * off + 1, mask=mask, other=0.0)
+        abs_x = tl.abs(x_real) + tl.abs(x_imag)
+
+        block_max = tl.max(abs_x, axis=0)
+
+        abs_x_masked = tl.where(mask, abs_x, -float("inf"))
+        is_max = abs_x_masked == block_max
+        candidate_idx = tl.where(is_max, idx, 2147483647)
+        chunk_best_idx = tl.min(candidate_idx, axis=0).to(tl.int32)
+
+        new_max = tl.maximum(local_max_val, block_max)
+        use_new = (block_max > local_max_val) | (
+            (block_max == local_max_val) & (chunk_best_idx < local_max_idx)
+        )
+        local_max_idx = tl.where(use_new, chunk_best_idx, local_max_idx)
+        local_max_val = new_max
+
+    tl.store(out_ptr, local_max_idx + 1)
+
+
+@libentry()
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_SIZE": 64}, num_warps=2, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=2, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=2, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=2, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=4, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=4, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 1024}, num_warps=4, num_stages=2),
+    ],
+    key=["n", "INCX"],
+)
+@triton.jit
+def amax_kernel1_complex_zamax(
+    x_ptr,
+    mid_val_ptr,
+    mid_idx_ptr,
+    n,
+    INCX,
+    BLOCK_SIZE: tl.constexpr,
+):
+    pid = tle.program_id(0)
+    num_ctas = tl.num_programs(0)
+
+    dtype = x_ptr.dtype.element_ty
+    local_max_val = tl.max(tl.zeros([1], dtype=dtype), axis=0) - 1.0
+    local_max_idx = tl.max(tl.zeros([1], dtype=tl.int32), axis=0) + 2147483647
+
+    block_start = pid * BLOCK_SIZE
+    while block_start < n:
+        idx = block_start + tl.arange(0, BLOCK_SIZE)
+        idx = idx.to(tl.int32)
+        mask = idx < n
+
+        x_base_offset = idx * INCX * 2
+        x_real = tl.load(x_ptr + x_base_offset, mask=mask, other=0.0)
+        x_imag = tl.load(x_ptr + x_base_offset + 1, mask=mask, other=0.0)
+        abs_x = tl.abs(x_real) + tl.abs(x_imag)
+
+        block_max = tl.max(abs_x, axis=0)
+        is_max_in_chunk = (abs_x == block_max) & mask
+        candidate_idx = tl.where(is_max_in_chunk, idx, 2147483647)
+        chunk_best_idx = tl.min(candidate_idx, axis=0).to(tl.int32)
+
+        new_max = tl.maximum(local_max_val, block_max)
+        use_new = (block_max > local_max_val) | (
+            (block_max == local_max_val) & (chunk_best_idx < local_max_idx)
+        )
+        local_max_idx = tl.where(use_new, chunk_best_idx, local_max_idx)
+        local_max_val = new_max
+
+        block_start += num_ctas * BLOCK_SIZE
+
+    tl.store(mid_val_ptr + pid, local_max_val)
+    tl.store(mid_idx_ptr + pid, local_max_idx)
+
+
 def _launch_small_kernel(
     x: torch.Tensor,
     result: torch.Tensor,
@@ -192,26 +365,78 @@ def _launch_small_kernel(
     incx: int,
     is_complex: bool,
 ) -> bool:
-    if n <= 256:
-        block_size = 256
-    elif n <= 512:
-        block_size = 512
-    elif n <= 1024:
-        block_size = 1024
-    elif n <= 2048:
-        block_size = 2048
-    else:
-        return False
+    if x.dtype == torch.complex128:
+        if n <= 256:
+            block_size = 256
+        elif n <= 512:
+            block_size = 512
+        elif n <= 1024:
+            block_size = 1024
+        elif n <= 2048:
+            block_size = 2048
+      
+        else:
+            return False
 
-    if is_complex:
         x_real = torch.view_as_real(x)
         amax_kernel_small_complex[(1, 1, 1)](
             x_real, result, n, incx, BLOCK_SIZE=block_size
         )
+        return True
+
+    if n <= 256:
+        block_size = 256
+        use_chunked = False
+    elif n <= 512:
+        block_size = 512
+        use_chunked = False
+    elif n <= 1024:
+        block_size = 1024
+        use_chunked = False
+    elif n <= 2048:
+        block_size = 2048
+        use_chunked = False
+    elif n <= 4096:
+        if x.dtype == torch.float64 and incx > 1:
+            return False
+
+        block_size = 2048
+        use_chunked = True
     else:
-        amax_kernel_small_real[(1, 1, 1)](
-            x, result, n, incx, BLOCK_SIZE=block_size
-        )
+        return False
+
+    if not use_chunked:
+        if is_complex:
+            x_real = torch.view_as_real(x)
+            amax_kernel_small_complex[(1, 1, 1)](
+                x_real, result, n, incx, BLOCK_SIZE=block_size
+            )
+        else:
+            amax_kernel_small_real[(1, 1, 1)](
+                x, result, n, incx, BLOCK_SIZE=block_size
+            )
+    else:
+        num_chunks = triton.cdiv(n, block_size)
+
+        if is_complex:
+            x_real = torch.view_as_real(x)
+            amax_kernel_small_chunked_complex[(1, 1, 1)](
+                x_real,
+                result,
+                n,
+                incx,
+                CHUNK_SIZE=block_size,
+                NUM_CHUNKS=num_chunks,
+            )
+        else:
+            amax_kernel_small_chunked_real[(1, 1, 1)](
+                x,
+                result,
+                n,
+                incx,
+                CHUNK_SIZE=block_size,
+                NUM_CHUNKS=num_chunks,
+            )
 
     return True
 
@@ -240,16 +465,25 @@ def _amax_impl(
         launched_small = _launch_small_kernel(x, result, n, incx, is_complex)
 
         if not launched_small:
-            grid_size = min(triton.cdiv(n, 256), MAX_NUM_BLOCKS)
+            if is_complex and x.dtype == torch.complex128:
+                grid_size = min(triton.cdiv(n, 128), MAX_NUM_BLOCKS)
+            else:
+                grid_size = min(triton.cdiv(n, 256), MAX_NUM_BLOCKS)
+
             block_mid = triton.next_power_of_2(grid_size)
             mid_val = torch.empty((grid_size,), dtype=val_dtype, device=x.device)
             mid_idx = torch.empty((grid_size,), dtype=torch.int32, device=x.device)
 
             if is_complex:
                 x_real = torch.view_as_real(x)
-                amax_kernel1_complex[(grid_size, 1, 1)](
-                    x_real, mid_val, mid_idx, n, incx
-                )
+                if x.dtype == torch.complex128:
+                    amax_kernel1_complex_zamax[(grid_size, 1, 1)](
+                        x_real, mid_val, mid_idx, n, incx
+                    )
+                else:
+                    amax_kernel1_complex[(grid_size, 1, 1)](
+                        x_real, mid_val, mid_idx, n, incx
+                    )
             else:
                 amax_kernel1_real[(grid_size, 1, 1)](
                     x, mid_val, mid_idx, n, incx

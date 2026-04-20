@@ -59,6 +59,19 @@ from flag_blas.ops.level3.gemm import (
     fp8gemm,
 )
 
+from flag_blas.ops.level1.abs import (
+    sabs,
+    dabs,
+    cabs,
+    zabs,
+)
+from flag_blas.ops.level1.copy import (
+    scopy,
+    dcopy,
+    ccopy,
+    zcopy,
+)
+
 __all__ = [
     # amax
     "samax",
@@ -108,4 +121,16 @@ __all__ = [
     "hgemm",
     "bfgemm",
     "fp8gemm",
+    # abs
+    "sabs",
+    "dabs",
+    "cabs",
+    "zabs",
+    # copy
+    "scopy",
+    "dcopy",
+    "ccopy",
+    "zcopy",
+
+
 ]
