@@ -1,21 +1,63 @@
+import ctypes
+import ctypes.util
+import cupy as cp
 import pytest
 import torch
 
 import flag_blas
-
 from .accuracy_utils import ASUM_SHAPES
+
+
+def load_cublas():
+    lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
+    found_path = ctypes.util.find_library("cublas")
+    if found_path:
+        lib_names.insert(0, found_path)
+
+    for name in lib_names:
+        try:
+            return ctypes.cdll.LoadLibrary(name)
+        except OSError:
+            continue
+    raise RuntimeError("Cannot find libcublas.so in the system")
+
+
+_cublas = load_cublas()
 
 STRIDES = [1, 2, 3, 5]
 
 
-def torch_copy_reference(n, x, incx, y, incy):
-    assert x.dim() == 1, "x must be 1-dimensional"
-    assert y.dim() == 1, "y must be 1-dimensional"
-
+def cublas_copy_reference(n, x, incx, y, incy):
     if n <= 0:
-        return
+        return y
 
-    y[::incy][:n].copy_(x[::incx][:n])
+    handle = cp.cuda.device.get_cublas_handle()
+    dtype = x.dtype
+
+    if dtype == torch.float32:
+        func = _cublas.cublasScopy_v2
+    elif dtype == torch.float64:
+        func = _cublas.cublasDcopy_v2
+    elif dtype == torch.complex64:
+        func = _cublas.cublasCcopy_v2
+    elif dtype == torch.complex128:
+        func = _cublas.cublasZcopy_v2
+    else:
+        raise ValueError(f"Unsupported dtype {dtype}")
+
+    status = func(
+        ctypes.c_void_p(handle),
+        ctypes.c_int(n),
+        ctypes.c_void_p(x.data_ptr()),
+        ctypes.c_int(incx),
+        ctypes.c_void_p(y.data_ptr()),
+        ctypes.c_int(incy),
+    )
+
+    if status != 0:
+        raise RuntimeError(f"cuBLAS copy execution failed, error code: {status}")
+
+    return y
 
 
 @pytest.mark.copy
@@ -34,7 +76,7 @@ def test_accuracy_copy_real(dtype, shape, incx, incy):
     ref_y = torch.empty(n * incy, dtype=dtype, device=flag_blas.device)
     y = torch.empty(n * incy, dtype=dtype, device=flag_blas.device)
 
-    torch_copy_reference(n, ref_x, incx, ref_y, incy)
+    cublas_copy_reference(n, ref_x, incx, ref_y, incy)
 
     if dtype == torch.float32:
         flag_blas.ops.scopy(n, x, incx, y, incy)
@@ -60,7 +102,7 @@ def test_accuracy_copy_complex(dtype, shape, incx, incy):
     ref_y = torch.empty(n * incy, dtype=dtype, device=flag_blas.device)
     y = torch.empty(n * incy, dtype=dtype, device=flag_blas.device)
 
-    torch_copy_reference(n, ref_x, incx, ref_y, incy)
+    cublas_copy_reference(n, ref_x, incx, ref_y, incy)
 
     if dtype == torch.complex64:
         flag_blas.ops.ccopy(n, x, incx, y, incy)
@@ -120,7 +162,7 @@ def test_accuracy_copy_different_n_with_stride_real(dtype, n, vec_size, incx, in
     ref_y = torch.empty(out_size, dtype=dtype, device=flag_blas.device)
     y = torch.empty(out_size, dtype=dtype, device=flag_blas.device)
 
-    torch_copy_reference(n, ref_x, incx, ref_y, incy)
+    cublas_copy_reference(n, ref_x, incx, ref_y, incy)
 
     if dtype == torch.float32:
         flag_blas.ops.scopy(n, x, incx, y, incy)
@@ -153,7 +195,7 @@ def test_accuracy_copy_different_n_with_stride_complex(dtype, n, vec_size, incx,
     ref_y = torch.empty(out_size, dtype=dtype, device=flag_blas.device)
     y = torch.empty(out_size, dtype=dtype, device=flag_blas.device)
 
-    torch_copy_reference(n, ref_x, incx, ref_y, incy)
+    cublas_copy_reference(n, ref_x, incx, ref_y, incy)
 
     if dtype == torch.complex64:
         flag_blas.ops.ccopy(n, x, incx, y, incy)
