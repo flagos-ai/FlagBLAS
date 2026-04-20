@@ -148,14 +148,11 @@ def amax_kernel2(
 @libentry()
 @triton.autotune(
     configs=[
-        # 配置 1：标准配置
         triton.Config({}, num_warps=4, num_stages=3),
-        # 配置 2：增加线程数量，适合处理 incx > 1 时的访存延迟
         triton.Config({}, num_warps=8, num_stages=3),
-        # 配置 3：针对某些架构，减少 stage 可能减少 overhead
         triton.Config({}, num_warps=4, num_stages=2),
     ],
-    key=["n", "INCX", "BLOCK_SIZE"], # 把 BLOCK_SIZE 放在 key 里，因为它由外部逻辑决定
+    key=["n", "INCX", "BLOCK_SIZE"], 
 )
 @triton.jit
 def amax_kernel_small_real(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr):
@@ -178,14 +175,11 @@ def amax_kernel_small_real(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr):
 @libentry()
 @triton.autotune(
     configs=[
-        # 配置 1：标准配置
         triton.Config({}, num_warps=4, num_stages=3),
-        # 配置 2：增加线程数量，适合处理 incx > 1 时的访存延迟
         triton.Config({}, num_warps=8, num_stages=3),
-        # 配置 3：针对某些架构，减少 stage 可能减少 overhead
         triton.Config({}, num_warps=4, num_stages=2),
     ],
-    key=["n", "INCX", "BLOCK_SIZE"], # 把 BLOCK_SIZE 放在 key 里，因为它由外部逻辑决定
+    key=["n", "INCX", "BLOCK_SIZE"], 
 )
 @triton.jit
 def amax_kernel_small_complex(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr):
@@ -210,14 +204,11 @@ def amax_kernel_small_complex(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr)
 @libentry()
 @triton.autotune(
     configs=[
-        # 配置 1：标准配置
         triton.Config({}, num_warps=4, num_stages=3),
-        # 配置 2：增加线程数量，适合处理 incx > 1 时的访存延迟
         triton.Config({}, num_warps=8, num_stages=3),
-        # 配置 3：针对某些架构，减少 stage 可能减少 overhead
         triton.Config({}, num_warps=4, num_stages=2),
     ],
-    key=["n", "INCX", "BLOCK_SIZE"], # 把 BLOCK_SIZE 放在 key 里，因为它由外部逻辑决定
+    key=["n", "INCX", "BLOCK_SIZE"], 
 )
 @triton.jit
 def amax_kernel_small_chunked_real(
@@ -261,14 +252,11 @@ def amax_kernel_small_chunked_real(
 @libentry()
 @triton.autotune(
     configs=[
-        # 配置 1：标准配置
         triton.Config({}, num_warps=4, num_stages=3),
-        # 配置 2：增加线程数量，适合处理 incx > 1 时的访存延迟
         triton.Config({}, num_warps=8, num_stages=3),
-        # 配置 3：针对某些架构，减少 stage 可能减少 overhead
         triton.Config({}, num_warps=4, num_stages=2),
     ],
-    key=["n", "INCX", "BLOCK_SIZE"], # 把 BLOCK_SIZE 放在 key 里，因为它由外部逻辑决定
+    key=["n", "INCX", "BLOCK_SIZE"], 
 )
 @triton.jit
 def amax_kernel_small_chunked_complex(
@@ -377,7 +365,6 @@ def _launch_small_kernel(
     incx: int,
     is_complex: bool,
 ) -> bool:
-    # complex128 单独处理：只允许 n<=1024 走 small kernel
     if x.dtype == torch.complex128:
         if n <= 256:
             block_size = 256
@@ -397,8 +384,6 @@ def _launch_small_kernel(
         )
         return True
 
-
-    # 其他类型沿用之前更稳的分流策略
     if n <= 256:
         block_size = 256
         use_chunked = False
@@ -412,7 +397,6 @@ def _launch_small_kernel(
         block_size = 2048
         use_chunked = False
     elif n <= 4096:
-        # 不给 float64 + stride 走 chunked
         if x.dtype == torch.float64 and incx > 1:
             return False
 
@@ -481,7 +465,6 @@ def _amax_impl(
         launched_small = _launch_small_kernel(x, result, n, incx, is_complex)
 
         if not launched_small:
-            # 只保留 complex128 的更细 grid
             if is_complex and x.dtype == torch.complex128:
                 grid_size = min(triton.cdiv(n, 128), MAX_NUM_BLOCKS)
             else:
