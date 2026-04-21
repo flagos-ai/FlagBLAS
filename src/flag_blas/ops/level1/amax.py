@@ -208,7 +208,7 @@ def amax_kernel_small_complex(x_ptr, out_ptr, n, INCX, BLOCK_SIZE: tl.constexpr)
         triton.Config({}, num_warps=8, num_stages=3),
         triton.Config({}, num_warps=4, num_stages=2),
     ],
-    key=["n", "INCX", "BLOCK_SIZE"], 
+    key=["n", "INCX"],
 )
 @triton.jit
 def amax_kernel_small_chunked_real(
@@ -256,7 +256,7 @@ def amax_kernel_small_chunked_real(
         triton.Config({}, num_warps=8, num_stages=3),
         triton.Config({}, num_warps=4, num_stages=2),
     ],
-    key=["n", "INCX", "BLOCK_SIZE"], 
+    key=["n", "INCX"],
 )
 @triton.jit
 def amax_kernel_small_chunked_complex(
