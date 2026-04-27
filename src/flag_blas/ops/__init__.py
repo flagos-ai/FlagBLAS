@@ -52,6 +52,9 @@ from flag_blas.ops.level2.gemv import (
     CUBLAS_OP_T,
     CUBLAS_OP_C,
 )
+
+from flag_blas.ops.level2.tbsv import stbsv
+
 from flag_blas.ops.level3.gemm import (
     sgemm,
     hgemm,
@@ -131,6 +134,6 @@ __all__ = [
     "dcopy",
     "ccopy",
     "zcopy",
-
-
+    # tbsv
+    "stbsv"
 ]
