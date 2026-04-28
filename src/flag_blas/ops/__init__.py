@@ -40,6 +40,15 @@ from flag_blas.ops.level1.scal import (
     csscal,
     zdscal
 )
+from flag_blas.ops.level2._constants import (
+    CUBLAS_FILL_MODE_LOWER,
+    CUBLAS_FILL_MODE_UPPER,
+    CUBLAS_OP_N,
+    CUBLAS_OP_T,
+    CUBLAS_OP_C,
+    CUBLAS_DIAG_NON_UNIT,
+    CUBLAS_DIAG_UNIT,
+)
 from flag_blas.ops.level2.gemv import (
     sgemv,
     dgemv,
@@ -48,9 +57,18 @@ from flag_blas.ops.level2.gemv import (
     hgemv,
     bfgemv,
     fp8_gemv,
-    CUBLAS_OP_N,
-    CUBLAS_OP_T,
-    CUBLAS_OP_C,
+)
+from flag_blas.ops.level2.gbmv import (
+    sgbmv,
+    dgbmv,
+    cgbmv,
+    zgbmv,
+)
+from flag_blas.ops.level2.symv import (
+    ssymv,
+    dsymv,
+    csymv,
+    zsymv,
 )
 from flag_blas.ops.level3.gemm import (
     sgemm,
@@ -113,6 +131,20 @@ __all__ = [
     "hgemv",
     "bfgemv",
     "fp8_gemv",
+    # gbmv
+    "sgbmv",
+    "dgbmv",
+    "cgbmv",
+    "zgbmv",
+    # symv
+    "ssymv",
+    "dsymv",
+    "csymv",
+    "zsymv",
+    "CUBLAS_DIAG_NON_UNIT",
+    "CUBLAS_DIAG_UNIT",
+    "CUBLAS_FILL_MODE_LOWER",
+    "CUBLAS_FILL_MODE_UPPER",
     "CUBLAS_OP_N",
     "CUBLAS_OP_T",
     "CUBLAS_OP_C",
@@ -131,6 +163,4 @@ __all__ = [
     "dcopy",
     "ccopy",
     "zcopy",
-
-
 ]
