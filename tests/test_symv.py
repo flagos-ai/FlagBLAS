@@ -7,6 +7,7 @@ import cupy as cp
 import flag_blas
 from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 
+
 def load_cublas():
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
@@ -20,13 +21,17 @@ def load_cublas():
             continue
     raise RuntimeError("Unable to find libcublas.so on this system")
 
+
 _cublas = load_cublas()
+
 
 class cuComplex(ctypes.Structure):
     _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float)]
 
+
 class cuDoubleComplex(ctypes.Structure):
     _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
 
 def cublas_symv_reference(uplo, n, alpha, A, lda, x, incx, beta, y, incy):
     if n == 0:
@@ -38,19 +43,19 @@ def cublas_symv_reference(uplo, n, alpha, A, lda, x, incx, beta, y, incy):
     if dtype == torch.float32:
         func = _cublas.cublasSsymv_v2
         alpha_c = ctypes.c_float(alpha)
-        beta_c  = ctypes.c_float(beta)
+        beta_c = ctypes.c_float(beta)
     elif dtype == torch.float64:
         func = _cublas.cublasDsymv_v2
         alpha_c = ctypes.c_double(alpha)
-        beta_c  = ctypes.c_double(beta)
+        beta_c = ctypes.c_double(beta)
     elif dtype == torch.complex64:
         func = _cublas.cublasCsymv_v2
         alpha_c = cuComplex(alpha.real, alpha.imag)
-        beta_c  = cuComplex(beta.real, beta.imag)
+        beta_c = cuComplex(beta.real, beta.imag)
     elif dtype == torch.complex128:
         func = _cublas.cublasZsymv_v2
         alpha_c = cuDoubleComplex(alpha.real, alpha.imag)
-        beta_c  = cuDoubleComplex(beta.real, beta.imag)
+        beta_c = cuDoubleComplex(beta.real, beta.imag)
     else:
         raise ValueError(f"Unsupported dtype {dtype}")
 
@@ -65,14 +70,41 @@ def cublas_symv_reference(uplo, n, alpha, A, lda, x, incx, beta, y, incy):
         ctypes.c_int(incx),
         ctypes.byref(beta_c),
         ctypes.c_void_p(y.data_ptr()),
-        ctypes.c_int(incy)
+        ctypes.c_int(incy),
     )
     if status != 0:
         raise RuntimeError(f"cublasXsymv_v2 execution failed with error code: {status}")
 
+
 SYMV_SIZES = [
-    1, 2, 15, 32, 63, 64, 65, 127, 128, 192, 255, 256, 384, 512, 768, 1024,
-    1023, 1025, 1536, 2048, 3072, 4095, 4096, 6144, 8192, 9999, 10000, 12288,
+    1,
+    2,
+    15,
+    32,
+    63,
+    64,
+    65,
+    127,
+    128,
+    192,
+    255,
+    256,
+    384,
+    512,
+    768,
+    1024,
+    1023,
+    1025,
+    1536,
+    2048,
+    3072,
+    4095,
+    4096,
+    6144,
+    8192,
+    9999,
+    10000,
+    12288,
     16384,
 ]
 
@@ -81,11 +113,14 @@ SYMV_STRIDE_SIZES = [64, 127, 256]
 FILL_MODES = [CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER]
 
 STRIDES = [(1, 1), (2, 1), (1, 2), (2, 2)]
+
+
 def create_symv_data(n, lda, dtype, device):
     A = torch.zeros((n, lda), dtype=dtype, device=device)
     data = torch.randn(n, n, dtype=dtype, device=device)
     A[:, :n] = data
     return A.contiguous()
+
 
 def check_fp64_support():
     if not getattr(flag_blas.runtime.device, "support_fp64", True):
@@ -124,6 +159,7 @@ def test_accuracy_ssymv(n, uplo, beta):
     tol = _symv_tol(dtype, n)
     torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
+
 @pytest.mark.ssymv
 @pytest.mark.parametrize("n", SYMV_STRIDE_SIZES)
 @pytest.mark.parametrize("uplo", FILL_MODES)
@@ -143,6 +179,7 @@ def test_accuracy_ssymv_stride(n, uplo, incx, incy):
     tol = _symv_tol(dtype, n)
     torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
+
 @pytest.mark.ssymv
 def test_ssymv_alpha_zero():
     n, lda = 256, 258
@@ -157,6 +194,7 @@ def test_ssymv_alpha_zero():
     torch.testing.assert_close(y, y_ref)
     torch.testing.assert_close(y, y_orig * 2.0)
 
+
 @pytest.mark.ssymv
 def test_ssymv_beta_zero():
     n, lda = 256, 256
@@ -168,7 +206,9 @@ def test_ssymv_beta_zero():
     y_zero = torch.zeros(n, dtype=dtype, device=flag_blas.device)
     ref_y_nan = y_nan.clone()
 
-    cublas_symv_reference(CUBLAS_FILL_MODE_LOWER, n, 1.0, A, lda, x, 1, 0.0, ref_y_nan, 1)
+    cublas_symv_reference(
+        CUBLAS_FILL_MODE_LOWER, n, 1.0, A, lda, x, 1, 0.0, ref_y_nan, 1
+    )
     flag_blas.ops.ssymv(CUBLAS_FILL_MODE_LOWER, n, 1.0, A, lda, x, 1, 0.0, y_nan, 1)
     flag_blas.ops.ssymv(CUBLAS_FILL_MODE_LOWER, n, 1.0, A, lda, x, 1, 0.0, y_zero, 1)
     torch.testing.assert_close(y_nan, ref_y_nan)
@@ -195,6 +235,7 @@ def test_accuracy_dsymv(n, uplo, beta):
     tol = _symv_tol(dtype, n)
     torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
+
 @pytest.mark.dsymv
 @pytest.mark.parametrize("n", SYMV_STRIDE_SIZES)
 @pytest.mark.parametrize("uplo", FILL_MODES)
@@ -215,6 +256,7 @@ def test_accuracy_dsymv_stride(n, uplo, incx, incy):
     tol = _symv_tol(dtype, n)
     torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
+
 @pytest.mark.dsymv
 def test_dsymv_alpha_zero():
     check_fp64_support()
@@ -230,6 +272,7 @@ def test_dsymv_alpha_zero():
     torch.testing.assert_close(y, y_ref)
     torch.testing.assert_close(y, y_orig * 2.0)
 
+
 @pytest.mark.dsymv
 def test_dsymv_beta_zero():
     check_fp64_support()
@@ -242,7 +285,9 @@ def test_dsymv_beta_zero():
     y_zero = torch.zeros(n, dtype=dtype, device=flag_blas.device)
     ref_y_nan = y_nan.clone()
 
-    cublas_symv_reference(CUBLAS_FILL_MODE_LOWER, n, 1.0, A, lda, x, 1, 0.0, ref_y_nan, 1)
+    cublas_symv_reference(
+        CUBLAS_FILL_MODE_LOWER, n, 1.0, A, lda, x, 1, 0.0, ref_y_nan, 1
+    )
     flag_blas.ops.dsymv(CUBLAS_FILL_MODE_LOWER, n, 1.0, A, lda, x, 1, 0.0, y_nan, 1)
     flag_blas.ops.dsymv(CUBLAS_FILL_MODE_LOWER, n, 1.0, A, lda, x, 1, 0.0, y_zero, 1)
     torch.testing.assert_close(y_nan, ref_y_nan)
@@ -268,6 +313,7 @@ def test_accuracy_csymv(n, uplo, beta):
     tol = _symv_tol(dtype, n)
     torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
+
 @pytest.mark.csymv
 @pytest.mark.parametrize("n", SYMV_STRIDE_SIZES)
 @pytest.mark.parametrize("uplo", FILL_MODES)
@@ -287,6 +333,7 @@ def test_accuracy_csymv_stride(n, uplo, incx, incy):
     tol = _symv_tol(dtype, n)
     torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
+
 @pytest.mark.csymv
 def test_csymv_alpha_zero():
     n, lda = 256, 258
@@ -296,10 +343,13 @@ def test_csymv_alpha_zero():
     y = torch.randn(n, dtype=dtype, device=flag_blas.device)
     y_orig, y_ref = y.clone(), y.clone()
 
-    cublas_symv_reference(CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0+1.0j, y_ref, 1)
-    flag_blas.ops.csymv(CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0+1.0j, y, 1)
+    cublas_symv_reference(
+        CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0 + 1.0j, y_ref, 1
+    )
+    flag_blas.ops.csymv(CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0 + 1.0j, y, 1)
     torch.testing.assert_close(y, y_ref)
-    torch.testing.assert_close(y, y_orig * (2.0+1.0j))
+    torch.testing.assert_close(y, y_orig * (2.0 + 1.0j))
+
 
 @pytest.mark.csymv
 def test_csymv_beta_zero():
@@ -312,9 +362,15 @@ def test_csymv_beta_zero():
     y_zero = torch.zeros(n, dtype=dtype, device=flag_blas.device)
     ref_y_nan = y_nan.clone()
 
-    cublas_symv_reference(CUBLAS_FILL_MODE_LOWER, n, 1.0+0.5j, A, lda, x, 1, 0.0j, ref_y_nan, 1)
-    flag_blas.ops.csymv(CUBLAS_FILL_MODE_LOWER, n, 1.0+0.5j, A, lda, x, 1, 0.0j, y_nan, 1)
-    flag_blas.ops.csymv(CUBLAS_FILL_MODE_LOWER, n, 1.0+0.5j, A, lda, x, 1, 0.0j, y_zero, 1)
+    cublas_symv_reference(
+        CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, ref_y_nan, 1
+    )
+    flag_blas.ops.csymv(
+        CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, y_nan, 1
+    )
+    flag_blas.ops.csymv(
+        CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, y_zero, 1
+    )
     torch.testing.assert_close(y_nan, ref_y_nan)
     torch.testing.assert_close(y_nan, y_zero)
 
@@ -339,6 +395,7 @@ def test_accuracy_zsymv(n, uplo, beta):
     tol = _symv_tol(dtype, n)
     torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
+
 @pytest.mark.zsymv
 @pytest.mark.parametrize("n", SYMV_STRIDE_SIZES)
 @pytest.mark.parametrize("uplo", FILL_MODES)
@@ -359,6 +416,7 @@ def test_accuracy_zsymv_stride(n, uplo, incx, incy):
     tol = _symv_tol(dtype, n)
     torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
+
 @pytest.mark.zsymv
 def test_zsymv_alpha_zero():
     check_fp64_support()
@@ -369,10 +427,13 @@ def test_zsymv_alpha_zero():
     y = torch.randn(n, dtype=dtype, device=flag_blas.device)
     y_orig, y_ref = y.clone(), y.clone()
 
-    cublas_symv_reference(CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0+1.0j, y_ref, 1)
-    flag_blas.ops.zsymv(CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0+1.0j, y, 1)
+    cublas_symv_reference(
+        CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0 + 1.0j, y_ref, 1
+    )
+    flag_blas.ops.zsymv(CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0 + 1.0j, y, 1)
     torch.testing.assert_close(y, y_ref)
-    torch.testing.assert_close(y, y_orig * (2.0+1.0j))
+    torch.testing.assert_close(y, y_orig * (2.0 + 1.0j))
+
 
 @pytest.mark.zsymv
 def test_zsymv_beta_zero():
@@ -386,9 +447,15 @@ def test_zsymv_beta_zero():
     y_zero = torch.zeros(n, dtype=dtype, device=flag_blas.device)
     ref_y_nan = y_nan.clone()
 
-    cublas_symv_reference(CUBLAS_FILL_MODE_LOWER, n, 1.0+0.5j, A, lda, x, 1, 0.0j, ref_y_nan, 1)
-    flag_blas.ops.zsymv(CUBLAS_FILL_MODE_LOWER, n, 1.0+0.5j, A, lda, x, 1, 0.0j, y_nan, 1)
-    flag_blas.ops.zsymv(CUBLAS_FILL_MODE_LOWER, n, 1.0+0.5j, A, lda, x, 1, 0.0j, y_zero, 1)
+    cublas_symv_reference(
+        CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, ref_y_nan, 1
+    )
+    flag_blas.ops.zsymv(
+        CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, y_nan, 1
+    )
+    flag_blas.ops.zsymv(
+        CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, y_zero, 1
+    )
     torch.testing.assert_close(y_nan, ref_y_nan)
     torch.testing.assert_close(y_nan, y_zero)
 
@@ -421,10 +488,34 @@ def test_symv_n_zero(dtype, op, alpha, beta):
         (torch.float32, flag_blas.ops.ssymv, 1.25, 0.5, CUBLAS_FILL_MODE_LOWER),
         (torch.float64, flag_blas.ops.dsymv, 1.25, 0.5, CUBLAS_FILL_MODE_UPPER),
         (torch.float64, flag_blas.ops.dsymv, 1.25, 0.5, CUBLAS_FILL_MODE_LOWER),
-        (torch.complex64, flag_blas.ops.csymv, 1.25 + 0.5j, 0.5 + 0.25j, CUBLAS_FILL_MODE_UPPER),
-        (torch.complex64, flag_blas.ops.csymv, 1.25 + 0.5j, 0.5 + 0.25j, CUBLAS_FILL_MODE_LOWER),
-        (torch.complex128, flag_blas.ops.zsymv, 1.25 + 0.5j, 0.5 + 0.25j, CUBLAS_FILL_MODE_UPPER),
-        (torch.complex128, flag_blas.ops.zsymv, 1.25 + 0.5j, 0.5 + 0.25j, CUBLAS_FILL_MODE_LOWER),
+        (
+            torch.complex64,
+            flag_blas.ops.csymv,
+            1.25 + 0.5j,
+            0.5 + 0.25j,
+            CUBLAS_FILL_MODE_UPPER,
+        ),
+        (
+            torch.complex64,
+            flag_blas.ops.csymv,
+            1.25 + 0.5j,
+            0.5 + 0.25j,
+            CUBLAS_FILL_MODE_LOWER,
+        ),
+        (
+            torch.complex128,
+            flag_blas.ops.zsymv,
+            1.25 + 0.5j,
+            0.5 + 0.25j,
+            CUBLAS_FILL_MODE_UPPER,
+        ),
+        (
+            torch.complex128,
+            flag_blas.ops.zsymv,
+            1.25 + 0.5j,
+            0.5 + 0.25j,
+            CUBLAS_FILL_MODE_LOWER,
+        ),
     ],
 )
 def test_symv_ignored_triangle(dtype, op, alpha, beta, uplo):

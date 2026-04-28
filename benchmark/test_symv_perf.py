@@ -36,6 +36,7 @@ SYMV_SIZES = [
     16384,
 ]
 
+
 def load_cublas():
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
@@ -48,19 +49,23 @@ def load_cublas():
             continue
     raise RuntimeError("Unable to find libcublas.so on this system")
 
+
 _cublas = load_cublas()
+
 
 class cuComplex(ctypes.Structure):
     _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float)]
 
+
 class cuDoubleComplex(ctypes.Structure):
     _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
 
+
 _CUBLAS_SYMV_FUNCS = {
-    torch.float32:    (_cublas.cublasSsymv_v2, ctypes.c_float,    False),
-    torch.float64:    (_cublas.cublasDsymv_v2, ctypes.c_double,   False),
-    torch.complex64:  (_cublas.cublasCsymv_v2, cuComplex,         True),
-    torch.complex128: (_cublas.cublasZsymv_v2, cuDoubleComplex,   True),
+    torch.float32: (_cublas.cublasSsymv_v2, ctypes.c_float, False),
+    torch.float64: (_cublas.cublasDsymv_v2, ctypes.c_double, False),
+    torch.complex64: (_cublas.cublasCsymv_v2, cuComplex, True),
+    torch.complex128: (_cublas.cublasZsymv_v2, cuDoubleComplex, True),
 }
 
 
@@ -71,9 +76,21 @@ def _make_scalar(ctor, is_complex, value):
 
 
 def cublas_symv_baseline(
-    A, x, y, uplo, n, alpha, lda, incx, beta, incy,
+    A,
+    x,
+    y,
+    uplo,
+    n,
+    alpha,
+    lda,
+    incx,
+    beta,
+    incy,
     handle,
-    c_func, alpha_c, beta_c, **kwargs,
+    c_func,
+    alpha_c,
+    beta_c,
+    **kwargs,
 ):
     if n == 0:
         return y
@@ -95,18 +112,20 @@ def cublas_symv_baseline(
         raise RuntimeError(f"cublasXsymv_v2 execution failed with error code: {status}")
     return y
 
+
 def _gems_wrapper(op):
-    def _impl(
-        A, x, y, uplo, n, alpha, lda, incx, beta, incy, handle, **kwargs
-    ):
+    def _impl(A, x, y, uplo, n, alpha, lda, incx, beta, incy, handle, **kwargs):
         op(uplo, n, alpha, A, lda, x, incx, beta, y, incy)
         return y
+
     return _impl
+
 
 gems_ssymv_wrapper = _gems_wrapper(flag_blas.ops.ssymv)
 gems_dsymv_wrapper = _gems_wrapper(flag_blas.ops.dsymv)
 gems_csymv_wrapper = _gems_wrapper(flag_blas.ops.csymv)
 gems_zsymv_wrapper = _gems_wrapper(flag_blas.ops.zsymv)
+
 
 def _generate_sym_A(n, lda, dtype, device):
     A = torch.zeros((n, lda), dtype=dtype, device=device)
@@ -183,11 +202,10 @@ class SymvBenchmark(Benchmark):
         n = y.numel()
         a_bytes = n * (n + 1) // 2 * A.element_size()
         io_amount = (
-            a_bytes
-            + shape_utils.size_in_bytes(x)
-            + 2 * shape_utils.size_in_bytes(y)
+            a_bytes + shape_utils.size_in_bytes(x) + 2 * shape_utils.size_in_bytes(y)
         )
         return io_amount * 1e-9 / (latency * 1e-3)
+
 
 @pytest.mark.ssymv
 def test_perf_ssymv():

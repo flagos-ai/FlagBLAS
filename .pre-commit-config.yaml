@@ -16,6 +16,7 @@ repos:
     rev: 7.1.0
     hooks:
       - id: flake8
+        args: [--extend-ignore=E203]
 
   # # 可选：类型检查
   # - repo: https://github.com/pre-commit/mirrors-mypy

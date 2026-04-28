@@ -18,7 +18,7 @@ from flag_blas.ops.level1.nrm2 import (
     snrm2,
     dnrm2,
     scnrm2,
-    dznrm2
+    dznrm2,
 )
 from flag_blas.ops.level1.axpy import (
     caxpy,
@@ -38,7 +38,7 @@ from flag_blas.ops.level1.scal import (
     dscal,
     sscal,
     csscal,
-    zdscal
+    zdscal,
 )
 from flag_blas.ops.level2._constants import (
     CUBLAS_FILL_MODE_LOWER,

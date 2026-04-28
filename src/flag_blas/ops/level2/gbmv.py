@@ -1,49 +1,48 @@
 import logging
+import struct
 from typing import Union
 
 import torch
 import triton
 import triton.language as tl
-import struct
+from flag_blas.ops.level2._constants import (
+    CUBLAS_OP_C,
+    CUBLAS_OP_N,
+    CUBLAS_OP_T,
+)
 from flag_blas.runtime import torch_device_fn
 
 logger = logging.getLogger(__name__)
 
 ScalarType = Union[float, int, complex, torch.Tensor]
 
-from flag_blas.ops.level2._constants import (
-    CUBLAS_OP_N,
-    CUBLAS_OP_T,
-    CUBLAS_OP_C,
-)
-
 
 _SGBMV_N_CONFIGS = [
-    triton.Config({"BLOCK_SIZE_M": 32,  "BAND_TILE": 16}, num_warps=2, num_stages=1),
-    triton.Config({"BLOCK_SIZE_M": 64,  "BAND_TILE": 16}, num_warps=2, num_stages=1),
-    triton.Config({"BLOCK_SIZE_M": 64,  "BAND_TILE": 16}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_M": 32, "BAND_TILE": 16}, num_warps=2, num_stages=1),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 16}, num_warps=2, num_stages=1),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 16}, num_warps=4, num_stages=3),
     triton.Config({"BLOCK_SIZE_M": 128, "BAND_TILE": 16}, num_warps=4, num_stages=3),
     triton.Config({"BLOCK_SIZE_M": 128, "BAND_TILE": 32}, num_warps=4, num_stages=2),
     triton.Config({"BLOCK_SIZE_M": 256, "BAND_TILE": 16}, num_warps=8, num_stages=2),
     triton.Config({"BLOCK_SIZE_M": 256, "BAND_TILE": 32}, num_warps=8, num_stages=2),
-    triton.Config({"BLOCK_SIZE_M": 64,  "BAND_TILE": 64}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 64}, num_warps=4, num_stages=2),
 ]
 
 _SGBMV_T_CONFIGS = [
-    triton.Config({"BLOCK_SIZE_M": 32,  "BAND_TILE": 16}, num_warps=2, num_stages=1),
-    triton.Config({"BLOCK_SIZE_M": 64,  "BAND_TILE": 16}, num_warps=2, num_stages=1),
-    triton.Config({"BLOCK_SIZE_M": 32,  "BAND_TILE": 16}, num_warps=2, num_stages=3),
-    triton.Config({"BLOCK_SIZE_M": 64,  "BAND_TILE": 16}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_M": 32, "BAND_TILE": 16}, num_warps=2, num_stages=1),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 16}, num_warps=2, num_stages=1),
+    triton.Config({"BLOCK_SIZE_M": 32, "BAND_TILE": 16}, num_warps=2, num_stages=3),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 16}, num_warps=4, num_stages=3),
     triton.Config({"BLOCK_SIZE_M": 128, "BAND_TILE": 16}, num_warps=4, num_stages=2),
     triton.Config({"BLOCK_SIZE_M": 128, "BAND_TILE": 32}, num_warps=4, num_stages=2),
-    triton.Config({"BLOCK_SIZE_M": 64,  "BAND_TILE": 64}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 64}, num_warps=4, num_stages=2),
 ]
 
 _SGBMV_SPLIT_BAND_CONFIGS = [
-    triton.Config({"BLOCK_SIZE_M": 32,  "BAND_TILE": 16}, num_warps=2, num_stages=1),
-    triton.Config({"BLOCK_SIZE_M": 32,  "BAND_TILE": 16}, num_warps=2, num_stages=3),
-    triton.Config({"BLOCK_SIZE_M": 64,  "BAND_TILE": 16}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_M": 64,  "BAND_TILE": 32}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_SIZE_M": 32, "BAND_TILE": 16}, num_warps=2, num_stages=1),
+    triton.Config({"BLOCK_SIZE_M": 32, "BAND_TILE": 16}, num_warps=2, num_stages=3),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 16}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 32}, num_warps=4, num_stages=2),
     triton.Config({"BLOCK_SIZE_M": 128, "BAND_TILE": 16}, num_warps=4, num_stages=2),
     triton.Config({"BLOCK_SIZE_M": 128, "BAND_TILE": 32}, num_warps=4, num_stages=2),
 ]
@@ -102,7 +101,8 @@ _RESTORE = ["y_ptr"]
 
 
 def _f64_to_i64(v: float) -> int:
-    return struct.unpack('<q', struct.pack('<d', v))[0]
+    return struct.unpack("<q", struct.pack("<d", v))[0]
+
 
 def _band_bucket(band: int) -> int:
     if band <= 1:
@@ -116,10 +116,21 @@ def _band_bucket(band: int) -> int:
 @triton.autotune(configs=_SGBMV_N_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE)
 @triton.jit
 def sgbmv_n_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha: tl.float32, beta: tl.float32,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
-    out_len, band_bucket,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
+    out_len,
+    band_bucket,
     BETA_IS_ZERO: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BAND_TILE: tl.constexpr,
@@ -155,10 +166,21 @@ def sgbmv_n_kernel(
 @triton.autotune(configs=_SGBMV_T_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE)
 @triton.jit
 def sgbmv_t_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha: tl.float32, beta: tl.float32,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
-    out_len, band_bucket,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
+    out_len,
+    band_bucket,
     BETA_IS_ZERO: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BAND_TILE: tl.constexpr,
@@ -191,14 +213,26 @@ def sgbmv_t_kernel(
     tl.store(y_ptrs, out, mask=col_mask)
 
 
-@triton.autotune(configs=_SGBMV_SPLIT_BAND_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE)
+@triton.autotune(
+    configs=_SGBMV_SPLIT_BAND_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE
+)
 @triton.jit
 def sgbmv_n_split_band_kernel(
-    a_ptr, x_ptr, y_ptr,
+    a_ptr,
+    x_ptr,
+    y_ptr,
     alpha: tl.float32,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
     num_band_splits,
-    out_len, band_bucket,
+    out_len,
+    band_bucket,
     BLOCK_SIZE_M: tl.constexpr,
     BAND_TILE: tl.constexpr,
 ):
@@ -230,14 +264,26 @@ def sgbmv_n_split_band_kernel(
     tl.atomic_add(y_ptrs, alpha * acc, mask=row_mask, sem="relaxed")
 
 
-@triton.autotune(configs=_SGBMV_SPLIT_BAND_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE)
+@triton.autotune(
+    configs=_SGBMV_SPLIT_BAND_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE
+)
 @triton.jit
 def sgbmv_t_split_band_kernel(
-    a_ptr, x_ptr, y_ptr,
+    a_ptr,
+    x_ptr,
+    y_ptr,
     alpha: tl.float32,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
     num_band_splits,
-    out_len, band_bucket,
+    out_len,
+    band_bucket,
     BLOCK_SIZE_M: tl.constexpr,
     BAND_TILE: tl.constexpr,
 ):
@@ -272,10 +318,21 @@ def sgbmv_t_split_band_kernel(
 @triton.autotune(configs=_DGBMV_N_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE)
 @triton.jit
 def dgbmv_n_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_int: tl.int64, beta_int: tl.int64,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
-    out_len, band_bucket,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_int: tl.int64,
+    beta_int: tl.int64,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
+    out_len,
+    band_bucket,
     BETA_IS_ZERO: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
 ):
@@ -309,10 +366,21 @@ def dgbmv_n_kernel(
 @triton.autotune(configs=_DGBMV_T_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE)
 @triton.jit
 def dgbmv_t_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_int: tl.int64, beta_int: tl.int64,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
-    out_len, band_bucket,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_int: tl.int64,
+    beta_int: tl.int64,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
+    out_len,
+    band_bucket,
     BETA_IS_ZERO: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
 ):
@@ -343,14 +411,26 @@ def dgbmv_t_kernel(
     tl.store(y_ptrs, out, mask=col_mask)
 
 
-@triton.autotune(configs=_DGBMV_SPLIT_BAND_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE)
+@triton.autotune(
+    configs=_DGBMV_SPLIT_BAND_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE
+)
 @triton.jit
 def dgbmv_n_split_band_kernel(
-    a_ptr, x_ptr, y_ptr,
+    a_ptr,
+    x_ptr,
+    y_ptr,
     alpha_int: tl.int64,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
     num_band_splits,
-    out_len, band_bucket,
+    out_len,
+    band_bucket,
     BLOCK_SIZE_M: tl.constexpr,
 ):
     pid_m = tl.program_id(0)
@@ -379,14 +459,26 @@ def dgbmv_n_split_band_kernel(
     tl.atomic_add(y_ptrs, alpha * acc, mask=row_mask, sem="relaxed")
 
 
-@triton.autotune(configs=_DGBMV_SPLIT_BAND_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE)
+@triton.autotune(
+    configs=_DGBMV_SPLIT_BAND_CONFIGS, key=_REAL_KEY, restore_value=_RESTORE
+)
 @triton.jit
 def dgbmv_t_split_band_kernel(
-    a_ptr, x_ptr, y_ptr,
+    a_ptr,
+    x_ptr,
+    y_ptr,
     alpha_int: tl.int64,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
     num_band_splits,
-    out_len, band_bucket,
+    out_len,
+    band_bucket,
     BLOCK_SIZE_M: tl.constexpr,
 ):
     pid_m = tl.program_id(0)
@@ -418,11 +510,23 @@ def dgbmv_t_split_band_kernel(
 @triton.autotune(configs=_CGBMV_N_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE)
 @triton.jit
 def cgbmv_n_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_r: tl.float32, alpha_i: tl.float32,
-    beta_r: tl.float32, beta_i: tl.float32,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
-    out_len, band_bucket,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_r: tl.float32,
+    alpha_i: tl.float32,
+    beta_r: tl.float32,
+    beta_i: tl.float32,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
+    out_len,
+    band_bucket,
     CONJ: tl.constexpr,
     BETA_IS_ZERO: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
@@ -465,11 +569,23 @@ def cgbmv_n_kernel(
 @triton.autotune(configs=_CGBMV_T_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE)
 @triton.jit
 def cgbmv_t_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_r: tl.float32, alpha_i: tl.float32,
-    beta_r: tl.float32, beta_i: tl.float32,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
-    out_len, band_bucket,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_r: tl.float32,
+    alpha_i: tl.float32,
+    beta_r: tl.float32,
+    beta_i: tl.float32,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
+    out_len,
+    band_bucket,
     CONJ: tl.constexpr,
     BETA_IS_ZERO: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
@@ -509,14 +625,27 @@ def cgbmv_t_kernel(
     tl.store(y_ptr + y_off + 1, res_i, mask=col_mask)
 
 
-@triton.autotune(configs=_CGBMV_SPLIT_BAND_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE)
+@triton.autotune(
+    configs=_CGBMV_SPLIT_BAND_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE
+)
 @triton.jit
 def cgbmv_n_split_band_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_r: tl.float32, alpha_i: tl.float32,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_r: tl.float32,
+    alpha_i: tl.float32,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
     num_band_splits,
-    out_len, band_bucket,
+    out_len,
+    band_bucket,
     CONJ: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
 ):
@@ -555,14 +684,27 @@ def cgbmv_n_split_band_kernel(
     tl.atomic_add(y_ptr + y_off + 1, res_i, mask=row_mask, sem="relaxed")
 
 
-@triton.autotune(configs=_CGBMV_SPLIT_BAND_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE)
+@triton.autotune(
+    configs=_CGBMV_SPLIT_BAND_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE
+)
 @triton.jit
 def cgbmv_t_split_band_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_r: tl.float32, alpha_i: tl.float32,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_r: tl.float32,
+    alpha_i: tl.float32,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
     num_band_splits,
-    out_len, band_bucket,
+    out_len,
+    band_bucket,
     CONJ: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
 ):
@@ -604,11 +746,23 @@ def cgbmv_t_split_band_kernel(
 @triton.autotune(configs=_ZGBMV_N_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE)
 @triton.jit
 def zgbmv_n_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_r_int: tl.int64, alpha_i_int: tl.int64,
-    beta_r_int: tl.int64, beta_i_int: tl.int64,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
-    out_len, band_bucket,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_r_int: tl.int64,
+    alpha_i_int: tl.int64,
+    beta_r_int: tl.int64,
+    beta_i_int: tl.int64,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
+    out_len,
+    band_bucket,
     CONJ: tl.constexpr,
     BETA_IS_ZERO: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
@@ -633,18 +787,18 @@ def zgbmv_n_kernel(
         j = rows[:, None] + d[None, :]
         mask = row_mask[:, None] & band_mask[None, :] & (j >= 0) & (j < n)
         safe_j = tl.where(mask, j, 0)
-        
+
         a_off = (band_row[None, :] + safe_j * LDA) * 2
         x_off = safe_j * INCX * 2
-        
+
         ar = tl.load(a_ptr + a_off, mask=mask, other=0.0)
         ai = tl.load(a_ptr + a_off + 1, mask=mask, other=0.0)
         xr = tl.load(x_ptr + x_off, mask=mask, other=0.0)
         xi = tl.load(x_ptr + x_off + 1, mask=mask, other=0.0)
-        
+
         if CONJ:
             ai = -ai
-            
+
         acc_r += tl.sum(ar * xr - ai * xi, axis=1)
         acc_i += tl.sum(ar * xi + ai * xr, axis=1)
 
@@ -663,11 +817,23 @@ def zgbmv_n_kernel(
 @triton.autotune(configs=_ZGBMV_T_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE)
 @triton.jit
 def zgbmv_t_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_r_int: tl.int64, alpha_i_int: tl.int64,
-    beta_r_int: tl.int64, beta_i_int: tl.int64,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
-    out_len, band_bucket,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_r_int: tl.int64,
+    alpha_i_int: tl.int64,
+    beta_r_int: tl.int64,
+    beta_i_int: tl.int64,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
+    out_len,
+    band_bucket,
     CONJ: tl.constexpr,
     BETA_IS_ZERO: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
@@ -692,18 +858,18 @@ def zgbmv_t_kernel(
         i = cols[:, None] + e[None, :]
         mask = col_mask[:, None] & band_mask[None, :] & (i >= 0) & (i < m)
         safe_i = tl.where(mask, i, 0)
-        
+
         a_off = (band_row[None, :] + cols[:, None] * LDA) * 2
         x_off = safe_i * INCX * 2
-        
+
         ar = tl.load(a_ptr + a_off, mask=mask, other=0.0)
         ai = tl.load(a_ptr + a_off + 1, mask=mask, other=0.0)
         xr = tl.load(x_ptr + x_off, mask=mask, other=0.0)
         xi = tl.load(x_ptr + x_off + 1, mask=mask, other=0.0)
-        
+
         if CONJ:
             ai = -ai
-            
+
         acc_r += tl.sum(ar * xr - ai * xi, axis=1)
         acc_i += tl.sum(ar * xi + ai * xr, axis=1)
 
@@ -719,14 +885,27 @@ def zgbmv_t_kernel(
     tl.store(y_ptr + y_off + 1, res_i, mask=col_mask)
 
 
-@triton.autotune(configs=_ZGBMV_SPLIT_BAND_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE)
+@triton.autotune(
+    configs=_ZGBMV_SPLIT_BAND_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE
+)
 @triton.jit
 def zgbmv_n_split_band_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_r_int: tl.int64, alpha_i_int: tl.int64,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_r_int: tl.int64,
+    alpha_i_int: tl.int64,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
     num_band_splits,
-    out_len, band_bucket,
+    out_len,
+    band_bucket,
     CONJ: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BAND_TILE: tl.constexpr,
@@ -753,18 +932,18 @@ def zgbmv_n_split_band_kernel(
         j = rows[:, None] + d[None, :]
         mask = row_mask[:, None] & band_mask[None, :] & (j >= 0) & (j < n)
         safe_j = tl.where(mask, j, 0)
-        
+
         a_off = (band_row[None, :] + safe_j * LDA) * 2
         x_off = safe_j * INCX * 2
-        
+
         ar = tl.load(a_ptr + a_off, mask=mask, other=0.0)
         ai = tl.load(a_ptr + a_off + 1, mask=mask, other=0.0)
         xr = tl.load(x_ptr + x_off, mask=mask, other=0.0)
         xi = tl.load(x_ptr + x_off + 1, mask=mask, other=0.0)
-        
+
         if CONJ:
             ai = -ai
-            
+
         acc_r += tl.sum(ar * xr - ai * xi, axis=1)
         acc_i += tl.sum(ar * xi + ai * xr, axis=1)
 
@@ -775,14 +954,27 @@ def zgbmv_n_split_band_kernel(
     tl.atomic_add(y_ptr + y_off + 1, res_i, mask=row_mask, sem="relaxed")
 
 
-@triton.autotune(configs=_ZGBMV_SPLIT_BAND_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE)
+@triton.autotune(
+    configs=_ZGBMV_SPLIT_BAND_CONFIGS, key=_COMPLEX_KEY, restore_value=_RESTORE
+)
 @triton.jit
 def zgbmv_t_split_band_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_r_int: tl.int64, alpha_i_int: tl.int64,
-    m, n, LDA, INCX, INCY, KL, KU, BAND,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_r_int: tl.int64,
+    alpha_i_int: tl.int64,
+    m,
+    n,
+    LDA,
+    INCX,
+    INCY,
+    KL,
+    KU,
+    BAND,
     num_band_splits,
-    out_len, band_bucket,
+    out_len,
+    band_bucket,
     CONJ: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BAND_TILE: tl.constexpr,
@@ -809,18 +1001,18 @@ def zgbmv_t_split_band_kernel(
         i = cols[:, None] + e[None, :]
         mask = col_mask[:, None] & band_mask[None, :] & (i >= 0) & (i < m)
         safe_i = tl.where(mask, i, 0)
-        
+
         a_off = (band_row[None, :] + cols[:, None] * LDA) * 2
         x_off = safe_i * INCX * 2
-        
+
         ar = tl.load(a_ptr + a_off, mask=mask, other=0.0)
         ai = tl.load(a_ptr + a_off + 1, mask=mask, other=0.0)
         xr = tl.load(x_ptr + x_off, mask=mask, other=0.0)
         xi = tl.load(x_ptr + x_off + 1, mask=mask, other=0.0)
-        
+
         if CONJ:
             ai = -ai
-            
+
         acc_r += tl.sum(ar * xr - ai * xi, axis=1)
         acc_i += tl.sum(ar * xi + ai * xr, axis=1)
 
@@ -834,7 +1026,11 @@ def zgbmv_t_split_band_kernel(
 def _check_common(A, x, y, trans, m, n, kl, ku, lda, incx, incy, complex_ok):
     assert A.is_contiguous() and x.is_contiguous() and y.is_contiguous()
     assert A.device == x.device == y.device
-    allowed = [CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C] if complex_ok else [CUBLAS_OP_N, CUBLAS_OP_T]
+    allowed = (
+        [CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C]
+        if complex_ok
+        else [CUBLAS_OP_N, CUBLAS_OP_T]
+    )
     assert trans in allowed
     assert incx > 0 and incy > 0
     assert kl >= 0 and ku >= 0
@@ -847,7 +1043,9 @@ def _check_common(A, x, y, trans, m, n, kl, ku, lda, incx, incy, complex_ok):
     assert A.numel() >= n * lda
 
 
-def _pick_split_band(out_len: int, band: int, ref_block: int = 64, target_progs: int = 256) -> int:
+def _pick_split_band(
+    out_len: int, band: int, ref_block: int = 64, target_progs: int = 256
+) -> int:
     if band < 32:
         return 1
     row_progs = (out_len + ref_block - 1) // ref_block
@@ -860,10 +1058,19 @@ def _pick_split_band(out_len: int, band: int, ref_block: int = 64, target_progs:
 
 
 def sgbmv(
-    trans: int, m: int, n: int, kl: int, ku: int,
-    alpha: ScalarType, A: torch.Tensor, lda: int,
-    x: torch.Tensor, incx: int,
-    beta: ScalarType, y: torch.Tensor, incy: int,
+    trans: int,
+    m: int,
+    n: int,
+    kl: int,
+    ku: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
 ) -> None:
     assert A.dtype == torch.float32 == x.dtype == y.dtype
     _check_common(A, x, y, trans, m, n, kl, ku, lda, incx, incy, complex_ok=False)
@@ -874,8 +1081,10 @@ def sgbmv(
     beta = float(beta.item() if isinstance(beta, torch.Tensor) else beta)
 
     if alpha == 0.0:
-        if beta == 0.0: y.zero_()
-        elif beta != 1.0: y.mul_(beta)
+        if beta == 0.0:
+            y.zero_()
+        elif beta != 1.0:
+            y.mul_(beta)
         return
 
     band = kl + ku + 1
@@ -887,32 +1096,77 @@ def sgbmv(
 
     with torch_device_fn.device(A.device):
         if split_band > 1:
-            if beta == 0.0: y.zero_()
-            elif beta != 1.0: y.mul_(beta)
-            grid = lambda meta: (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]), split_band)
-            kernel = sgbmv_n_split_band_kernel if trans == CUBLAS_OP_N else sgbmv_t_split_band_kernel
+            if beta == 0.0:
+                y.zero_()
+            elif beta != 1.0:
+                y.mul_(beta)
+
+            def grid(meta):
+                return (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]), split_band)
+
+            kernel = (
+                sgbmv_n_split_band_kernel
+                if trans == CUBLAS_OP_N
+                else sgbmv_t_split_band_kernel
+            )
             kernel[grid](
-                A, x, y, alpha,
-                m, n, lda, incx, incy, kl, ku, band,
-                split_band, out_len, bucket,
+                A,
+                x,
+                y,
+                alpha,
+                m,
+                n,
+                lda,
+                incx,
+                incy,
+                kl,
+                ku,
+                band,
+                split_band,
+                out_len,
+                bucket,
             )
         else:
             beta_is_zero = beta == 0.0
-            grid = lambda meta: (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]),)
+
+            def grid(meta):
+                return (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]),)
+
             kernel = sgbmv_n_kernel if trans == CUBLAS_OP_N else sgbmv_t_kernel
             kernel[grid](
-                A, x, y, alpha, beta,
-                m, n, lda, incx, incy, kl, ku, band,
-                out_len, bucket,
+                A,
+                x,
+                y,
+                alpha,
+                beta,
+                m,
+                n,
+                lda,
+                incx,
+                incy,
+                kl,
+                ku,
+                band,
+                out_len,
+                bucket,
                 BETA_IS_ZERO=beta_is_zero,
             )
 
 
 def dgbmv(
-    trans: int, m: int, n: int, kl: int, ku: int,
-    alpha: ScalarType, A: torch.Tensor, lda: int,
-    x: torch.Tensor, incx: int,
-    beta: ScalarType, y: torch.Tensor, incy: int,
+    trans: int,
+    m: int,
+    n: int,
+    kl: int,
+    ku: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
 ) -> None:
     assert A.dtype == torch.float64 == x.dtype == y.dtype
     _check_common(A, x, y, trans, m, n, kl, ku, lda, incx, incy, complex_ok=False)
@@ -923,8 +1177,10 @@ def dgbmv(
     beta_val = float(beta.item() if isinstance(beta, torch.Tensor) else beta)
 
     if alpha_val == 0.0:
-        if beta_val == 0.0: y.zero_()
-        elif beta_val != 1.0: y.mul_(beta_val)
+        if beta_val == 0.0:
+            y.zero_()
+        elif beta_val != 1.0:
+            y.mul_(beta_val)
         return
 
     alpha_int = torch.tensor(alpha_val, dtype=torch.float64).view(torch.int64).item()
@@ -940,23 +1196,59 @@ def dgbmv(
 
     with torch_device_fn.device(A.device):
         if split_band > 1:
-            if beta_val == 0.0: y.zero_()
-            elif beta_val != 1.0: y.mul_(beta_val)
-            grid = lambda meta: (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]), split_band)
-            kernel = dgbmv_n_split_band_kernel if trans == CUBLAS_OP_N else dgbmv_t_split_band_kernel
+            if beta_val == 0.0:
+                y.zero_()
+            elif beta_val != 1.0:
+                y.mul_(beta_val)
+
+            def grid(meta):
+                return (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]), split_band)
+
+            kernel = (
+                dgbmv_n_split_band_kernel
+                if trans == CUBLAS_OP_N
+                else dgbmv_t_split_band_kernel
+            )
             kernel[grid](
-                A, x, y, alpha_int,
-                m, n, lda, incx, incy, kl, ku, band,
-                split_band, out_len, bucket,
+                A,
+                x,
+                y,
+                alpha_int,
+                m,
+                n,
+                lda,
+                incx,
+                incy,
+                kl,
+                ku,
+                band,
+                split_band,
+                out_len,
+                bucket,
             )
         else:
             beta_is_zero = beta_val == 0.0
-            grid = lambda meta: (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]),)
+
+            def grid(meta):
+                return (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]),)
+
             kernel = dgbmv_n_kernel if trans == CUBLAS_OP_N else dgbmv_t_kernel
             kernel[grid](
-                A, x, y, alpha_int, beta_int,
-                m, n, lda, incx, incy, kl, ku, band,
-                out_len, bucket,
+                A,
+                x,
+                y,
+                alpha_int,
+                beta_int,
+                m,
+                n,
+                lda,
+                incx,
+                incy,
+                kl,
+                ku,
+                band,
+                out_len,
+                bucket,
                 BETA_IS_ZERO=beta_is_zero,
             )
 
@@ -972,10 +1264,19 @@ def _complex_scalars(alpha, beta):
 
 
 def cgbmv(
-    trans: int, m: int, n: int, kl: int, ku: int,
-    alpha: ScalarType, A: torch.Tensor, lda: int,
-    x: torch.Tensor, incx: int,
-    beta: ScalarType, y: torch.Tensor, incy: int,
+    trans: int,
+    m: int,
+    n: int,
+    kl: int,
+    ku: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
 ) -> None:
     assert A.dtype == torch.complex64 == x.dtype == y.dtype
     _check_common(A, x, y, trans, m, n, kl, ku, lda, incx, incy, complex_ok=True)
@@ -984,8 +1285,10 @@ def cgbmv(
 
     ar, ai, br, bi = _complex_scalars(alpha, beta)
     if ar == 0.0 and ai == 0.0:
-        if br == 0.0 and bi == 0.0: y.zero_()
-        elif br != 1.0 or bi != 0.0: y.mul_(complex(br, bi))
+        if br == 0.0 and bi == 0.0:
+            y.zero_()
+        elif br != 1.0 or bi != 0.0:
+            y.mul_(complex(br, bi))
         return
 
     band = kl + ku + 1
@@ -1002,35 +1305,82 @@ def cgbmv(
 
     with torch_device_fn.device(A.device):
         if split_band > 1:
-            if br == 0.0 and bi == 0.0: y.zero_()
-            elif br != 1.0 or bi != 0.0: y.mul_(complex(br, bi))
-            grid = lambda meta: (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]), split_band)
-            kernel = cgbmv_n_split_band_kernel if trans == CUBLAS_OP_N else cgbmv_t_split_band_kernel
+            if br == 0.0 and bi == 0.0:
+                y.zero_()
+            elif br != 1.0 or bi != 0.0:
+                y.mul_(complex(br, bi))
+
+            def grid(meta):
+                return (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]), split_band)
+
+            kernel = (
+                cgbmv_n_split_band_kernel
+                if trans == CUBLAS_OP_N
+                else cgbmv_t_split_band_kernel
+            )
             kernel[grid](
-                A_real, x_real, y_real, ar, ai,
-                m, n, lda, incx, incy, kl, ku, band,
-                split_band, out_len, bucket,
+                A_real,
+                x_real,
+                y_real,
+                ar,
+                ai,
+                m,
+                n,
+                lda,
+                incx,
+                incy,
+                kl,
+                ku,
+                band,
+                split_band,
+                out_len,
+                bucket,
                 CONJ=conj,
             )
         else:
-            beta_is_zero = (br == 0.0 and bi == 0.0)
-            grid = lambda meta: (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]),)
+            beta_is_zero = br == 0.0 and bi == 0.0
+
+            def grid(meta):
+                return (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]),)
+
             kernel = cgbmv_n_kernel if trans == CUBLAS_OP_N else cgbmv_t_kernel
             kernel[grid](
-                A_real, x_real, y_real,
-                ar, ai, br, bi,
-                m, n, lda, incx, incy, kl, ku, band,
-                out_len, bucket,
+                A_real,
+                x_real,
+                y_real,
+                ar,
+                ai,
+                br,
+                bi,
+                m,
+                n,
+                lda,
+                incx,
+                incy,
+                kl,
+                ku,
+                band,
+                out_len,
+                bucket,
                 CONJ=conj,
                 BETA_IS_ZERO=beta_is_zero,
             )
 
 
 def zgbmv(
-    trans: int, m: int, n: int, kl: int, ku: int,
-    alpha: ScalarType, A: torch.Tensor, lda: int,
-    x: torch.Tensor, incx: int,
-    beta: ScalarType, y: torch.Tensor, incy: int,
+    trans: int,
+    m: int,
+    n: int,
+    kl: int,
+    ku: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
 ) -> None:
     assert A.dtype == torch.complex128 == x.dtype == y.dtype
     _check_common(A, x, y, trans, m, n, kl, ku, lda, incx, incy, complex_ok=True)
@@ -1039,8 +1389,10 @@ def zgbmv(
 
     ar, ai, br, bi = _complex_scalars(alpha, beta)
     if ar == 0.0 and ai == 0.0:
-        if br == 0.0 and bi == 0.0: y.zero_()
-        elif br != 1.0 or bi != 0.0: y.mul_(complex(br, bi))
+        if br == 0.0 and bi == 0.0:
+            y.zero_()
+        elif br != 1.0 or bi != 0.0:
+            y.mul_(complex(br, bi))
         return
 
     ar_i = _f64_to_i64(ar)
@@ -1060,25 +1412,63 @@ def zgbmv(
 
     with torch_device_fn.device(A.device):
         if split_band > 1:
-            if br == 0.0 and bi == 0.0: y.zero_()
-            elif br != 1.0 or bi != 0.0: y.mul_(complex(br, bi))
-            grid = lambda meta: (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]), split_band)
-            kernel = zgbmv_n_split_band_kernel if trans == CUBLAS_OP_N else zgbmv_t_split_band_kernel
+            if br == 0.0 and bi == 0.0:
+                y.zero_()
+            elif br != 1.0 or bi != 0.0:
+                y.mul_(complex(br, bi))
+
+            def grid(meta):
+                return (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]), split_band)
+
+            kernel = (
+                zgbmv_n_split_band_kernel
+                if trans == CUBLAS_OP_N
+                else zgbmv_t_split_band_kernel
+            )
             kernel[grid](
-                A_real, x_real, y_real, ar_i, ai_i,
-                m, n, lda, incx, incy, kl, ku, band,
-                split_band, out_len, bucket,
+                A_real,
+                x_real,
+                y_real,
+                ar_i,
+                ai_i,
+                m,
+                n,
+                lda,
+                incx,
+                incy,
+                kl,
+                ku,
+                band,
+                split_band,
+                out_len,
+                bucket,
                 CONJ=conj,
             )
         else:
-            beta_is_zero = (br == 0.0 and bi == 0.0)
-            grid = lambda meta: (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]),)
+            beta_is_zero = br == 0.0 and bi == 0.0
+
+            def grid(meta):
+                return (triton.cdiv(out_len, meta["BLOCK_SIZE_M"]),)
+
             kernel = zgbmv_n_kernel if trans == CUBLAS_OP_N else zgbmv_t_kernel
             kernel[grid](
-                A_real, x_real, y_real,
-                ar_i, ai_i, br_i, bi_i,
-                m, n, lda, incx, incy, kl, ku, band,
-                out_len, bucket,
+                A_real,
+                x_real,
+                y_real,
+                ar_i,
+                ai_i,
+                br_i,
+                bi_i,
+                m,
+                n,
+                lda,
+                incx,
+                incy,
+                kl,
+                ku,
+                band,
+                out_len,
+                bucket,
                 CONJ=conj,
                 BETA_IS_ZERO=beta_is_zero,
             )

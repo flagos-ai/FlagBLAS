@@ -38,6 +38,7 @@ GBMV_SHAPES = [
     (10000, 10000),
 ]
 
+
 def load_cublas():
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
@@ -50,13 +51,17 @@ def load_cublas():
             continue
     raise RuntimeError("Unable to find libcublas.so on the system.")
 
+
 _cublas = load_cublas()
+
 
 class cuComplex(ctypes.Structure):
     _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float)]
 
+
 class cuDoubleComplex(ctypes.Structure):
     _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
 
 _CUBLAS_GBMV_FUNCS = {
     torch.float32: (_cublas.cublasSgbmv_v2, ctypes.c_float, None),
@@ -73,9 +78,26 @@ def _make_scalar(ctor, is_complex, value):
 
 
 def cublas_gbmv_baseline(
-    AB, x, y, trans, m, n, kl, ku, alpha, lda, incx, beta, incy,
-    handle, alpha_ptr, beta_ptr,
-    c_func, alpha_c, beta_c, **kwargs,
+    AB,
+    x,
+    y,
+    trans,
+    m,
+    n,
+    kl,
+    ku,
+    alpha,
+    lda,
+    incx,
+    beta,
+    incy,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+    c_func,
+    alpha_c,
+    beta_c,
+    **kwargs,
 ):
     if m == 0 or n == 0:
         return y
@@ -100,18 +122,38 @@ def cublas_gbmv_baseline(
         raise RuntimeError(f"cublasXgbmv_v2 failed with status code: {status}")
     return y
 
+
 def _gems_wrapper(op):
     def _impl(
-        AB, x, y, trans, m, n, kl, ku, alpha, lda, incx, beta, incy, handle, alpha_ptr, beta_ptr, **kwargs
+        AB,
+        x,
+        y,
+        trans,
+        m,
+        n,
+        kl,
+        ku,
+        alpha,
+        lda,
+        incx,
+        beta,
+        incy,
+        handle,
+        alpha_ptr,
+        beta_ptr,
+        **kwargs,
     ):
         op(trans, m, n, kl, ku, alpha, AB, lda, x, incx, beta, y, incy)
         return y
+
     return _impl
+
 
 gems_sgbmv_wrapper = _gems_wrapper(flag_blas.ops.sgbmv)
 gems_dgbmv_wrapper = _gems_wrapper(flag_blas.ops.dgbmv)
 gems_cgbmv_wrapper = _gems_wrapper(flag_blas.ops.cgbmv)
 gems_zgbmv_wrapper = _gems_wrapper(flag_blas.ops.zgbmv)
+
 
 def _generate_banded_AB(m, n, kl, ku, lda, dtype, device):
     """Generate an AB tensor directly in band-storage format."""
@@ -191,7 +233,9 @@ class GbmvBenchmark(Benchmark):
                 seen_configs.add(config_key)
 
                 lda = actual_kl + actual_ku + 1
-                AB = _generate_banded_AB(m, n, actual_kl, actual_ku, lda, cur_dtype, self.device)
+                AB = _generate_banded_AB(
+                    m, n, actual_kl, actual_ku, lda, cur_dtype, self.device
+                )
 
                 x_len, y_len = (n, m) if self.trans == CUBLAS_OP_N else (m, n)
                 x = torch.randn(x_len, dtype=cur_dtype, device=self.device)
@@ -239,6 +283,7 @@ class GbmvBenchmark(Benchmark):
             + 2 * shape_utils.size_in_bytes(y)
         )
         return io_amount * 1e-9 / (latency * 1e-3)
+
 
 @pytest.mark.sgbmv
 def test_perf_sgbmv():

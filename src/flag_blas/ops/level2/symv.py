@@ -1,20 +1,19 @@
 import logging
+import struct
 from typing import Union
 
 import torch
 import triton
 import triton.language as tl
-import struct
+from flag_blas.ops.level2._constants import (
+    CUBLAS_FILL_MODE_LOWER,
+    CUBLAS_FILL_MODE_UPPER,
+)
 from flag_blas.runtime import torch_device_fn
 
 logger = logging.getLogger(__name__)
 
 ScalarType = Union[float, int, complex, torch.Tensor]
-
-from flag_blas.ops.level2._constants import (
-    CUBLAS_FILL_MODE_LOWER,
-    CUBLAS_FILL_MODE_UPPER,
-)
 
 
 _SSYMV_CONFIGS = [
@@ -58,15 +57,20 @@ _RESTORE = ["y_ptr"]
 
 
 def _f64_to_i64(v: float) -> int:
-    return struct.unpack('<q', struct.pack('<d', v))[0]
+    return struct.unpack("<q", struct.pack("<d", v))[0]
 
 
 @triton.autotune(configs=_SSYMV_CONFIGS, key=_SYMV_KEY, restore_value=_RESTORE)
 @triton.jit
 def ssymv_kernel(
-    a_ptr, x_ptr, y_ptr,
+    a_ptr,
+    x_ptr,
+    y_ptr,
     alpha: tl.float32,
-    n, LDA, INCX, INCY,
+    n,
+    LDA,
+    INCX,
+    INCY,
     UPLO: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
@@ -110,12 +114,18 @@ def ssymv_kernel(
     tl.atomic_add(y_ptr + rows * INCY, alpha * acc_rows, mask=row_mask, sem="relaxed")
     tl.atomic_add(y_ptr + cols * INCY, alpha * acc_cols, mask=col_mask, sem="relaxed")
 
+
 @triton.autotune(configs=_DSYMV_CONFIGS, key=_SYMV_KEY, restore_value=_RESTORE)
 @triton.jit
 def dsymv_kernel(
-    a_ptr, x_ptr, y_ptr,
+    a_ptr,
+    x_ptr,
+    y_ptr,
     alpha_int: tl.int64,
-    n, LDA, INCX, INCY,
+    n,
+    LDA,
+    INCX,
+    INCY,
     UPLO: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
@@ -164,9 +174,15 @@ def dsymv_kernel(
 @triton.autotune(configs=_CSYMV_CONFIGS, key=_SYMV_KEY, restore_value=_RESTORE)
 @triton.jit
 def csymv_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_r: tl.float32, alpha_i: tl.float32,
-    n, LDA, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_r: tl.float32,
+    alpha_i: tl.float32,
+    n,
+    LDA,
+    INCX,
+    INCY,
     UPLO: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
@@ -238,9 +254,15 @@ def csymv_kernel(
 @triton.autotune(configs=_ZSYMV_CONFIGS, key=_SYMV_KEY, restore_value=_RESTORE)
 @triton.jit
 def zsymv_kernel(
-    a_ptr, x_ptr, y_ptr,
-    alpha_r_int: tl.int64, alpha_i_int: tl.int64,
-    n, LDA, INCX, INCY,
+    a_ptr,
+    x_ptr,
+    y_ptr,
+    alpha_r_int: tl.int64,
+    alpha_i_int: tl.int64,
+    n,
+    LDA,
+    INCX,
+    INCY,
     UPLO: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
@@ -310,6 +332,7 @@ def zsymv_kernel(
     tl.atomic_add(y_ptr + y_cols_off, col_res_r, mask=col_mask, sem="relaxed")
     tl.atomic_add(y_ptr + y_cols_off + 1, col_res_i, mask=col_mask, sem="relaxed")
 
+
 def _check_common(A, x, y, uplo, n, lda, incx, incy):
     assert A.is_contiguous() and x.is_contiguous() and y.is_contiguous()
     assert A.device == x.device == y.device
@@ -321,6 +344,7 @@ def _check_common(A, x, y, uplo, n, lda, incx, incy):
         assert x.numel() >= 1 + (n - 1) * incx
         assert y.numel() >= 1 + (n - 1) * incy
         assert A.numel() >= n * lda
+
 
 def _strided_y(y: torch.Tensor, n: int, incy: int) -> torch.Tensor:
     return y[: (n - 1) * incy + 1 : incy]
@@ -337,10 +361,16 @@ def _complex_scalars(alpha, beta):
 
 
 def ssymv(
-    uplo: int, n: int,
-    alpha: ScalarType, A: torch.Tensor, lda: int,
-    x: torch.Tensor, incx: int,
-    beta: ScalarType, y: torch.Tensor, incy: int,
+    uplo: int,
+    n: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
 ) -> None:
     assert A.dtype == torch.float32 == x.dtype == y.dtype
     _check_common(A, x, y, uplo, n, lda, incx, incy)
@@ -364,22 +394,37 @@ def ssymv(
             y_view.zero_()
         elif beta != 1.0:
             y_view.mul_(beta)
-        grid = lambda meta: (
-            triton.cdiv(n, meta["BLOCK_SIZE"]),
-            triton.cdiv(n, meta["BLOCK_SIZE"]),
-        )
+
+        def grid(meta):
+            return (
+                triton.cdiv(n, meta["BLOCK_SIZE"]),
+                triton.cdiv(n, meta["BLOCK_SIZE"]),
+            )
+
         ssymv_kernel[grid](
-            A, x, y, alpha,
-            n, lda, incx, incy,
+            A,
+            x,
+            y,
+            alpha,
+            n,
+            lda,
+            incx,
+            incy,
             UPLO=uplo,
         )
 
 
 def dsymv(
-    uplo: int, n: int,
-    alpha: ScalarType, A: torch.Tensor, lda: int,
-    x: torch.Tensor, incx: int,
-    beta: ScalarType, y: torch.Tensor, incy: int,
+    uplo: int,
+    n: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
 ) -> None:
     assert A.dtype == torch.float64 == x.dtype == y.dtype
     _check_common(A, x, y, uplo, n, lda, incx, incy)
@@ -392,8 +437,10 @@ def dsymv(
     y_view = _strided_y(y, n, incy)
 
     if alpha_val == 0.0:
-        if beta_val == 0.0: y_view.zero_()
-        elif beta_val != 1.0: y_view.mul_(beta_val)
+        if beta_val == 0.0:
+            y_view.zero_()
+        elif beta_val != 1.0:
+            y_view.mul_(beta_val)
         return
 
     alpha_int = _f64_to_i64(alpha_val)
@@ -403,22 +450,37 @@ def dsymv(
             y_view.zero_()
         elif beta_val != 1.0:
             y_view.mul_(beta_val)
-        grid = lambda meta: (
-            triton.cdiv(n, meta["BLOCK_SIZE"]),
-            triton.cdiv(n, meta["BLOCK_SIZE"]),
-        )
+
+        def grid(meta):
+            return (
+                triton.cdiv(n, meta["BLOCK_SIZE"]),
+                triton.cdiv(n, meta["BLOCK_SIZE"]),
+            )
+
         dsymv_kernel[grid](
-            A, x, y, alpha_int,
-            n, lda, incx, incy,
+            A,
+            x,
+            y,
+            alpha_int,
+            n,
+            lda,
+            incx,
+            incy,
             UPLO=uplo,
         )
 
 
 def csymv(
-    uplo: int, n: int,
-    alpha: ScalarType, A: torch.Tensor, lda: int,
-    x: torch.Tensor, incx: int,
-    beta: ScalarType, y: torch.Tensor, incy: int,
+    uplo: int,
+    n: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
 ) -> None:
     assert A.dtype == torch.complex64 == x.dtype == y.dtype
     _check_common(A, x, y, uplo, n, lda, incx, incy)
@@ -428,8 +490,10 @@ def csymv(
     ar, ai, br, bi = _complex_scalars(alpha, beta)
     y_view = _strided_y(y, n, incy)
     if ar == 0.0 and ai == 0.0:
-        if br == 0.0 and bi == 0.0: y_view.zero_()
-        elif br != 1.0 or bi != 0.0: y_view.mul_(complex(br, bi))
+        if br == 0.0 and bi == 0.0:
+            y_view.zero_()
+        elif br != 1.0 or bi != 0.0:
+            y_view.mul_(complex(br, bi))
         return
 
     A_real = torch.view_as_real(A)
@@ -441,22 +505,38 @@ def csymv(
             y_view.zero_()
         elif br != 1.0 or bi != 0.0:
             y_view.mul_(complex(br, bi))
-        grid = lambda meta: (
-            triton.cdiv(n, meta["BLOCK_SIZE"]),
-            triton.cdiv(n, meta["BLOCK_SIZE"]),
-        )
+
+        def grid(meta):
+            return (
+                triton.cdiv(n, meta["BLOCK_SIZE"]),
+                triton.cdiv(n, meta["BLOCK_SIZE"]),
+            )
+
         csymv_kernel[grid](
-            A_real, x_real, y_real, ar, ai,
-            n, lda, incx, incy,
+            A_real,
+            x_real,
+            y_real,
+            ar,
+            ai,
+            n,
+            lda,
+            incx,
+            incy,
             UPLO=uplo,
         )
 
 
 def zsymv(
-    uplo: int, n: int,
-    alpha: ScalarType, A: torch.Tensor, lda: int,
-    x: torch.Tensor, incx: int,
-    beta: ScalarType, y: torch.Tensor, incy: int,
+    uplo: int,
+    n: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
+    beta: ScalarType,
+    y: torch.Tensor,
+    incy: int,
 ) -> None:
     assert A.dtype == torch.complex128 == x.dtype == y.dtype
     _check_common(A, x, y, uplo, n, lda, incx, incy)
@@ -466,8 +546,10 @@ def zsymv(
     ar, ai, br, bi = _complex_scalars(alpha, beta)
     y_view = _strided_y(y, n, incy)
     if ar == 0.0 and ai == 0.0:
-        if br == 0.0 and bi == 0.0: y_view.zero_()
-        elif br != 1.0 or bi != 0.0: y_view.mul_(complex(br, bi))
+        if br == 0.0 and bi == 0.0:
+            y_view.zero_()
+        elif br != 1.0 or bi != 0.0:
+            y_view.mul_(complex(br, bi))
         return
 
     ar_i = _f64_to_i64(ar)
@@ -481,12 +563,22 @@ def zsymv(
             y_view.zero_()
         elif br != 1.0 or bi != 0.0:
             y_view.mul_(complex(br, bi))
-        grid = lambda meta: (
-            triton.cdiv(n, meta["BLOCK_SIZE"]),
-            triton.cdiv(n, meta["BLOCK_SIZE"]),
-        )
+
+        def grid(meta):
+            return (
+                triton.cdiv(n, meta["BLOCK_SIZE"]),
+                triton.cdiv(n, meta["BLOCK_SIZE"]),
+            )
+
         zsymv_kernel[grid](
-            A_real, x_real, y_real, ar_i, ai_i,
-            n, lda, incx, incy,
+            A_real,
+            x_real,
+            y_real,
+            ar_i,
+            ai_i,
+            n,
+            lda,
+            incx,
+            incy,
             UPLO=uplo,
         )
