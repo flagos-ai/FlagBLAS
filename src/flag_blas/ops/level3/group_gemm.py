@@ -4,7 +4,7 @@ import torch
 import triton
 import triton.language as tl
 
-#from flag_gems.utils import libentry, libtuner
+# from flag_gems.utils import libentry, libtuner
 from flag_blas.utils import libentry, libtuner
 
 logger = logging.getLogger(__name__)
@@ -121,6 +121,7 @@ def grouped_gemm_tma_kernel(
     GROUP_M: tl.constexpr,
     alpha: tl.constexpr,
     beta: tl.constexpr,
+    DTYPE: tl.constexpr,
 ):
     tile_idx = tl.program_id(0)
     total_grid = tl.num_programs(0)
@@ -139,10 +140,10 @@ def grouped_gemm_tma_kernel(
             ldb = tl.load(g_lds + g * 3 + 1)
             ldc = tl.load(g_lds + g * 3 + 2)
 
-            a_ptr = tl.load(group_a_ptrs + g).to(tl.pointer_type(tl.bfloat16))
-            b_ptr = tl.load(group_b_ptrs + g).to(tl.pointer_type(tl.bfloat16))
-            c_ptr = tl.load(group_c_ptrs + g).to(tl.pointer_type(tl.bfloat16))
-            out_ptr = tl.load(group_out_ptrs + g).to(tl.pointer_type(tl.bfloat16))
+            a_ptr = tl.load(group_a_ptrs + g).to(tl.pointer_type(DTYPE))
+            b_ptr = tl.load(group_b_ptrs + g).to(tl.pointer_type(DTYPE))
+            c_ptr = tl.load(group_c_ptrs + g).to(tl.pointer_type(DTYPE))
+            out_ptr = tl.load(group_out_ptrs + g).to(tl.pointer_type(DTYPE))
 
             a_desc = make_tensor_descriptor_fn(
                 a_ptr,
@@ -221,6 +222,7 @@ def grouped_gemm_kernel(
     GROUP_M: tl.constexpr,
     alpha: tl.constexpr,
     beta: tl.constexpr,
+    DTYPE: tl.constexpr,
 ):
     tile_idx = tl.program_id(0)
     total_grid = tl.num_programs(0)
@@ -238,10 +240,10 @@ def grouped_gemm_kernel(
             ldb = tl.load(g_lds + g * 3 + 1)
             ldc = tl.load(g_lds + g * 3 + 2)
 
-            a_ptr = tl.load(group_a_ptrs + g).to(tl.pointer_type(tl.bfloat16))
-            b_ptr = tl.load(group_b_ptrs + g).to(tl.pointer_type(tl.bfloat16))
-            c_ptr = tl.load(group_c_ptrs + g).to(tl.pointer_type(tl.bfloat16))
-            out_ptr = tl.load(group_out_ptrs + g).to(tl.pointer_type(tl.bfloat16))
+            a_ptr = tl.load(group_a_ptrs + g).to(tl.pointer_type(DTYPE))
+            b_ptr = tl.load(group_b_ptrs + g).to(tl.pointer_type(DTYPE))
+            c_ptr = tl.load(group_c_ptrs + g).to(tl.pointer_type(DTYPE))
+            out_ptr = tl.load(group_out_ptrs + g).to(tl.pointer_type(DTYPE))
 
             loop_count = (current_problem_end - tile_idx + total_grid - 1) // total_grid
             for _ in tl.range(loop_count):
@@ -522,6 +524,10 @@ def group_gemm(group_A, group_B, group_C, offs_table, alpha=1, beta=0):
     d_g_lds = torch.tensor(group_lds, dtype=torch.int32, device=group_A.device)
     NUM_SMS = torch.cuda.get_device_properties("cuda").multi_processor_count
 
+    _triton_dtype = {torch.float16: tl.float16, torch.bfloat16: tl.bfloat16}[
+        group_A.dtype
+    ]
+
     if _support_device_tensor_descriptor and supports_tma():
 
         def alloc_fn(size, alignment, stream):
@@ -541,6 +547,7 @@ def group_gemm(group_A, group_B, group_C, offs_table, alpha=1, beta=0):
             group_size,
             alpha=alpha,
             beta=beta,
+            DTYPE=_triton_dtype,
         )
     else:
         grouped_gemm_kernel[(NUM_SMS,)](
@@ -556,6 +563,7 @@ def group_gemm(group_A, group_B, group_C, offs_table, alpha=1, beta=0):
             group_size,
             alpha=alpha,
             beta=beta,
+            DTYPE=_triton_dtype,
         )
 
     return group_out

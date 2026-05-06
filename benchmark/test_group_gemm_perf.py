@@ -1,3 +1,4 @@
+import random
 from typing import Generator
 
 import numpy as np
@@ -8,9 +9,6 @@ import flag_blas
 from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
 
-# ---------------------------------------------------------------------------
-# Shape space
-# ---------------------------------------------------------------------------
 GROUP_GEMM_CONFIGS = [
     (2048, 128, 1536),
     (768, 128, 2048),
@@ -38,20 +36,18 @@ GROUP_GEMM_CONFIGS = [
     (128, 512, 2048),
     (2048, 512, 128),
     (64, 512, 2048),
-    (2048, 128, 1024), 
+    (2048, 128, 1024),
     (512, 128, 2048),
     (2048, 64, 1024),
     (512, 64, 2048),
 ]
 
+M_MIN, M_MAX = 1, 4096
 
-M_VALUES = list(range(1, 33)) + [64, 128, 256, 512, 1024, 2048, 4096]
-
-# ---------------------------------------------------------------------------
-# cuBLAS enums
-# ---------------------------------------------------------------------------
 CUBLAS_OP_N = 0
+CUDA_R_16F = 2
 CUDA_R_16BF = 14
+CUBLAS_COMPUTE_32F_FAST_16F = 74
 CUBLAS_COMPUTE_32F_FAST_16BF = 75
 
 
@@ -122,18 +118,18 @@ def _get_grouped_gemm_fn():
 _grouped_gemm_ex = _get_grouped_gemm_fn()
 
 
-def _build_offs_table(e, m, n, k):
+def _build_offs_table(k, e, n, m_list):
     offs = []
+    start_M = 0
+    start_K = 0
     for g in range(e):
-        start_M = g * m
-        start_K = g * k
-        offs.append([m, n, k, start_M, start_K, start_M])
+        mg = m_list[g]
+        offs.append([mg, n, k, start_M, start_K, start_M])
+        start_M += mg
+        start_K += k
     return offs
 
 
-# ---------------------------------------------------------------------------
-# Operators
-# ---------------------------------------------------------------------------
 def cublas_group_gemm_baseline(
     group_A,
     group_B,
@@ -147,46 +143,53 @@ def cublas_group_gemm_baseline(
 ):
     """cuBLAS grouped GEMM via ``cublasGemmGroupedBatchedEx``.
 
-    All groups share identical (m, n, k) per *offs_table*, so the call uses
-    a single GEMM configuration with batch size *e*.
-
-    Row-major trick: the packed tensors are row-major while cuBLAS expects
-    column-major.  We swap A↔B so that cuBLAS computes::
-
-        C = alpha * B^T @ A^T + beta * C^T   (col-major)
-
-    which is equivalent to::
-
-        C = alpha * A @ B + beta * C         (row-major)
+    Each group may have a different M, so each group is its own configuration
+    with batch size 1.
     """
     e = len(offs_table)
     if e == 0:
         return torch.empty_like(group_C)
 
-    m_g, n_g, k_g = offs_table[0][0], offs_table[0][1], offs_table[0][2]
+    if group_A.dtype == torch.float16:
+        cu_dtype = CUDA_R_16F
+        cu_compute = CUBLAS_COMPUTE_32F_FAST_16F
+    else:
+        cu_dtype = CUDA_R_16BF
+        cu_compute = CUBLAS_COMPUTE_32F_FAST_16BF
 
     out = torch.empty_like(group_C)
 
-    a_ptrs = []  # cuBLAS "A" → B data (swapped)
-    b_ptrs = []  # cuBLAS "B" → A data (swapped)
-    c_ptrs = []  # cuBLAS "C" → output
+    a_ptrs = []
+    b_ptrs = []
+    c_ptrs = []
+    m_arr_list = []
+    n_arr_list = []
+    k_arr_list = []
+    lda_list = []
+    ldb_list = []
+    ldc_list = []
 
     for entry in offs_table:
-        _mg, _ng, _kg, start_M, start_K, start_C = entry
-        a_ptrs.append(group_B[start_K : start_K + _kg, :_ng].data_ptr())
-        b_ptrs.append(group_A[start_M : start_M + _mg, :_kg].data_ptr())
-        c_ptrs.append(out[start_C : start_C + _mg, :_ng].data_ptr())
+        mg, ng, kg, start_M, start_K, start_C = entry
+        a_ptrs.append(group_B[start_K : start_K + kg, :ng].data_ptr())
+        b_ptrs.append(group_A[start_M : start_M + mg, :kg].data_ptr())
+        c_ptrs.append(out[start_C : start_C + mg, :ng].data_ptr())
+        m_arr_list.append(ng)
+        n_arr_list.append(mg)
+        k_arr_list.append(kg)
+        lda_list.append(ng)
+        ldb_list.append(kg)
+        ldc_list.append(ng)
 
-    # Host arrays — one entry (all groups share the same dims).
-    transa = np.array([CUBLAS_OP_N], dtype=np.int32)
-    transb = np.array([CUBLAS_OP_N], dtype=np.int32)
-    m_arr  = np.array([n_g], dtype=np.int32)    # n because of A↔B swap
-    n_arr  = np.array([m_g], dtype=np.int32)    # m because of A↔B swap
-    k_arr  = np.array([k_g], dtype=np.int32)
-    lda_arr = np.array([n_g], dtype=np.int32)   # ld of B row-major = n_g
-    ldb_arr = np.array([k_g], dtype=np.int32)   # ld of A row-major = k_g
-    ldc_arr = np.array([n_g], dtype=np.int32)   # ld of C row-major = n_g
-    batch   = np.array([e], dtype=np.int32)
+    transa = np.array([CUBLAS_OP_N] * e, dtype=np.int32)
+    transb = np.array([CUBLAS_OP_N] * e, dtype=np.int32)
+    m_arr = np.array(m_arr_list, dtype=np.int32)
+    n_arr = np.array(n_arr_list, dtype=np.int32)
+    k_arr = np.array(k_arr_list, dtype=np.int32)
+    lda_arr = np.array(lda_list, dtype=np.int32)
+    ldb_arr = np.array(ldb_list, dtype=np.int32)
+    ldc_arr = np.array(ldc_list, dtype=np.int32)
+    batch = np.array([1] * e, dtype=np.int32)
 
     device = group_A.device
     d_a_ptrs = torch.tensor(a_ptrs, dtype=torch.int64, device=device)
@@ -202,32 +205,31 @@ def cublas_group_gemm_baseline(
         k_arr,
         alpha_ptr,
         d_a_ptrs.data_ptr(),
-        CUDA_R_16BF,
+        cu_dtype,
         lda_arr,
         d_b_ptrs.data_ptr(),
-        CUDA_R_16BF,
+        cu_dtype,
         ldb_arr,
         beta_ptr,
         d_c_ptrs.data_ptr(),
-        CUDA_R_16BF,
+        cu_dtype,
         ldc_arr,
-        1,         # group_count
+        e,
         batch,
-        CUBLAS_COMPUTE_32F_FAST_16BF,
+        cu_compute,
     )
 
     return out
 
 
-def gems_group_gemm_wrapper(group_A, group_B, group_C, offs_table, alpha, beta, **kwargs):
+def gems_group_gemm_wrapper(
+    group_A, group_B, group_C, offs_table, alpha, beta, **kwargs
+):
     return flag_blas.group_gemm(
         group_A, group_B, group_C, offs_table, alpha=alpha, beta=beta
     )
 
 
-# ---------------------------------------------------------------------------
-# Benchmark harness
-# ---------------------------------------------------------------------------
 class GroupGemmBenchmark(Benchmark):
 
     def __init__(self, *args, alpha=1.0, beta=0.0, **kwargs):
@@ -237,14 +239,6 @@ class GroupGemmBenchmark(Benchmark):
 
     def set_more_metrics(self):
         return ["tflops", "gbps"]
-
-    def set_more_shapes(self):
-        self.shapes = [
-            (k, e, n, m)
-            for (k, e, n) in GROUP_GEMM_CONFIGS
-            for m in M_VALUES
-        ]
-        return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
         import cupy as cp
@@ -261,11 +255,21 @@ class GroupGemmBenchmark(Benchmark):
         beta_ptr = beta_np.ctypes.data
 
         scale = 1.0
-        for (k, e, n, m) in self.shapes:
-            group_A = torch.randn(e * m, k, dtype=cur_dtype, device=self.device) * scale
-            group_B = torch.randn(e * k, n, dtype=cur_dtype, device=self.device) * scale
-            group_C = torch.randn(e * m, n, dtype=cur_dtype, device=self.device) * scale
-            offs_table = _build_offs_table(e, m, n, k)
+        for k, e, n in GROUP_GEMM_CONFIGS:
+            m_list = [random.randint(M_MIN, M_MAX) for _ in range(e)]
+            total_M = sum(m_list)
+            total_K = e * k
+
+            group_A = (
+                torch.randn(total_M, k, dtype=cur_dtype, device=self.device) * scale
+            )
+            group_B = (
+                torch.randn(total_K, n, dtype=cur_dtype, device=self.device) * scale
+            )
+            group_C = (
+                torch.randn(total_M, n, dtype=cur_dtype, device=self.device) * scale
+            )
+            offs_table = _build_offs_table(k, e, n, m_list)
 
             yield group_A, group_B, group_C, offs_table, {
                 "alpha": self.alpha,
@@ -293,9 +297,6 @@ class GroupGemmBenchmark(Benchmark):
         return io_amount * 1e-9 / (latency * 1e-3)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 @pytest.mark.group_gemm
 def test_perf_group_gemm_bf16():
     bench = GroupGemmBenchmark(
@@ -303,6 +304,19 @@ def test_perf_group_gemm_bf16():
         torch_op=cublas_group_gemm_baseline,
         gems_op=gems_group_gemm_wrapper,
         dtypes=[torch.bfloat16],
+        alpha=1.0,
+        beta=0.0,
+    )
+    bench.run()
+
+
+@pytest.mark.group_gemm
+def test_perf_group_gemm_fp16():
+    bench = GroupGemmBenchmark(
+        op_name="group_gemm",
+        torch_op=cublas_group_gemm_baseline,
+        gems_op=gems_group_gemm_wrapper,
+        dtypes=[torch.float16],
         alpha=1.0,
         beta=0.0,
     )

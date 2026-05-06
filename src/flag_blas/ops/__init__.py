@@ -14,12 +14,7 @@ from flag_blas.ops.level1.asum import (
     sasum,
     scasum,
 )
-from flag_blas.ops.level1.nrm2 import (
-    snrm2,
-    dnrm2,
-    scnrm2,
-    dznrm2
-)
+from flag_blas.ops.level1.nrm2 import snrm2, dnrm2, scnrm2, dznrm2
 from flag_blas.ops.level1.axpy import (
     caxpy,
     daxpy,
@@ -32,14 +27,7 @@ from flag_blas.ops.level1.rot import (
     crot,
     zrot,
 )
-from flag_blas.ops.level1.scal import (
-    zscal,
-    cscal,
-    dscal,
-    sscal,
-    csscal,
-    zdscal
-)
+from flag_blas.ops.level1.scal import zscal, cscal, dscal, sscal, csscal, zdscal
 from flag_blas.ops.level2.gemv import (
     sgemv,
     dgemv,
@@ -137,6 +125,4 @@ __all__ = [
     "dcopy",
     "ccopy",
     "zcopy",
-
-
 ]
