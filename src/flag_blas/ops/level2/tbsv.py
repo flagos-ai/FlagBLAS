@@ -105,20 +105,21 @@ def stbsv_kernel(
     elif (UPLO == 1) and (TRANS == 0):
         for jc in tl.range(0, n):
             j = n - 1 - jc
-            xj = tl.load(x_ptr + j * INCX)
+            acc = tl.zeros((BLOCK_K,), dtype=tl.float32)
+            for kb in tl.range(0, k, BLOCK_K):
+                d = kb + 1 + offs
+                i = j + d
+                m = (d <= k) & (i < n)
+                a_off = (k - d) + i * LDA
+                av = tl.load(a_ptr + a_off, mask=m, other=0.0)
+                xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+                acc += av * xv
+            s = tl.sum(acc, axis=0)
+            xj = tl.load(x_ptr + j * INCX) - s
             if not UNIT:
                 ajj = tl.load(a_ptr + k + j * LDA)
                 xj = xj / ajj
-                tl.store(x_ptr + j * INCX, xj)
-            for kb in tl.range(0, k, BLOCK_K):
-                d = kb + 1 + offs
-                i = j - d
-                m = (d <= k) & (i >= 0)
-                a_off = (k - d) + j * LDA
-                av = tl.load(a_ptr + a_off, mask=m, other=0.0)
-                xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
-                xv = xv - av * xj
-                tl.store(x_ptr + i * INCX, xv, mask=m)
+            tl.store(x_ptr + j * INCX, xj)
 
     # ----------------------------------------------------------------------
     # Upper / Trans   : solve  U^T x = b   (forward substitution)
