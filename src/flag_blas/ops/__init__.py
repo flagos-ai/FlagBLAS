@@ -169,3 +169,6 @@ __all__ = [
     # tbsv
     "stbsv"
 ]
+
+from flag_blas.runtime import replace_customized_ops
+replace_customized_ops(globals())
