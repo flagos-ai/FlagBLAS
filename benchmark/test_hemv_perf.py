@@ -13,10 +13,9 @@ from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
 
-SYMV_SIZES = [
+HEMV_SIZES = [
     128,
     192,
-    255,
     256,
     384,
     512,
@@ -26,12 +25,9 @@ SYMV_SIZES = [
     1536,
     2048,
     3072,
-    4095,
     4096,
+    4097,
     6144,
-    8192,
-    9999,
-    10000,
     12288,
     16384,
 ]
@@ -61,21 +57,17 @@ class cuDoubleComplex(ctypes.Structure):
     _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
 
 
-_CUBLAS_SYMV_FUNCS = {
-    torch.float32: (_cublas.cublasSsymv_v2, ctypes.c_float, False),
-    torch.float64: (_cublas.cublasDsymv_v2, ctypes.c_double, False),
-    torch.complex64: (_cublas.cublasCsymv_v2, cuComplex, True),
-    torch.complex128: (_cublas.cublasZsymv_v2, cuDoubleComplex, True),
+_CUBLAS_HEMV_FUNCS = {
+    torch.complex64: (_cublas.cublasChemv_v2, cuComplex),
+    torch.complex128: (_cublas.cublasZhemv_v2, cuDoubleComplex),
 }
 
 
-def _make_scalar(ctor, is_complex, value):
-    if is_complex:
-        return ctor(value.real, value.imag)
-    return ctor(value)
+def _make_scalar(ctor, value):
+    return ctor(value.real, value.imag)
 
 
-def cublas_symv_baseline(
+def cublas_hemv_baseline(
     A,
     x,
     y,
@@ -109,7 +101,7 @@ def cublas_symv_baseline(
         ctypes.c_int(incy),
     )
     if status != 0:
-        raise RuntimeError(f"cublasXsymv_v2 execution failed with error code: {status}")
+        raise RuntimeError(f"cublasXhemv_v2 execution failed with error code: {status}")
     return y
 
 
@@ -121,29 +113,27 @@ def _gems_wrapper(op):
     return _impl
 
 
-gems_ssymv_wrapper = _gems_wrapper(flag_blas.ops.ssymv)
-gems_dsymv_wrapper = _gems_wrapper(flag_blas.ops.dsymv)
-gems_csymv_wrapper = _gems_wrapper(flag_blas.ops.csymv)
-gems_zsymv_wrapper = _gems_wrapper(flag_blas.ops.zsymv)
+gems_chemv_wrapper = _gems_wrapper(flag_blas.ops.chemv)
+gems_zhemv_wrapper = _gems_wrapper(flag_blas.ops.zhemv)
 
 
-def _generate_sym_A(n, lda, dtype, device):
+def _generate_her_A(n, lda, dtype, device):
     A = torch.zeros((n, lda), dtype=dtype, device=device)
-    if dtype.is_complex:
-        A[:, :n] = torch.randn(n, n, dtype=dtype, device=device)
-    else:
-        A[:, :n] = torch.randn(n, n, dtype=dtype, device=device) * 0.1
+    data = torch.randn(n, n, dtype=dtype, device=device)
+    diag_real = data.diagonal().real.clone()
+    data.diagonal().copy_(diag_real.to(dtype))
+    A[:, :n] = data
     return A.contiguous()
 
 
-class SymvBenchmark(Benchmark):
+class HemvBenchmark(Benchmark):
 
     def __init__(
         self,
         *args,
         uplo=CUBLAS_FILL_MODE_LOWER,
-        alpha=1.5,
-        beta=0.5,
+        alpha=1.5 + 0.5j,
+        beta=0.5 + 0.25j,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -155,23 +145,23 @@ class SymvBenchmark(Benchmark):
         return ["tflops", "gbps"]
 
     def set_more_shapes(self):
-        self.shapes = [(n,) for n in SYMV_SIZES]
+        self.shapes = [(n,) for n in HEMV_SIZES]
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
         handle = cp.cuda.device.get_cublas_handle()
         cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
 
-        if cur_dtype not in _CUBLAS_SYMV_FUNCS:
+        if cur_dtype not in _CUBLAS_HEMV_FUNCS:
             raise ValueError(f"Unsupported dtype: {cur_dtype}")
-        c_func, ctor, is_complex = _CUBLAS_SYMV_FUNCS[cur_dtype]
-        alpha_c = _make_scalar(ctor, is_complex, self.alpha)
-        beta_c = _make_scalar(ctor, is_complex, self.beta)
+        c_func, ctor = _CUBLAS_HEMV_FUNCS[cur_dtype]
+        alpha_c = _make_scalar(ctor, self.alpha)
+        beta_c = _make_scalar(ctor, self.beta)
 
         for shape in self.shapes:
             n = shape[0] if isinstance(shape, (tuple, list)) else shape
             lda = n
-            A = _generate_sym_A(n, lda, cur_dtype, self.device)
+            A = _generate_her_A(n, lda, cur_dtype, self.device)
             x = torch.randn(n, dtype=cur_dtype, device=self.device)
             y = torch.randn(n, dtype=cur_dtype, device=self.device)
 
@@ -191,11 +181,7 @@ class SymvBenchmark(Benchmark):
 
     def get_tflops(self, op, *args, **kwargs):
         n = kwargs.get("n", 0)
-        nnz = n * n
-        A = args[0]
-        if A.dtype in [torch.complex64, torch.complex128]:
-            return 8 * nnz
-        return 2 * nnz
+        return 8 * n * n
 
     def get_gbps(self, args, latency):
         A, x, y = args[0], args[1], args[2]
@@ -207,64 +193,12 @@ class SymvBenchmark(Benchmark):
         return io_amount * 1e-9 / (latency * 1e-3)
 
 
-@pytest.mark.ssymv
-def test_perf_ssymv():
-    bench = SymvBenchmark(
-        op_name="ssymv",
-        torch_op=cublas_symv_baseline,
-        gems_op=gems_ssymv_wrapper,
-        dtypes=[torch.float32],
-        uplo=CUBLAS_FILL_MODE_LOWER,
-    )
-    bench.run()
-
-
-@pytest.mark.ssymv
-def test_perf_ssymv_upper():
-    bench = SymvBenchmark(
-        op_name="ssymv_upper",
-        torch_op=cublas_symv_baseline,
-        gems_op=gems_ssymv_wrapper,
-        dtypes=[torch.float32],
-        uplo=CUBLAS_FILL_MODE_UPPER,
-    )
-    bench.run()
-
-
-@pytest.mark.dsymv
-def test_perf_dsymv():
-    if not flag_blas.runtime.device.support_fp64:
-        pytest.skip("Device does not support float64")
-    bench = SymvBenchmark(
-        op_name="dsymv",
-        torch_op=cublas_symv_baseline,
-        gems_op=gems_dsymv_wrapper,
-        dtypes=[torch.float64],
-        uplo=CUBLAS_FILL_MODE_LOWER,
-    )
-    bench.run()
-
-
-@pytest.mark.dsymv
-def test_perf_dsymv_upper():
-    if not flag_blas.runtime.device.support_fp64:
-        pytest.skip("Device does not support float64")
-    bench = SymvBenchmark(
-        op_name="dsymv_upper",
-        torch_op=cublas_symv_baseline,
-        gems_op=gems_dsymv_wrapper,
-        dtypes=[torch.float64],
-        uplo=CUBLAS_FILL_MODE_UPPER,
-    )
-    bench.run()
-
-
-@pytest.mark.csymv
-def test_perf_csymv():
-    bench = SymvBenchmark(
-        op_name="csymv",
-        torch_op=cublas_symv_baseline,
-        gems_op=gems_csymv_wrapper,
+@pytest.mark.chemv
+def test_perf_chemv():
+    bench = HemvBenchmark(
+        op_name="chemv",
+        torch_op=cublas_hemv_baseline,
+        gems_op=gems_chemv_wrapper,
         dtypes=[torch.complex64],
         uplo=CUBLAS_FILL_MODE_LOWER,
         alpha=1.5 + 0.5j,
@@ -273,12 +207,12 @@ def test_perf_csymv():
     bench.run()
 
 
-@pytest.mark.csymv
-def test_perf_csymv_upper():
-    bench = SymvBenchmark(
-        op_name="csymv_upper",
-        torch_op=cublas_symv_baseline,
-        gems_op=gems_csymv_wrapper,
+@pytest.mark.chemv
+def test_perf_chemv_upper():
+    bench = HemvBenchmark(
+        op_name="chemv_upper",
+        torch_op=cublas_hemv_baseline,
+        gems_op=gems_chemv_wrapper,
         dtypes=[torch.complex64],
         uplo=CUBLAS_FILL_MODE_UPPER,
         alpha=1.5 + 0.5j,
@@ -287,14 +221,14 @@ def test_perf_csymv_upper():
     bench.run()
 
 
-@pytest.mark.zsymv
-def test_perf_zsymv():
+@pytest.mark.zhemv
+def test_perf_zhemv():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
-    bench = SymvBenchmark(
-        op_name="zsymv",
-        torch_op=cublas_symv_baseline,
-        gems_op=gems_zsymv_wrapper,
+    bench = HemvBenchmark(
+        op_name="zhemv",
+        torch_op=cublas_hemv_baseline,
+        gems_op=gems_zhemv_wrapper,
         dtypes=[torch.complex128],
         uplo=CUBLAS_FILL_MODE_LOWER,
         alpha=1.5 + 0.5j,
@@ -303,14 +237,14 @@ def test_perf_zsymv():
     bench.run()
 
 
-@pytest.mark.zsymv
-def test_perf_zsymv_upper():
+@pytest.mark.zhemv
+def test_perf_zhemv_upper():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
-    bench = SymvBenchmark(
-        op_name="zsymv_upper",
-        torch_op=cublas_symv_baseline,
-        gems_op=gems_zsymv_wrapper,
+    bench = HemvBenchmark(
+        op_name="zhemv_upper",
+        torch_op=cublas_hemv_baseline,
+        gems_op=gems_zhemv_wrapper,
         dtypes=[torch.complex128],
         uplo=CUBLAS_FILL_MODE_UPPER,
         alpha=1.5 + 0.5j,

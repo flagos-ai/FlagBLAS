@@ -8,18 +8,26 @@ import torch
 from cupy_backends.cuda.libs import cublas
 import flag_blas
 
-CUBLAS_FILL_MODE_LOWER = 0
-CUBLAS_FILL_MODE_UPPER = 1
-CUBLAS_OP_N = 0
-CUBLAS_OP_T = 1
-CUBLAS_DIAG_NON_UNIT = 0
-CUBLAS_DIAG_UNIT = 1
+from flag_blas.ops import (
+    CUBLAS_FILL_MODE_LOWER,
+    CUBLAS_FILL_MODE_UPPER,
+    CUBLAS_OP_N,
+    CUBLAS_OP_T,
+    CUBLAS_DIAG_NON_UNIT,
+)
 
 from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
 
 STBSV_SIZES = [
-    256, 512, 1024, 2048, 4096, 8192, 12288, 16384,
+    256,
+    512,
+    1024,
+    2048,
+    4096,
+    8192,
+    12288,
+    16384,
 ]
 
 STBSV_KS = [1, 4, 16, 64, 256]
@@ -42,8 +50,18 @@ _cublas = load_cublas()
 
 
 def cublas_stbsv_baseline(
-    A, x, uplo, trans, diag, n, k, lda, incx,
-    handle, c_func, **kwargs,
+    A,
+    x,
+    uplo,
+    trans,
+    diag,
+    n,
+    k,
+    lda,
+    incx,
+    handle,
+    c_func,
+    **kwargs,
 ):
     if n == 0:
         return x
@@ -80,7 +98,7 @@ def _make_triangular_banded(n, k, lda, uplo, dtype, device):
             if cnt > 0:
                 vals = torch.randn(cnt, dtype=dtype, device=device) * 0.1
                 vals[-1] = diag_floor
-                A[j, k + i_min - j:k + 1] = vals
+                A[j, k + i_min - j : k + 1] = vals
     else:
         for j in range(n):
             i_max = min(n - 1, j + k)
@@ -148,7 +166,9 @@ class StbsvBenchmark(Benchmark):
                     continue
                 seen.add(key)
                 lda = k + 1
-                A = _make_triangular_banded(n, k, lda, self.uplo, cur_dtype, self.device)
+                A = _make_triangular_banded(
+                    n, k, lda, self.uplo, cur_dtype, self.device
+                )
                 x = torch.randn(n, dtype=cur_dtype, device=self.device)
 
                 yield A, x.clone(), {

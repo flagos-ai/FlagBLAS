@@ -6,12 +6,15 @@ import torch
 import cupy as cp
 import flag_blas
 
-CUBLAS_FILL_MODE_LOWER = 0
-CUBLAS_FILL_MODE_UPPER = 1
-CUBLAS_OP_N = 0
-CUBLAS_OP_T = 1
-CUBLAS_DIAG_NON_UNIT = 0
-CUBLAS_DIAG_UNIT = 1
+from flag_blas.ops import (
+    CUBLAS_FILL_MODE_LOWER,
+    CUBLAS_FILL_MODE_UPPER,
+    CUBLAS_OP_N,
+    CUBLAS_OP_T,
+    CUBLAS_DIAG_NON_UNIT,
+    CUBLAS_DIAG_UNIT,
+)
+
 
 def load_cublas():
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
@@ -88,7 +91,7 @@ def make_triangular_banded(n, k, lda, uplo, dtype, device, unit_diag=False):
                 else:
                     sign = 1.0 if torch.rand(1).item() < 0.5 else -1.0
                     vals[-1] = sign * (diag_floor + torch.rand(1).item())
-                A[j, k + i_min - j:k + 1] = vals
+                A[j, k + i_min - j : k + 1] = vals
     else:
         # Row 0 holds the diagonal; rows 1..k hold subdiagonals
         for j in range(n):
@@ -131,10 +134,15 @@ def _effective_k(n, k):
 def test_accuracy_stbsv(n, k, uplo, trans, diag):
     k = _effective_k(n, k)
     dtype = torch.float32
-    lda = k + 1 + 2          # add padding to exercise non-trivial lda
+    lda = k + 1 + 2  # add padding to exercise non-trivial lda
 
     A = make_triangular_banded(
-        n, k, lda, uplo, dtype, flag_blas.device,
+        n,
+        k,
+        lda,
+        uplo,
+        dtype,
+        flag_blas.device,
         unit_diag=(diag == CUBLAS_DIAG_UNIT),
     )
     x = torch.randn(n, dtype=dtype, device=flag_blas.device)
@@ -181,8 +189,15 @@ def test_stbsv_n_zero():
     A = torch.empty((0, 1), dtype=torch.float32, device=flag_blas.device)
     x = torch.empty((0,), dtype=torch.float32, device=flag_blas.device)
     flag_blas.ops.stbsv(
-        CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT,
-        0, 0, A, 1, x, 1,
+        CUBLAS_FILL_MODE_UPPER,
+        CUBLAS_OP_N,
+        CUBLAS_DIAG_NON_UNIT,
+        0,
+        0,
+        A,
+        1,
+        x,
+        1,
     )
     assert x.numel() == 0
 
@@ -218,7 +233,9 @@ def test_stbsv_unit_diag_ignored(uplo, trans):
     lda = k + 1 + 1
     dtype = torch.float32
 
-    A_clean = make_triangular_banded(n, k, lda, uplo, dtype, flag_blas.device, unit_diag=True)
+    A_clean = make_triangular_banded(
+        n, k, lda, uplo, dtype, flag_blas.device, unit_diag=True
+    )
     A_dirty = A_clean.clone()
     diag_row = k if uplo == CUBLAS_FILL_MODE_UPPER else 0
     A_dirty[:, diag_row] = float("nan")

@@ -18,7 +18,7 @@ from flag_blas.ops.level1.nrm2 import (
     snrm2,
     dnrm2,
     scnrm2,
-    dznrm2
+    dznrm2,
 )
 from flag_blas.ops.level1.axpy import (
     caxpy,
@@ -38,7 +38,7 @@ from flag_blas.ops.level1.scal import (
     dscal,
     sscal,
     csscal,
-    zdscal
+    zdscal,
 )
 from flag_blas.ops.level2._constants import (
     CUBLAS_FILL_MODE_LOWER,
@@ -73,11 +73,25 @@ from flag_blas.ops.level2.symv import (
 
 from flag_blas.ops.level2.tbsv import stbsv
 
+from flag_blas.ops.level2.trmv import (
+    strmv,
+    dtrmv,
+    ctrmv,
+    ztrmv,
+)
+from flag_blas.ops.level2.hemv import (
+    chemv,
+    zhemv,
+)
 from flag_blas.ops.level3.gemm import (
     sgemm,
     hgemm,
     bfgemm,
     fp8gemm,
+)
+from flag_blas.ops.level3.group_gemm import (
+    group_mm,
+    group_gemm,
 )
 
 from flag_blas.ops.level1.abs import (
@@ -144,6 +158,14 @@ __all__ = [
     "dsymv",
     "csymv",
     "zsymv",
+    # trmv
+    "strmv",
+    "dtrmv",
+    "ctrmv",
+    "ztrmv",
+    # hemv
+    "chemv",
+    "zhemv",
     "CUBLAS_DIAG_NON_UNIT",
     "CUBLAS_DIAG_UNIT",
     "CUBLAS_FILL_MODE_LOWER",
@@ -156,6 +178,8 @@ __all__ = [
     "hgemm",
     "bfgemm",
     "fp8gemm",
+    "group_mm",
+    "group_gemm",
     # abs
     "sabs",
     "dabs",
@@ -167,8 +191,9 @@ __all__ = [
     "ccopy",
     "zcopy",
     # tbsv
-    "stbsv"
+    "stbsv",
 ]
 
 from flag_blas.runtime import replace_customized_ops
+
 replace_customized_ops(globals())
