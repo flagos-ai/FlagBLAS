@@ -21,7 +21,6 @@ CUBLAS_FILL_MODE_UPPER = 1
 CUBLAS_DIAG_NON_UNIT = 0
 CUBLAS_DIAG_UNIT = 1
 
-
 _TBSV_KEY = ["n", "k_bucket", "mode_key"]
 _TBSV_RESTORE = ["x_ptr"]
 
@@ -50,9 +49,14 @@ def _mode_key(uplo: int, trans: int, unit: int) -> int:
 )
 @triton.jit
 def stbsv_kernel(
-    a_ptr, x_ptr,
-    n, k, LDA, INCX,
-    k_bucket, mode_key,
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
     UPLO: tl.constexpr,
     TRANS: tl.constexpr,
     UNIT: tl.constexpr,
@@ -164,9 +168,15 @@ def _check_tbsv(A, x, uplo, trans, diag, n, k, lda, incx, complex_ok):
 # Public API
 # --------------------------------------------------------------------------
 def stbsv(
-    uplo: int, trans: int, diag: int, n: int, k: int,
-    A: torch.Tensor, lda: int,
-    x: torch.Tensor, incx: int,
+    uplo: int,
+    trans: int,
+    diag: int,
+    n: int,
+    k: int,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
 ) -> None:
     """Solve a real single-precision triangular banded system in-place."""
     assert A.dtype == torch.float32 == x.dtype
@@ -179,8 +189,15 @@ def stbsv(
     with torch_device_fn.device(A.device):
         grid = (1,)
         stbsv_kernel[grid](
-            A, x,
-            n, k, lda, incx,
-            _band_bucket(k + 1), _mode_key(uplo, trans_flag, unit),
-            UPLO=uplo, TRANS=trans_flag, UNIT=unit,
+            A,
+            x,
+            n,
+            k,
+            lda,
+            incx,
+            _band_bucket(k + 1),
+            _mode_key(uplo, trans_flag, unit),
+            UPLO=uplo,
+            TRANS=trans_flag,
+            UNIT=unit,
         )
