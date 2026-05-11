@@ -40,7 +40,7 @@ def _mode_key(uplo: int, trans: int, unit: int) -> int:
 
 
 # --------------------------------------------------------------------------
-# Kernel — Iluvatar-tuned
+# Kernel
 # --------------------------------------------------------------------------
 @libentry()
 @libtuner(
@@ -50,9 +50,14 @@ def _mode_key(uplo: int, trans: int, unit: int) -> int:
 )
 @triton.jit
 def stbsv_kernel(
-    a_ptr, x_ptr,
-    n, k, LDA, INCX,
-    k_bucket, mode_key,
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
     UPLO: tl.constexpr,
     TRANS: tl.constexpr,
     UNIT: tl.constexpr,
@@ -60,10 +65,7 @@ def stbsv_kernel(
 ):
     offs = tl.arange(0, BLOCK_K)
 
-    # ----------------------------------------------------------------------
     # Lower / NoTrans : forward substitution
-    # a_off = d + j*LDA
-    # ----------------------------------------------------------------------
     if (UPLO == 0) and (TRANS == 0):
         for j in tl.range(0, n):
             xj = tl.load(x_ptr + j * INCX)
@@ -81,31 +83,27 @@ def stbsv_kernel(
                 xv = xv - av * xj
                 tl.store(x_ptr + i * INCX, xv, mask=m)
 
-    # ----------------------------------------------------------------------
-    # Upper / NoTrans : back substitution -> backward propagation
-    # ----------------------------------------------------------------------
+    # Upper / NoTrans : back substitution
     elif (UPLO == 1) and (TRANS == 0):
         for jc in tl.range(0, n):
             j = n - 1 - jc
-            xj = tl.load(x_ptr + j * INCX)
+            acc = tl.zeros((BLOCK_K,), dtype=tl.float32)
+            for kb in tl.range(0, k, BLOCK_K):
+                d = kb + 1 + offs
+                i = j + d
+                m = (d <= k) & (i < n)
+                a_off = (k - d) + i * LDA
+                av = tl.load(a_ptr + a_off, mask=m, other=0.0)
+                xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+                acc += av * xv
+            s = tl.sum(acc, axis=0)
+            xj = tl.load(x_ptr + j * INCX) - s
             if not UNIT:
                 ajj = tl.load(a_ptr + k + j * LDA)
                 xj = xj / ajj
-                tl.store(x_ptr + j * INCX, xj)
-            for kb in tl.range(0, k, BLOCK_K):
-                d = kb + 1 + offs
-                i = j - d
-                m = (d <= k) & (i >= 0)
-                a_off = (k - d) + j * LDA
-                av = tl.load(a_ptr + a_off, mask=m, other=0.0)
-                xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
-                xv = xv - av * xj
-                tl.store(x_ptr + i * INCX, xv, mask=m)
+            tl.store(x_ptr + j * INCX, xj)
 
-    # ----------------------------------------------------------------------
-    # Upper / Trans : forward substitution,dot-product
-    # a_off = (k-d) + j*LDA
-    # ----------------------------------------------------------------------
+    # Upper / Trans : forward substitution
     elif (UPLO == 1) and (TRANS == 1):
         for j in tl.range(0, n):
             acc = tl.zeros((BLOCK_K,), dtype=tl.float32)
@@ -124,10 +122,7 @@ def stbsv_kernel(
                 xj = xj / ajj
             tl.store(x_ptr + j * INCX, xj)
 
-    # ----------------------------------------------------------------------
-    # Lower / Trans : back substitution,dot-product
-    # a_off = d + j*LDA
-    # ----------------------------------------------------------------------
+    # Lower / Trans : back substitution
     else:
         for jc in tl.range(0, n):
             j = n - 1 - jc
@@ -174,10 +169,17 @@ def _check_tbsv(A, x, uplo, trans, diag, n, k, lda, incx, complex_ok):
 # Public API
 # --------------------------------------------------------------------------
 def stbsv(
-    uplo: int, trans: int, diag: int, n: int, k: int,
-    A: torch.Tensor, lda: int,
-    x: torch.Tensor, incx: int,
+    uplo: int,
+    trans: int,
+    diag: int,
+    n: int,
+    k: int,
+    A: torch.Tensor,
+    lda: int,
+    x: torch.Tensor,
+    incx: int,
 ) -> None:
+    """Solve a real single-precision triangular banded system in-place."""
     assert A.dtype == torch.float32 == x.dtype
     _check_tbsv(A, x, uplo, trans, diag, n, k, lda, incx, complex_ok=False)
     if n == 0:
@@ -188,8 +190,15 @@ def stbsv(
     with torch_device_fn.device(A.device):
         grid = (1,)
         stbsv_kernel[grid](
-            A, x,
-            n, k, lda, incx,
-            _band_bucket(k + 1), _mode_key(uplo, trans_flag, unit),
-            UPLO=uplo, TRANS=trans_flag, UNIT=unit,
+            A,
+            x,
+            n,
+            k,
+            lda,
+            incx,
+            _band_bucket(k + 1),
+            _mode_key(uplo, trans_flag, unit),
+            UPLO=uplo,
+            TRANS=trans_flag,
+            UNIT=unit,
         )
