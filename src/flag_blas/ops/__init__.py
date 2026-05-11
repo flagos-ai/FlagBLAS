@@ -76,6 +76,10 @@ from flag_blas.ops.level3.gemm import (
     bfgemm,
     fp8gemm,
 )
+from flag_blas.ops.level3.group_gemm import (
+    group_mm,
+    group_gemm,
+)
 
 from flag_blas.ops.level1.abs import (
     sabs,
@@ -153,6 +157,8 @@ __all__ = [
     "hgemm",
     "bfgemm",
     "fp8gemm",
+    "group_mm",
+    "group_gemm",
     # abs
     "sabs",
     "dabs",
