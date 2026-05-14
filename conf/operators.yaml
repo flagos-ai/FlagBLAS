@@ -1,0 +1,49 @@
+ops:
+  - id: sgemm
+    description: |
+      Computes the absolute value of each element in `input`.
+      This is a simple wrapper of the existing torch `abs` operator.
+    for:
+      - sgemm
+    labels:
+      - gemm
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: hgemm
+    description: |
+      Computes the absolute value of each element in `input`.
+      This is a simple wrapper of the existing torch `abs` operator.
+    for:
+      - sgemm
+    labels:
+      - gemm
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: bfgemm
+    description: |
+      Computes the absolute value of each element in `input`.
+      This is a simple wrapper of the existing torch `abs` operator.
+    for:
+      - sgemm
+    labels:
+      - gemm
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: fp8gemm
+    description: |
+      Computes the absolute value of each element in `input`.
+      This is a simple wrapper of the existing torch `abs` operator.
+    for:
+      - sgemm
+    labels:
+      - gemm
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
