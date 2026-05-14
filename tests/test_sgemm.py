@@ -5,30 +5,10 @@ import numpy as np
 from cupy_backends.cuda.libs import cublas
 import flag_blas
 from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
-
-GEMM_SHAPES = [
-    (1024, 1024, 1024),
-    (511, 511, 511),
-    (1023, 1023, 1023),
-    (2048, 2048, 2048),
-    (4096, 4096, 4096),
-    (8192, 8192, 8192),
-    (16384, 16384, 16384),
-    (2048, 12288, 4096),
-    (2048, 11008, 4096),
-    (2048, 4096, 11008),
-    (4096, 24576, 8192),
-    (4096, 8192, 28672),
-    (8192, 28672, 8192),
-    (16384, 2048, 2048),
-    (2048, 16384, 2048),
-    (2048, 2048, 16384),
-    (32768, 1024, 1024),
-    (4095, 4095, 4095),
-    (8191, 8191, 8191),
-    (4097, 8191, 4095),
-]
-
+import scipy
+from scipy.linalg import blas
+from .conftest import  TO_CPU
+from . import accuracy_utils as utils
 
 def cublas_sgemm_reference(
     transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc
@@ -66,7 +46,7 @@ CUDA_R_16BF = 14
 
 
 @pytest.mark.sgemm
-@pytest.mark.parametrize("m,n,k", GEMM_SHAPES)
+@pytest.mark.parametrize("m,n,k", utils.GEMM_SHAPES)
 @pytest.mark.parametrize(
     "transa,transb",
     [
@@ -100,21 +80,37 @@ def test_accuracy_sgemm(m, n, k, transa, transb):
     C_row = C_col.contiguous()
     ldc_cublas, ldc_flag = m, n
 
-    cublas_sgemm_reference(
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha,
-        A_col,
-        lda_cublas,
-        B_col,
-        ldb_cublas,
-        beta,
-        C_col,
-        ldc_cublas,
-    )
+    if TO_CPU:
+        print("cpu reference computation")
+        A_ref = A_row.to("cpu").to(torch.float64)
+        B_ref = B_row.to("cpu").to(torch.float64)
+        C_ref = C_row.to("cpu").to(torch.float64)
+        C_ref = blas.dgemm(
+            alpha, 
+            A_ref.numpy(), 
+            B_ref.numpy(), 
+            beta, 
+            c=C_ref.numpy(), 
+            trans_b=transb, 
+            trans_a=transa
+        )
+    else:
+        print("gpu reference computation")
+        cublas_sgemm_reference(
+            transa,
+            transb,
+            m,
+            n,
+            k,
+            alpha,
+            A_col,
+            lda_cublas,
+            B_col,
+            ldb_cublas,
+            beta,
+            C_col,
+            ldc_cublas,
+        )
     flag_blas.sgemm(
         transa,
         transb,
@@ -130,10 +126,18 @@ def test_accuracy_sgemm(m, n, k, transa, transb):
         C_row,
         ldc_flag,
     )
-
-    rtol = 1e-5
-    atol = 1e-5
-    torch.testing.assert_close(C_row, C_col.contiguous(), rtol=rtol, atol=atol)
+    if TO_CPU:
+        utils.blas_assert_close(C_row, torch.tensor(C_ref), dtype, reduce_dim=k)
+    #     C_flag_blas = C_row.to("cpu")
+    #     rtol = 1.3e-6
+    #     atol = 1.3e-6
+    #     torch.testing.assert_close(C_flag_blas, torch.tensor(C_ref).to(dtype), rtol=rtol, atol=atol)
+        
+    else:
+        utils.blas_assert_close(C_row, C_col.contiguous(), dtype, reduce_dim=k)
+        # rtol = 1e-5
+        # atol = 1e-5
+        # torch.testing.assert_close(C_row, C_col.contiguous(), rtol=rtol, atol=atol)
 
 
 @pytest.mark.sgemm
