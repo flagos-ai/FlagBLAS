@@ -1,8 +1,8 @@
 ops:
   - id: sgemm
     description: |
-      Computes the absolute value of each element in `input`.
-      This is a simple wrapper of the existing torch `abs` operator.
+      single-precision GEMM, it uses standard FP32 floating point.
+      This is a simple wrapper of the existing BLAS `gemm` operator.
     for:
       - sgemm
     labels:
@@ -13,8 +13,8 @@ ops:
       - beta: '0.1'
   - id: hgemm
     description: |
-      Computes the absolute value of each element in `input`.
-      This is a simple wrapper of the existing torch `abs` operator.
+      half-precision GEMM, based on FP16 format.
+      This is a simple wrapper of the existing BLAS float16 `gemm` operator.
     for:
       - sgemm
     labels:
@@ -25,8 +25,8 @@ ops:
       - beta: '0.1'
   - id: bfgemm
     description: |
-      Computes the absolute value of each element in `input`.
-      This is a simple wrapper of the existing torch `abs` operator.
+      Refers to GEMM with BF16 data type.
+      This is a simple wrapper of the existing BLAS bfloat16`gemm` operator.
     for:
       - sgemm
     labels:
@@ -37,7 +37,7 @@ ops:
       - beta: '0.1'
   - id: fp8gemm
     description: |
-      Computes the absolute value of each element in `input`.
+      8-bit floating point GEMM with E4M3/E5M2 common formats
       This is a simple wrapper of the existing torch `abs` operator.
     for:
       - sgemm
