@@ -10,17 +10,9 @@ import os
 import sys
 
 QUICK_MODE = False
-TO_CPU = False
 GEN_SHAPE = False
-try:
-    import conftest
 
-    if hasattr(conftest, "QUICK_MODE"):
-        QUICK_MODE = conftest.QUICK_MODE
-    if hasattr(conftest, "TO_CPU"):
-        TO_CPU = conftest.TO_CPU
-except (ImportError, AttributeError):
-    pass
+from .conftest import QUICK_MODE, TO_CPU
 
 fp64_is_supported = flag_blas.runtime.device.support_fp64
 bf16_is_supported = flag_blas.runtime.device.support_bf16
