@@ -430,7 +430,7 @@ class GemmBenchmark(Benchmark):
 
         for shape in self.shapes:
             m, n, k = shape
-
+            scale = k**-0.5
             if self.transa == CUBLAS_OP_N:
                 A_col = torch.randn(k, m, dtype=cur_dtype, device=self.device).t()
                 lda_cublas, lda_flag = m, k
@@ -488,6 +488,27 @@ class GemmBenchmark(Benchmark):
         )
         return io_amount * 1e-9 / (latency * 1e-3)
 
+    def validate_results(self, torch_result, gems_result, reduce_dim, tolerance=1e-5):
+        """
+        Compare whether the two result tensors are equal within the specified tolerance.
+        If the error exceeds the specified tolerance, throw an AssertionError.
+        """
+        torch_cpu = torch_result.cpu()
+        gems_cpu = gems_result.cpu()
+
+        try:
+            flag_blas.testing.assert_close(
+                gems_cpu, torch_cpu, torch_cpu.dtype, equal_nan=False, reduce_dim=reduce_dim, atol=tolerance
+            )
+        except AssertionError as e:
+            max_abs_diff = torch.max(torch.abs(torch_cpu - gems_cpu))
+            max_rel_diff = torch.max(torch.abs((torch_cpu - gems_cpu) / (torch.abs(torch_cpu) + 1e-9)))
+            raise AssertionError(
+                f"Results differ beyond tolerance {tolerance}:\n"
+                f"Max absolute difference: {max_abs_diff}\n"
+                f"Max relative difference: {max_rel_diff}\n"
+                f"Shape: {torch_cpu.shape}"
+            )
 
 @pytest.mark.sgemm
 def test_perf_sgemm_nn():
@@ -499,6 +520,13 @@ def test_perf_sgemm_nn():
         transa=CUBLAS_OP_N,
         transb=CUBLAS_OP_N,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_sgemm_wrapper(A, B, C.clone(), **kwargs)
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1.3e-6)
     bench.run()
 
 
@@ -512,6 +540,13 @@ def test_perf_sgemm_tn():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_N,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_sgemm_wrapper(A, B, C.clone(), **kwargs)
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1.3e-6)
     bench.run()
 
 
@@ -525,6 +560,13 @@ def test_perf_sgemm_nt():
         transa=CUBLAS_OP_N,
         transb=CUBLAS_OP_T,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_sgemm_wrapper(A, B, C.clone(), **kwargs)
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1.3e-6)
     bench.run()
 
 
@@ -538,6 +580,13 @@ def test_perf_sgemm_tt():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_T,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_sgemm_wrapper(A, B, C.clone(), **kwargs)
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1.3e-6)
     bench.run()
 
 
@@ -551,6 +600,14 @@ def test_perf_hgemm_nn():
         transa=CUBLAS_OP_N,
         transb=CUBLAS_OP_N,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_hgemm_wrapper(A, B, C.clone(), **kwargs)
+
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
     bench.run()
 
 
@@ -564,6 +621,13 @@ def test_perf_hgemm_tn():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_N,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_hgemm_wrapper(A, B, C.clone(), **kwargs)
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
     bench.run()
 
 
@@ -577,6 +641,13 @@ def test_perf_hgemm_nt():
         transa=CUBLAS_OP_N,
         transb=CUBLAS_OP_T,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_hgemm_wrapper(A, B, C.clone(), **kwargs)
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
     bench.run()
 
 
@@ -590,8 +661,14 @@ def test_perf_hgemm_tt():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_T,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_hgemm_wrapper(A, B, C.clone(), **kwargs)
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
     bench.run()
-
 
 @pytest.mark.bfgemm
 def test_perf_bfgemm_nn():
@@ -603,6 +680,13 @@ def test_perf_bfgemm_nn():
         transa=CUBLAS_OP_N,
         transb=CUBLAS_OP_N,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_bfgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_bfgemm_wrapper(A, B, C.clone(), **kwargs)
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
     bench.run()
 
 
@@ -616,6 +700,13 @@ def test_perf_bfgemm_tn():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_N,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_bfgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_bfgemm_wrapper(A, B, C.clone(), **kwargs)
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
     bench.run()
 
 
@@ -629,6 +720,13 @@ def test_perf_bfgemm_nt():
         transa=CUBLAS_OP_N,
         transb=CUBLAS_OP_T,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_bfgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_bfgemm_wrapper(A, B, C.clone(), **kwargs)
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
     bench.run()
 
 
@@ -642,6 +740,13 @@ def test_perf_bfgemm_tt():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_T,
     )
+    bench.set_more_shapes()
+    for cur_dtype in bench.dtypes:
+        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
+            torch_result = cublas_bfgemm(A, B, C.clone(), **kwargs)
+            gems_result = gems_bfgemm_wrapper(A, B, C.clone(), **kwargs)
+            k = kwargs.get("k", 0)
+            bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
     bench.run()
 
 
