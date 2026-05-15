@@ -56,10 +56,6 @@ def cublas_stbsv_reference(uplo, trans, diag, n, k, A, lda, x, incx):
         raise RuntimeError(f"cublasStbsv_v2 execution failed with error code: {status}")
 
 
-# --------------------------------------------------------------------------
-# Test grid (kept compact - the parametrize space is the cartesian product
-# of n x k x uplo x trans x diag, so we use a moderate size set).
-# --------------------------------------------------------------------------
 STBSV_SIZES = [1, 2, 32, 63, 64, 128, 256, 512, 1024, 4096]
 STBSV_KS = [0, 1, 4, 16, 64]
 STBSV_STRIDE_SIZES = [64, 127, 256]
@@ -67,49 +63,38 @@ STBSV_STRIDE_SIZES = [64, 127, 256]
 FILL_MODES = [CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER]
 TRANS_MODES = [CUBLAS_OP_N, CUBLAS_OP_T]
 DIAG_MODES = [CUBLAS_DIAG_NON_UNIT, CUBLAS_DIAG_UNIT]
-STRIDES = [(1,), (2,)]
 
 
 def make_triangular_banded(n, k, lda, uplo, dtype, device, unit_diag=False):
-    """Generate a strongly diagonally-dominant triangular banded matrix.
+    if n == 0:
+        return torch.zeros((n, lda), dtype=dtype, device=device).contiguous()
 
-    Diagonal magnitude is set to ~ 2*(k+1) so that the system is
-    well-conditioned and the solve is numerically stable across all sizes.
-    """
-    A = torch.zeros((n, lda), dtype=dtype, device=device)
+    A = torch.randn((n, lda), dtype=dtype, device=device) * 0.1
     diag_floor = 2.0 * (k + 1) + 1.0
+    cols = torch.arange(lda, device=device).view(1, lda)
+    j = torch.arange(n, device=device).view(n, 1)
 
     if uplo == CUBLAS_FILL_MODE_UPPER:
-        # Row k holds the diagonal; rows 0..k-1 hold superdiagonals
-        for j in range(n):
-            i_min = max(0, j - k)
-            cnt = j - i_min + 1
-            if cnt > 0:
-                vals = torch.randn(cnt, dtype=dtype, device=device) * 0.1
-                if unit_diag:
-                    vals[-1] = 1.0
-                else:
-                    sign = 1.0 if torch.rand(1).item() < 0.5 else -1.0
-                    vals[-1] = sign * (diag_floor + torch.rand(1).item())
-                A[j, k + i_min - j : k + 1] = vals
+        valid = (cols >= torch.clamp(k - j, min=0)) & (cols <= k)
+        diag_col = k
     else:
-        # Row 0 holds the diagonal; rows 1..k hold subdiagonals
-        for j in range(n):
-            i_max = min(n - 1, j + k)
-            cnt = i_max - j + 1
-            if cnt > 0:
-                vals = torch.randn(cnt, dtype=dtype, device=device) * 0.1
-                if unit_diag:
-                    vals[0] = 1.0
-                else:
-                    sign = 1.0 if torch.rand(1).item() < 0.5 else -1.0
-                    vals[0] = sign * (diag_floor + torch.rand(1).item())
-                A[j, 0:cnt] = vals
+        valid = cols <= torch.clamp(n - 1 - j, max=k)
+        diag_col = 0
+
+    A = A.masked_fill(~valid, 0.0)
+    if unit_diag:
+        A[:, diag_col] = 1.0
+    else:
+        sign = torch.where(
+            torch.rand(n, device=device) < 0.5,
+            torch.full((n,), -1.0, dtype=dtype, device=device),
+            torch.full((n,), 1.0, dtype=dtype, device=device),
+        )
+        A[:, diag_col] = sign * (diag_floor + torch.rand(n, dtype=dtype, device=device))
     return A.contiguous()
 
 
 def _stbsv_tol(dtype, n, k):
-    # Triangular solve compounds error roughly with (k+1)*n.
     K = max(1, n)
     if dtype == torch.float32:
         return min(max(1e-4, 5e-6 * math.sqrt(K)), 5e-2)
@@ -122,9 +107,6 @@ def _effective_k(n, k):
     return min(k, max(0, n - 1))
 
 
-# --------------------------------------------------------------------------
-# Accuracy: contiguous x, full sweep of (uplo, trans, diag)
-# --------------------------------------------------------------------------
 @pytest.mark.stbsv
 @pytest.mark.parametrize("n", STBSV_SIZES)
 @pytest.mark.parametrize("k", STBSV_KS)
@@ -134,7 +116,7 @@ def _effective_k(n, k):
 def test_accuracy_stbsv(n, k, uplo, trans, diag):
     k = _effective_k(n, k)
     dtype = torch.float32
-    lda = k + 1 + 2  # add padding to exercise non-trivial lda
+    lda = k + 1 + 2
 
     A = make_triangular_banded(
         n,
@@ -149,15 +131,12 @@ def test_accuracy_stbsv(n, k, uplo, trans, diag):
     ref_x = x.clone()
 
     cublas_stbsv_reference(uplo, trans, diag, n, k, A, lda, ref_x, 1)
-    flag_blas.ops.stbsv(uplo, trans, diag, n, k, A, lda, x, 1)
+    flag_blas.stbsv(uplo, trans, diag, n, k, A, lda, x, 1)
 
     tol = _stbsv_tol(dtype, n, k)
     torch.testing.assert_close(x, ref_x, rtol=tol, atol=tol)
 
 
-# --------------------------------------------------------------------------
-# Accuracy: strided x
-# --------------------------------------------------------------------------
 @pytest.mark.stbsv
 @pytest.mark.parametrize("n", STBSV_STRIDE_SIZES)
 @pytest.mark.parametrize("k", [0, 1, 8, 32])
@@ -175,20 +154,17 @@ def test_accuracy_stbsv_stride(n, k, uplo, trans, incx):
     ref_x = x.clone()
 
     cublas_stbsv_reference(uplo, trans, diag, n, k, A, lda, ref_x, incx)
-    flag_blas.ops.stbsv(uplo, trans, diag, n, k, A, lda, x, incx)
+    flag_blas.stbsv(uplo, trans, diag, n, k, A, lda, x, incx)
 
     tol = _stbsv_tol(dtype, n, k)
     torch.testing.assert_close(x, ref_x, rtol=tol, atol=tol)
 
 
-# --------------------------------------------------------------------------
-# Edge cases
-# --------------------------------------------------------------------------
 @pytest.mark.stbsv
 def test_stbsv_n_zero():
     A = torch.empty((0, 1), dtype=torch.float32, device=flag_blas.device)
     x = torch.empty((0,), dtype=torch.float32, device=flag_blas.device)
-    flag_blas.ops.stbsv(
+    flag_blas.stbsv(
         CUBLAS_FILL_MODE_UPPER,
         CUBLAS_OP_N,
         CUBLAS_DIAG_NON_UNIT,
@@ -206,7 +182,6 @@ def test_stbsv_n_zero():
 @pytest.mark.parametrize("uplo", FILL_MODES)
 @pytest.mark.parametrize("trans", TRANS_MODES)
 def test_stbsv_k_zero(uplo, trans):
-    """k=0 => purely diagonal solve."""
     n, k = 256, 0
     lda = 1
     dtype = torch.float32
@@ -217,7 +192,7 @@ def test_stbsv_k_zero(uplo, trans):
     ref_x = x.clone()
 
     cublas_stbsv_reference(uplo, trans, diag, n, k, A, lda, ref_x, 1)
-    flag_blas.ops.stbsv(uplo, trans, diag, n, k, A, lda, x, 1)
+    flag_blas.stbsv(uplo, trans, diag, n, k, A, lda, x, 1)
 
     torch.testing.assert_close(x, ref_x, rtol=1e-5, atol=1e-5)
 
@@ -226,9 +201,6 @@ def test_stbsv_k_zero(uplo, trans):
 @pytest.mark.parametrize("uplo", FILL_MODES)
 @pytest.mark.parametrize("trans", TRANS_MODES)
 def test_stbsv_unit_diag_ignored(uplo, trans):
-    """When DIAG=UNIT the implementation must ignore the diagonal entries
-    of A (cuBLAS does the same). Poisoning them with NaN must not affect
-    the result."""
     n, k = 128, 8
     lda = k + 1 + 1
     dtype = torch.float32
@@ -244,8 +216,8 @@ def test_stbsv_unit_diag_ignored(uplo, trans):
     x_clean = x.clone()
     x_dirty = x.clone()
 
-    flag_blas.ops.stbsv(uplo, trans, CUBLAS_DIAG_UNIT, n, k, A_clean, lda, x_clean, 1)
-    flag_blas.ops.stbsv(uplo, trans, CUBLAS_DIAG_UNIT, n, k, A_dirty, lda, x_dirty, 1)
+    flag_blas.stbsv(uplo, trans, CUBLAS_DIAG_UNIT, n, k, A_clean, lda, x_clean, 1)
+    flag_blas.stbsv(uplo, trans, CUBLAS_DIAG_UNIT, n, k, A_dirty, lda, x_dirty, 1)
 
     tol = _stbsv_tol(dtype, n, k)
     torch.testing.assert_close(x_dirty, x_clean, rtol=tol, atol=tol)
@@ -253,8 +225,6 @@ def test_stbsv_unit_diag_ignored(uplo, trans):
 
 @pytest.mark.stbsv
 def test_stbsv_solve_then_multiply_roundtrip():
-    """A * (A^{-1} * x) ≈ x  -- a self-consistency check independent of
-    the cuBLAS reference."""
     n, k = 512, 16
     lda = k + 1
     dtype = torch.float32
@@ -263,16 +233,14 @@ def test_stbsv_solve_then_multiply_roundtrip():
     A = make_triangular_banded(n, k, lda, uplo, dtype, flag_blas.device)
     x_orig = torch.randn(n, dtype=dtype, device=flag_blas.device)
 
-    # Solve A * y = x_orig => y stored in x_buf
     x_buf = x_orig.clone()
-    flag_blas.ops.stbsv(uplo, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT, n, k, A, lda, x_buf, 1)
+    flag_blas.stbsv(uplo, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT, n, k, A, lda, x_buf, 1)
 
-    # Re-multiply: compute A * y and compare with x_orig
-    # We do the multiply in dense-matrix form for the reference.
     A_dense = torch.zeros(n, n, dtype=dtype, device=flag_blas.device)
-    for j in range(n):
-        for i in range(j, min(n, j + k + 1)):
-            A_dense[i, j] = A[j, i - j]
+    rows = torch.arange(n, device=flag_blas.device).view(n, 1)
+    cols = torch.arange(n, device=flag_blas.device).view(1, n)
+    mask = (rows >= cols) & ((rows - cols) <= k)
+    A_dense[mask] = A[cols.expand(n, n)[mask], (rows - cols)[mask]]
     Ay = A_dense @ x_buf
 
     tol = _stbsv_tol(dtype, n, k)

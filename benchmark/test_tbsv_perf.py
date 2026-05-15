@@ -83,30 +83,28 @@ def cublas_stbsv_baseline(
 
 
 def gems_stbsv_wrapper(A, x, uplo, trans, diag, n, k, lda, incx, **kwargs):
-    flag_blas.ops.stbsv(uplo, trans, diag, n, k, A, lda, x, incx)
+    flag_blas.stbsv(uplo, trans, diag, n, k, A, lda, x, incx)
     return x
 
 
 def _make_triangular_banded(n, k, lda, uplo, dtype, device):
-    """Diagonally-dominant triangular banded matrix (well-conditioned)."""
-    A = torch.zeros((n, lda), dtype=dtype, device=device)
+    if n == 0:
+        return torch.zeros((n, lda), dtype=dtype, device=device).contiguous()
+
+    A = torch.randn((n, lda), dtype=dtype, device=device) * 0.1
     diag_floor = 2.0 * (k + 1) + 1.0
+    cols = torch.arange(lda, device=device).view(1, lda)
+    j = torch.arange(n, device=device).view(n, 1)
+
     if uplo == CUBLAS_FILL_MODE_UPPER:
-        for j in range(n):
-            i_min = max(0, j - k)
-            cnt = j - i_min + 1
-            if cnt > 0:
-                vals = torch.randn(cnt, dtype=dtype, device=device) * 0.1
-                vals[-1] = diag_floor
-                A[j, k + i_min - j : k + 1] = vals
+        valid = (cols >= torch.clamp(k - j, min=0)) & (cols <= k)
+        diag_col = k
     else:
-        for j in range(n):
-            i_max = min(n - 1, j + k)
-            cnt = i_max - j + 1
-            if cnt > 0:
-                vals = torch.randn(cnt, dtype=dtype, device=device) * 0.1
-                vals[0] = diag_floor
-                A[j, 0:cnt] = vals
+        valid = cols <= torch.clamp(n - 1 - j, max=k)
+        diag_col = 0
+
+    A = A.masked_fill(~valid, 0.0)
+    A[:, diag_col] = diag_floor
     return A.contiguous()
 
 

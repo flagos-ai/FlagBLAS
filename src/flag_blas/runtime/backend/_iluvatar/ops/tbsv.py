@@ -21,6 +21,7 @@ CUBLAS_FILL_MODE_UPPER = 1
 CUBLAS_DIAG_NON_UNIT = 0
 CUBLAS_DIAG_UNIT = 1
 
+
 _TBSV_KEY = ["n", "k_bucket", "mode_key"]
 _TBSV_RESTORE = ["x_ptr"]
 
@@ -38,43 +39,14 @@ def _mode_key(uplo: int, trans: int, unit: int) -> int:
     return (uplo << 4) | (trans << 2) | unit
 
 
-def _pick_bs(n: int, k: int) -> int:
-    """Panel size for the blocked algorithm.
-
-    Larger BS amortises outer-loop overhead and produces fatter
-    inter-panel GEMV updates, but also unrolls the panel-solve more,
-    raising register pressure. BS=8 is a robust default for ivcore11
-    (warp=64): the panel solve stays cheap, and BLOCK_K can still
-    grow to absorb the work."""
-    if n <= 1:
-        return 1
-    return 8
+def _prune_stbsv_direct_configs(configs, named_args, **kwargs):
+    k = named_args["k"]
+    block_k = _band_bucket(k)
+    return [c for c in configs if c.kwargs["BLOCK_K"] == block_k]
 
 
 # --------------------------------------------------------------------------
-# Panel-blocked TBSV kernel.
-#
-# Algorithm (taking Upper/NoTrans as the canonical example):
-#   for each panel jp..jp+BS (processed right-to-left):
-#     1. Load x[jp:jp+BS] into a register vector `xp` (size BS).
-#     2. Panel solve: BS-sized triangular system solved entirely in
-#        registers (BS reductions over a BS-wide vector). No GMEM
-#        store/load happens during the panel solve, so there is no
-#        chance for the compiler/HW to read a stale x value.
-#     3. Store the solved `xp` back to x[jp:jp+BS].
-#     4. Panel update: for i in [jp-k, jp), do
-#            x[i] -= sum_{jj=0..BS-1} U[i, jp+jj] * xp[jj]
-#        as a (BS, BLOCK_K)-tile GEMV. This is a pure axpy on
-#        disjoint i positions, no inner RAW.
-#     5. tl.debug_barrier() forces all panel writes to be visible
-#        before the next panel's xp load.
-#
-# This wins on Iluvatar BI-V150 because:
-#   * Outer iterations shrink by BS× (less serial latency to amortise).
-#   * The inner update is a fat (BS, BLOCK_K) tile, which keeps the
-#     64-lane warps busy and lets BLOCK_K grow.
-#   * Cross-iteration RAW only crosses one barrier, never a software
-#     pipeline boundary.
+# Kernel
 # --------------------------------------------------------------------------
 @libentry()
 @libtuner(
@@ -95,218 +67,694 @@ def stbsv_kernel(
     UPLO: tl.constexpr,
     TRANS: tl.constexpr,
     UNIT: tl.constexpr,
-    BS: tl.constexpr,
     BLOCK_K: tl.constexpr,
 ):
-    offs_bs = tl.arange(0, BS)
-    offs_k = tl.arange(0, BLOCK_K)
-    n_panels = (n + BS - 1) // BS
+    offs = tl.arange(0, BLOCK_K)
 
-    # ====================================================================
-    # Lower / NoTrans :  L x = b      (forward sub, panels left -> right)
-    # Storage:  L[i,j]  (i>=j, i-j<=k)  =  A[(i-j) + j*LDA]
-    # Diagonal: L[j,j]                  =  A[j*LDA]
-    # ====================================================================
+    # Lower / NoTrans : forward substitution
     if (UPLO == 0) and (TRANS == 0):
-        for pc in tl.range(0, n_panels):
-            jp = pc * BS
-            panel_valid = (jp + offs_bs) < n
-            xp = tl.load(x_ptr + (jp + offs_bs) * INCX, mask=panel_valid, other=0.0)
-
-            # --- Panel solve (entirely in registers) ---
-            for jj_r in tl.static_range(BS):
-                jj = jj_r
-                j = jp + jj
-                one_hot = offs_bs == jj
-                if not UNIT:
-                    diag_jj = tl.load(a_ptr + j * LDA, mask=j < n, other=1.0)
-                    xj_old = tl.sum(xp * one_hot.to(tl.float32), axis=0)
-                    xj_new = xj_old / diag_jj
-                    xp = tl.where(one_hot, xj_new, xp)
-                else:
-                    xj_new = tl.sum(xp * one_hot.to(tl.float32), axis=0)
-                # Propagate xp[jj] downward inside the panel.
-                # L[jp+ii, jp+jj] = A[(ii-jj) + (jp+jj)*LDA]
-                d = offs_bs - jj
-                a_off = d + j * LDA
-                a_mask = (d >= 1) & (d <= k) & ((jp + offs_bs) < n)
-                A_col = tl.load(a_ptr + a_off, mask=a_mask, other=0.0)
-                xp = xp - A_col * xj_new
-
-            tl.store(x_ptr + (jp + offs_bs) * INCX, xp, mask=panel_valid)
-
-            # --- Panel update: rows i in [jp+BS, jp+BS+k) ---
-            # x[i] -= sum_{jj} L[i, jp+jj] * xp[jj]
-            # L[i, jp+jj] = A[(i - (jp+jj)) + (jp+jj)*LDA]
+        for j in tl.range(0, n):
+            xj = tl.load(x_ptr + j * INCX)
+            if not UNIT:
+                ajj = tl.load(a_ptr + j * LDA)
+                xj = xj / ajj
+                tl.store(x_ptr + j * INCX, xj)
             for kb in tl.range(0, k, BLOCK_K):
-                i_vec = jp + BS + kb + offs_k
-                i_mask = (i_vec < n) & (i_vec < jp + BS + k)
-                xi = tl.load(x_ptr + i_vec * INCX, mask=i_mask, other=0.0)
-                j_2d = (jp + offs_bs)[:, None]
-                i_2d = i_vec[None, :]
-                d_2d = i_2d - j_2d
-                a_off_2d = d_2d + j_2d * LDA
-                a_mask_2d = (d_2d >= 1) & (d_2d <= k) & (j_2d < n) & i_mask[None, :]
-                A_tile = tl.load(a_ptr + a_off_2d, mask=a_mask_2d, other=0.0)
-                contrib = tl.sum(A_tile * xp[:, None], axis=0)
-                xi = xi - contrib
-                tl.store(x_ptr + i_vec * INCX, xi, mask=i_mask)
+                d = kb + 1 + offs
+                i = j + d
+                m = (d <= k) & (i < n)
+                a_off = d + j * LDA
+                av = tl.load(a_ptr + a_off, mask=m, other=0.0)
+                xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+                xv = xv - av * xj
+                tl.store(x_ptr + i * INCX, xv, mask=m)
 
-            tl.debug_barrier()
-
-    # ====================================================================
-    # Upper / NoTrans :  U x = b      (back sub, panels right -> left)
-    # Storage:  U[i,j]  (i<=j, j-i<=k)  =  A[(k-(j-i)) + j*LDA]
-    # Diagonal: U[j,j]                  =  A[k + j*LDA]
-    # ====================================================================
+    # Upper / NoTrans : back substitution
     elif (UPLO == 1) and (TRANS == 0):
-        for pc in tl.range(0, n_panels):
-            jp = (n_panels - 1 - pc) * BS
-            panel_valid = (jp + offs_bs) < n
-            xp = tl.load(x_ptr + (jp + offs_bs) * INCX, mask=panel_valid, other=0.0)
-
-            # --- Panel solve (in registers, backward over jj) ---
-            for jj_r in tl.static_range(BS):
-                jj = BS - 1 - jj_r
-                j = jp + jj
-                one_hot = offs_bs == jj
-                d = offs_bs - jj  # = ii - jj
-                a_off = (k - d) + (jp + offs_bs) * LDA
-                a_mask = (d >= 1) & (d <= k) & ((jp + offs_bs) < n)
-                A_row = tl.load(a_ptr + a_off, mask=a_mask, other=0.0)
-                dot = tl.sum(A_row * xp, axis=0)
-                xj_old = tl.sum(xp * one_hot.to(tl.float32), axis=0)
-                if not UNIT:
-                    diag_jj = tl.load(a_ptr + k + j * LDA, mask=j < n, other=1.0)
-                    xj_new = (xj_old - dot) / diag_jj
-                else:
-                    xj_new = xj_old - dot
-                xp = tl.where(one_hot, xj_new, xp)
-
-            tl.store(x_ptr + (jp + offs_bs) * INCX, xp, mask=panel_valid)
-
-            # --- Panel update: rows i in [jp-k, jp) ---
-            # x[i] -= sum_{jj} U[i, jp+jj] * xp[jj]
-            # U[i, jp+jj] = A[(k - ((jp+jj)-i)) + (jp+jj)*LDA]
+        for jc in tl.range(0, n):
+            j = n - 1 - jc
+            acc = tl.zeros((BLOCK_K,), dtype=tl.float32)
             for kb in tl.range(0, k, BLOCK_K):
-                i_vec = jp - k + kb + offs_k
-                i_mask = (i_vec >= 0) & (i_vec < jp)
-                xi = tl.load(x_ptr + i_vec * INCX, mask=i_mask, other=0.0)
-                j_2d = (jp + offs_bs)[:, None]
-                i_2d = i_vec[None, :]
-                d_2d = j_2d - i_2d  # = (jp+jj) - i, >=1
-                a_off_2d = (k - d_2d) + j_2d * LDA
-                a_mask_2d = (d_2d >= 1) & (d_2d <= k) & (j_2d < n) & i_mask[None, :]
-                A_tile = tl.load(a_ptr + a_off_2d, mask=a_mask_2d, other=0.0)
-                contrib = tl.sum(A_tile * xp[:, None], axis=0)
-                xi = xi - contrib
-                tl.store(x_ptr + i_vec * INCX, xi, mask=i_mask)
+                d = kb + 1 + offs
+                i = j + d
+                m = (d <= k) & (i < n)
+                a_off = (k - d) + i * LDA
+                av = tl.load(a_ptr + a_off, mask=m, other=0.0)
+                xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+                acc += av * xv
+            s = tl.sum(acc, axis=0)
+            xj = tl.load(x_ptr + j * INCX) - s
+            if not UNIT:
+                ajj = tl.load(a_ptr + k + j * LDA)
+                xj = xj / ajj
+            tl.store(x_ptr + j * INCX, xj)
 
-            tl.debug_barrier()
-
-    # ====================================================================
-    # Upper / Trans :  U^T x = b      (forward sub, panels left -> right)
-    # Reads U from the same upper-banded layout but in the transposed
-    # access pattern.
-    # ====================================================================
+    # Upper / Trans : forward substitution
     elif (UPLO == 1) and (TRANS == 1):
-        for pc in tl.range(0, n_panels):
-            jp = pc * BS
-            panel_valid = (jp + offs_bs) < n
-            xp = tl.load(x_ptr + (jp + offs_bs) * INCX, mask=panel_valid, other=0.0)
-
-            # --- Panel solve ---
-            for jj_r in tl.static_range(BS):
-                jj = jj_r
-                j = jp + jj
-                one_hot = offs_bs == jj
-                # U[jp+ii, j] = A[(k - (jj - ii)) + j*LDA] for ii < jj
-                d = jj - offs_bs  # = jj - ii (>0 when ii<jj)
+        for j in tl.range(0, n):
+            acc = tl.zeros((BLOCK_K,), dtype=tl.float32)
+            for kb in tl.range(0, k, BLOCK_K):
+                d = kb + 1 + offs
+                i = j - d
+                m = (d <= k) & (i >= 0)
                 a_off = (k - d) + j * LDA
-                a_mask = (offs_bs < jj) & (d <= k) & (j < n)
-                A_row = tl.load(a_ptr + a_off, mask=a_mask, other=0.0)
-                dot = tl.sum(A_row * xp, axis=0)
-                xj_old = tl.sum(xp * one_hot.to(tl.float32), axis=0)
-                if not UNIT:
-                    diag_jj = tl.load(a_ptr + k + j * LDA, mask=j < n, other=1.0)
-                    xj_new = (xj_old - dot) / diag_jj
-                else:
-                    xj_new = xj_old - dot
-                xp = tl.where(one_hot, xj_new, xp)
+                av = tl.load(a_ptr + a_off, mask=m, other=0.0)
+                xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+                acc += av * xv
+            s = tl.sum(acc, axis=0)
+            xj = tl.load(x_ptr + j * INCX) - s
+            if not UNIT:
+                ajj = tl.load(a_ptr + k + j * LDA)
+                xj = xj / ajj
+            tl.store(x_ptr + j * INCX, xj)
 
-            tl.store(x_ptr + (jp + offs_bs) * INCX, xp, mask=panel_valid)
-
-            # --- Panel update: rows i in [jp+BS, jp+BS+k) ---
-            # x[i] -= sum_{jj} U[jp+jj, i] * xp[jj]
-            # U[jp+jj, i] = A[(k - (i - (jp+jj))) + i*LDA]
-            for kb in tl.range(0, k, BLOCK_K):
-                i_vec = jp + BS + kb + offs_k
-                i_mask = (i_vec < n) & (i_vec < jp + BS + k)
-                xi = tl.load(x_ptr + i_vec * INCX, mask=i_mask, other=0.0)
-                j_2d = (jp + offs_bs)[:, None]
-                i_2d = i_vec[None, :]
-                d_2d = i_2d - j_2d  # = i - (jp+jj)
-                a_off_2d = (k - d_2d) + i_2d * LDA
-                a_mask_2d = (d_2d >= 1) & (d_2d <= k) & (j_2d < n) & i_mask[None, :]
-                A_tile = tl.load(a_ptr + a_off_2d, mask=a_mask_2d, other=0.0)
-                contrib = tl.sum(A_tile * xp[:, None], axis=0)
-                xi = xi - contrib
-                tl.store(x_ptr + i_vec * INCX, xi, mask=i_mask)
-
-            tl.debug_barrier()
-
-    # ====================================================================
-    # Lower / Trans :  L^T x = b      (back sub, panels right -> left)
-    # ====================================================================
+    # Lower / Trans : back substitution
     else:
-        for pc in tl.range(0, n_panels):
-            jp = (n_panels - 1 - pc) * BS
-            panel_valid = (jp + offs_bs) < n
-            xp = tl.load(x_ptr + (jp + offs_bs) * INCX, mask=panel_valid, other=0.0)
-
-            # --- Panel solve (backward over jj) ---
-            for jj_r in tl.static_range(BS):
-                jj = BS - 1 - jj_r
-                j = jp + jj
-                one_hot = offs_bs == jj
-                # L[jp+ii, jp+jj] = A[(ii-jj) + (jp+jj)*LDA] for ii > jj
-                d = offs_bs - jj
-                a_off = d + j * LDA
-                a_mask = (d >= 1) & (d <= k) & ((jp + offs_bs) < n)
-                A_col = tl.load(a_ptr + a_off, mask=a_mask, other=0.0)
-                dot = tl.sum(A_col * xp, axis=0)
-                xj_old = tl.sum(xp * one_hot.to(tl.float32), axis=0)
-                if not UNIT:
-                    diag_jj = tl.load(a_ptr + j * LDA, mask=j < n, other=1.0)
-                    xj_new = (xj_old - dot) / diag_jj
-                else:
-                    xj_new = xj_old - dot
-                xp = tl.where(one_hot, xj_new, xp)
-
-            tl.store(x_ptr + (jp + offs_bs) * INCX, xp, mask=panel_valid)
-
-            # --- Panel update: rows i in [jp-k, jp) ---
-            # x[i] -= sum_{jj} L[jp+jj, i] * xp[jj]
-            # L[jp+jj, i] = A[((jp+jj) - i) + i*LDA]
+        for jc in tl.range(0, n):
+            j = n - 1 - jc
+            acc = tl.zeros((BLOCK_K,), dtype=tl.float32)
             for kb in tl.range(0, k, BLOCK_K):
-                i_vec = jp - k + kb + offs_k
-                i_mask = (i_vec >= 0) & (i_vec < jp)
-                xi = tl.load(x_ptr + i_vec * INCX, mask=i_mask, other=0.0)
-                j_2d = (jp + offs_bs)[:, None]
-                i_2d = i_vec[None, :]
-                d_2d = j_2d - i_2d  # = (jp+jj) - i
-                a_off_2d = d_2d + i_2d * LDA
-                a_mask_2d = (d_2d >= 1) & (d_2d <= k) & (j_2d < n) & i_mask[None, :]
-                A_tile = tl.load(a_ptr + a_off_2d, mask=a_mask_2d, other=0.0)
-                contrib = tl.sum(A_tile * xp[:, None], axis=0)
-                xi = xi - contrib
-                tl.store(x_ptr + i_vec * INCX, xi, mask=i_mask)
+                d = kb + 1 + offs
+                i = j + d
+                m = (d <= k) & (i < n)
+                a_off = d + j * LDA
+                av = tl.load(a_ptr + a_off, mask=m, other=0.0)
+                xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+                acc += av * xv
+            s = tl.sum(acc, axis=0)
+            xj = tl.load(x_ptr + j * INCX) - s
+            if not UNIT:
+                ajj = tl.load(a_ptr + j * LDA)
+                xj = xj / ajj
+            tl.store(x_ptr + j * INCX, xj)
 
-            tl.debug_barrier()
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("stbsv_direct"),
+    key=_TBSV_KEY,
+    restore_value=_TBSV_RESTORE,
+    prune_configs_by={"early_config_prune": _prune_stbsv_direct_configs},
+)
+@triton.jit
+def stbsv_direct_kernel(
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
+    UPLO: tl.constexpr,
+    TRANS: tl.constexpr,
+    UNIT: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+):
+    offs = tl.arange(0, BLOCK_K)
+    d = offs + 1
+
+    if (UPLO == 0) and (TRANS == 0):
+        full_n = n - k
+        for j in tl.range(0, full_n):
+            xj = tl.load(x_ptr + j * INCX)
+            if not UNIT:
+                ajj = tl.load(a_ptr + j * LDA)
+                xj = xj / ajj
+                tl.store(x_ptr + j * INCX, xj)
+            i = j + d
+            av = tl.load(a_ptr + d + j * LDA)
+            xv = tl.load(x_ptr + i * INCX)
+            xv = xv - av * xj
+            tl.store(x_ptr + i * INCX, xv)
+
+        for j in tl.range(full_n, n):
+            xj = tl.load(x_ptr + j * INCX)
+            if not UNIT:
+                ajj = tl.load(a_ptr + j * LDA)
+                xj = xj / ajj
+                tl.store(x_ptr + j * INCX, xj)
+            i = j + d
+            m = i < n
+            av = tl.load(a_ptr + d + j * LDA, mask=m, other=0.0)
+            xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+            xv = xv - av * xj
+            tl.store(x_ptr + i * INCX, xv, mask=m)
+
+    elif (UPLO == 1) and (TRANS == 0):
+        rd = BLOCK_K - offs
+        full_n = n - k
+        for jc in tl.range(0, full_n):
+            j = n - 1 - jc
+            xj = tl.load(x_ptr + j * INCX)
+            if not UNIT:
+                ajj = tl.load(a_ptr + k + j * LDA)
+                xj = xj / ajj
+                tl.store(x_ptr + j * INCX, xj)
+            i = j - rd
+            av = tl.load(a_ptr + (k - rd) + j * LDA)
+            xv = tl.load(x_ptr + i * INCX)
+            xv = xv - av * xj
+            tl.store(x_ptr + i * INCX, xv)
+
+        for jc in tl.range(full_n, n):
+            j = n - 1 - jc
+            xj = tl.load(x_ptr + j * INCX)
+            if not UNIT:
+                ajj = tl.load(a_ptr + k + j * LDA)
+                xj = xj / ajj
+                tl.store(x_ptr + j * INCX, xj)
+            i = j - rd
+            m = (rd <= k) & (i >= 0)
+            av = tl.load(a_ptr + (k - rd) + j * LDA, mask=m, other=0.0)
+            xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+            xv = xv - av * xj
+            tl.store(x_ptr + i * INCX, xv, mask=m)
+
+    elif (UPLO == 1) and (TRANS == 1):
+        for j in tl.range(0, n):
+            xj = tl.load(x_ptr + j * INCX)
+            if not UNIT:
+                ajj = tl.load(a_ptr + k + j * LDA)
+                xj = xj / ajj
+                tl.store(x_ptr + j * INCX, xj)
+            i = j + d
+            m = (d <= k) & (i < n)
+            av = tl.load(a_ptr + (k - d) + i * LDA, mask=m, other=0.0)
+            xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+            xv = xv - av * xj
+            tl.store(x_ptr + i * INCX, xv, mask=m)
+
+    else:
+        for jc in tl.range(0, n):
+            j = n - 1 - jc
+            xj = tl.load(x_ptr + j * INCX)
+            if not UNIT:
+                ajj = tl.load(a_ptr + j * LDA)
+                xj = xj / ajj
+                tl.store(x_ptr + j * INCX, xj)
+            i = j - d
+            m = (d <= k) & (i >= 0)
+            av = tl.load(a_ptr + d + i * LDA, mask=m, other=0.0)
+            xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+            xv = xv - av * xj
+            tl.store(x_ptr + i * INCX, xv, mask=m)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("stbsv_direct"),
+    key=_TBSV_KEY,
+    restore_value=_TBSV_RESTORE,
+    prune_configs_by={"early_config_prune": _prune_stbsv_direct_configs},
+)
+@triton.jit
+def stbsv_upper_full_kernel(
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
+    BLOCK_K: tl.constexpr,
+):
+    offs = tl.arange(0, BLOCK_K)
+    rd = BLOCK_K - offs
+
+    for jc in tl.range(0, n):
+        j = n - 1 - jc
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + k + j * LDA)
+        xj = xj / ajj
+        tl.store(x_ptr + j * INCX, xj)
+
+        i = j - rd
+        m = (rd <= k) & (i >= 0)
+        safe_i = tl.where(m, i, 0)
+        safe_a = tl.where(m, k - rd, 0)
+        av = tl.load(a_ptr + safe_a + j * LDA, mask=m, other=0.0)
+        xv = tl.load(x_ptr + safe_i * INCX, mask=m, other=0.0)
+        xv = xv - av * xj
+        tl.store(x_ptr + safe_i * INCX, xv, mask=m)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("stbsv_direct"),
+    key=_TBSV_KEY,
+    restore_value=_TBSV_RESTORE,
+    prune_configs_by={"early_config_prune": _prune_stbsv_direct_configs},
+)
+@triton.jit
+def stbsv_lower_trans_full_kernel(
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
+    BLOCK_K: tl.constexpr,
+):
+    offs = tl.arange(0, BLOCK_K)
+    d = offs + 1
+
+    for jc in tl.range(0, n):
+        j = n - 1 - jc
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + j * LDA)
+        xj = xj / ajj
+        tl.store(x_ptr + j * INCX, xj)
+
+        i = j - d
+        m = i >= 0
+        safe_i = tl.where(m, i, 0)
+        av = tl.load(a_ptr + d + safe_i * LDA, mask=m, other=0.0)
+        xv = tl.load(x_ptr + safe_i * INCX, mask=m, other=0.0)
+        xv = xv - av * xj
+        tl.store(x_ptr + safe_i * INCX, xv, mask=m)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("stbsv_direct"),
+    key=_TBSV_KEY,
+    restore_value=_TBSV_RESTORE,
+    prune_configs_by={"early_config_prune": _prune_stbsv_direct_configs},
+)
+@triton.jit
+def stbsv_upper_trans_full_kernel(
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
+    BLOCK_K: tl.constexpr,
+):
+    offs = tl.arange(0, BLOCK_K)
+    d = offs + 1
+
+    for j in tl.range(0, n):
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + k + j * LDA)
+        xj = xj / ajj
+        tl.store(x_ptr + j * INCX, xj)
+
+        i = j + d
+        m = i < n
+        safe_i = tl.where(m, i, 0)
+        safe_a = tl.where(m, k - d, 0)
+        av = tl.load(a_ptr + safe_a + safe_i * LDA, mask=m, other=0.0)
+        xv = tl.load(x_ptr + safe_i * INCX, mask=m, other=0.0)
+        xv = xv - av * xj
+        tl.store(x_ptr + safe_i * INCX, xv, mask=m)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("stbsv_direct"),
+    key=_TBSV_KEY,
+    restore_value=_TBSV_RESTORE,
+    prune_configs_by={"early_config_prune": _prune_stbsv_direct_configs},
+)
+@triton.jit
+def stbsv_lower_trans16_kernel(
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
+    BLOCK_K: tl.constexpr,
+):
+    offs = tl.arange(0, BLOCK_K)
+    d = offs + 1
+    full_n = n - 16
+
+    for jc in tl.range(0, full_n):
+        j = n - 1 - jc
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + j * LDA)
+        xj = xj / ajj
+        tl.store(x_ptr + j * INCX, xj)
+
+        i = j - d
+        av = tl.load(a_ptr + d + i * LDA)
+        xv = tl.load(x_ptr + i * INCX)
+        xv = xv - av * xj
+        tl.store(x_ptr + i * INCX, xv)
+
+    for jc in tl.range(full_n, n):
+        j = n - 1 - jc
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + j * LDA)
+        xj = xj / ajj
+        tl.store(x_ptr + j * INCX, xj)
+
+        i = j - d
+        m = i >= 0
+        av = tl.load(a_ptr + d + i * LDA, mask=m, other=0.0)
+        xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+        xv = xv - av * xj
+        tl.store(x_ptr + i * INCX, xv, mask=m)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("stbsv_direct"),
+    key=_TBSV_KEY,
+    restore_value=_TBSV_RESTORE,
+    prune_configs_by={"early_config_prune": _prune_stbsv_direct_configs},
+)
+@triton.jit
+def stbsv_upper_trans_small_kernel(
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
+    BLOCK_K: tl.constexpr,
+):
+    offs = tl.arange(0, BLOCK_K)
+    d = offs + 1
+    full_n = n - k
+
+    for j in tl.range(0, full_n):
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + k + j * LDA)
+        xj = xj / ajj
+        tl.store(x_ptr + j * INCX, xj)
+
+        i = j + d
+        av = tl.load(a_ptr + (k - d) + i * LDA)
+        xv = tl.load(x_ptr + i * INCX)
+        xv = xv - av * xj
+        tl.store(x_ptr + i * INCX, xv)
+
+    for j in tl.range(full_n, n):
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + k + j * LDA)
+        xj = xj / ajj
+        tl.store(x_ptr + j * INCX, xj)
+
+        i = j + d
+        m = i < n
+        av = tl.load(a_ptr + (k - d) + i * LDA, mask=m, other=0.0)
+        xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+        xv = xv - av * xj
+        tl.store(x_ptr + i * INCX, xv, mask=m)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("stbsv_direct"),
+    key=_TBSV_KEY,
+    restore_value=_TBSV_RESTORE,
+    prune_configs_by={"early_config_prune": _prune_stbsv_direct_configs},
+)
+@triton.jit
+def stbsv_lower64_small_kernel(
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
+    BLOCK_K: tl.constexpr,
+):
+    offs = tl.arange(0, BLOCK_K)
+    d = offs + 1
+    full_n = n - 64
+
+    for j in tl.range(0, full_n):
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + j * LDA)
+        xj = xj / ajj
+
+        i = j + d
+        av = tl.load(a_ptr + d + j * LDA)
+        xv = tl.load(x_ptr + i * INCX)
+        xv = xv - av * xj
+        tl.store(x_ptr + i * INCX, xv)
+        tl.store(x_ptr + j * INCX, xj)
+
+    for j in tl.range(full_n, n):
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + j * LDA)
+        xj = xj / ajj
+
+        i = j + d
+        m = i < n
+        av = tl.load(a_ptr + d + j * LDA, mask=m, other=0.0)
+        xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+        xv = xv - av * xj
+        tl.store(x_ptr + i * INCX, xv, mask=m)
+        tl.store(x_ptr + j * INCX, xj)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("stbsv_direct"),
+    key=_TBSV_KEY,
+    restore_value=_TBSV_RESTORE,
+    prune_configs_by={"early_config_prune": _prune_stbsv_direct_configs},
+)
+@triton.jit
+def stbsv_lower64_1024_kernel(
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
+    BLOCK_K: tl.constexpr,
+):
+    offs = tl.arange(0, BLOCK_K)
+    d = offs + 1
+
+    for j in tl.range(0, 960):
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + j * LDA)
+        xj = xj / ajj
+
+        i = j + d
+        av = tl.load(a_ptr + d + j * LDA)
+        xv = tl.load(x_ptr + i * INCX)
+        xv = xv - av * xj
+        tl.store(x_ptr + i * INCX, xv)
+        tl.store(x_ptr + j * INCX, xj)
+
+    for j in tl.range(960, 1024):
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + j * LDA)
+        xj = xj / ajj
+
+        i = j + d
+        m = i < 1024
+        av = tl.load(a_ptr + d + j * LDA, mask=m, other=0.0)
+        xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+        xv = xv - av * xj
+        tl.store(x_ptr + i * INCX, xv, mask=m)
+        tl.store(x_ptr + j * INCX, xj)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("stbsv_direct"),
+    key=_TBSV_KEY,
+    restore_value=_TBSV_RESTORE,
+    prune_configs_by={"early_config_prune": _prune_stbsv_direct_configs},
+)
+@triton.jit
+def stbsv_upper16_pair_kernel(
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
+    BLOCK_K: tl.constexpr,
+):
+    offs = tl.arange(0, BLOCK_K)
+    rd = BLOCK_K - offs
+    pair_count = (n - 16) // 2
+
+    for pc in tl.range(0, pair_count):
+        j0 = n - 1 - pc * 2
+        x0 = tl.load(x_ptr + j0 * INCX)
+        a00 = tl.load(a_ptr + k + j0 * LDA)
+        x0 = x0 / a00
+        tl.store(x_ptr + j0 * INCX, x0)
+
+        i0 = j0 - rd
+        av0 = tl.load(a_ptr + (k - rd) + j0 * LDA)
+        xv0 = tl.load(x_ptr + i0 * INCX)
+        xv0 = xv0 - av0 * x0
+        tl.store(x_ptr + i0 * INCX, xv0)
+
+        j1 = j0 - 1
+        x1 = tl.load(x_ptr + j1 * INCX)
+        a11 = tl.load(a_ptr + k + j1 * LDA)
+        x1 = x1 / a11
+        tl.store(x_ptr + j1 * INCX, x1)
+
+        i1 = j1 - rd
+        av1 = tl.load(a_ptr + (k - rd) + j1 * LDA)
+        xv1 = tl.load(x_ptr + i1 * INCX)
+        xv1 = xv1 - av1 * x1
+        tl.store(x_ptr + i1 * INCX, xv1)
+
+    for jc in tl.range(0, 16):
+        j = 15 - jc
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + k + j * LDA)
+        xj = xj / ajj
+        tl.store(x_ptr + j * INCX, xj)
+
+        i = j - rd
+        m = i >= 0
+        av = tl.load(a_ptr + (k - rd) + j * LDA, mask=m, other=0.0)
+        xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+        xv = xv - av * xj
+        tl.store(x_ptr + i * INCX, xv, mask=m)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("stbsv_direct"),
+    key=_TBSV_KEY,
+    restore_value=_TBSV_RESTORE,
+    prune_configs_by={"early_config_prune": _prune_stbsv_direct_configs},
+)
+@triton.jit
+def stbsv_upper256_pair_kernel(
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
+    BLOCK_K: tl.constexpr,
+):
+    offs = tl.arange(0, BLOCK_K)
+    rd = BLOCK_K - offs
+    pair_count = (n - 256) // 2
+
+    for pc in tl.range(0, pair_count):
+        j0 = n - 1 - pc * 2
+        x0 = tl.load(x_ptr + j0 * INCX)
+        a00 = tl.load(a_ptr + k + j0 * LDA)
+        x0 = x0 / a00
+        tl.store(x_ptr + j0 * INCX, x0)
+
+        i0 = j0 - rd
+        av0 = tl.load(a_ptr + (k - rd) + j0 * LDA)
+        xv0 = tl.load(x_ptr + i0 * INCX)
+        xv0 = xv0 - av0 * x0
+        tl.store(x_ptr + i0 * INCX, xv0)
+
+        j1 = j0 - 1
+        x1 = tl.load(x_ptr + j1 * INCX)
+        a11 = tl.load(a_ptr + k + j1 * LDA)
+        x1 = x1 / a11
+        tl.store(x_ptr + j1 * INCX, x1)
+
+        i1 = j1 - rd
+        av1 = tl.load(a_ptr + (k - rd) + j1 * LDA)
+        xv1 = tl.load(x_ptr + i1 * INCX)
+        xv1 = xv1 - av1 * x1
+        tl.store(x_ptr + i1 * INCX, xv1)
+
+    for jc in tl.range(0, 256):
+        j = 255 - jc
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + k + j * LDA)
+        xj = xj / ajj
+        tl.store(x_ptr + j * INCX, xj)
+
+        i = j - rd
+        m = i >= 0
+        av = tl.load(a_ptr + (k - rd) + j * LDA, mask=m, other=0.0)
+        xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+        xv = xv - av * xj
+        tl.store(x_ptr + i * INCX, xv, mask=m)
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("stbsv_direct"),
+    key=_TBSV_KEY,
+    restore_value=_TBSV_RESTORE,
+    prune_configs_by={"early_config_prune": _prune_stbsv_direct_configs},
+)
+@triton.jit
+def stbsv_upper64_hex_kernel(
+    a_ptr,
+    x_ptr,
+    n,
+    k,
+    LDA,
+    INCX,
+    k_bucket,
+    mode_key,
+    BLOCK_K: tl.constexpr,
+):
+    offs = tl.arange(0, BLOCK_K)
+    rd = BLOCK_K - offs
+    hex_count = (n - 64) // 16
+    tail_start = n - hex_count * 16
+
+    for hc in tl.range(0, hex_count):
+        j_base = n - 1 - hc * 16
+        for u in tl.static_range(0, 16):
+            j = j_base - u
+            xj = tl.load(x_ptr + j * INCX)
+            ajj = tl.load(a_ptr + k + j * LDA)
+            xj = xj / ajj
+            tl.store(x_ptr + j * INCX, xj)
+
+            i = j - rd
+            av = tl.load(a_ptr + (k - rd) + j * LDA)
+            xv = tl.load(x_ptr + i * INCX)
+            xv = xv - av * xj
+            tl.store(x_ptr + i * INCX, xv)
+
+    for jc in tl.range(0, tail_start):
+        j = tail_start - 1 - jc
+        xj = tl.load(x_ptr + j * INCX)
+        ajj = tl.load(a_ptr + k + j * LDA)
+        xj = xj / ajj
+        tl.store(x_ptr + j * INCX, xj)
+
+        i = j - rd
+        m = i >= 0
+        av = tl.load(a_ptr + (k - rd) + j * LDA, mask=m, other=0.0)
+        xv = tl.load(x_ptr + i * INCX, mask=m, other=0.0)
+        xv = xv - av * xj
+        tl.store(x_ptr + i * INCX, xv, mask=m)
 
 
 # --------------------------------------------------------------------------
-# Argument validation (unchanged from the original)
+# Argument validation
 # --------------------------------------------------------------------------
 def _check_tbsv(A, x, uplo, trans, diag, n, k, lda, incx, complex_ok):
     assert A.is_contiguous() and x.is_contiguous()
@@ -348,21 +796,162 @@ def stbsv(
         return
     unit = 1 if diag == CUBLAS_DIAG_UNIT else 0
     trans_flag = 0 if trans == CUBLAS_OP_N else 1
-    bs = _pick_bs(n, k)
 
     with torch_device_fn.device(A.device):
         grid = (1,)
-        stbsv_kernel[grid](
+        band_key = _band_bucket(k + 1)
+        mode = _mode_key(uplo, trans_flag, unit)
+        direct_ready = incx == 1 and unit == 0 and lda == k + 1
+        upper_n = uplo == CUBLAS_FILL_MODE_UPPER and trans_flag == 0
+        lower_n = uplo == CUBLAS_FILL_MODE_LOWER and trans_flag == 0
+        upper_t = uplo == CUBLAS_FILL_MODE_UPPER and trans_flag == 1
+        lower_t = uplo == CUBLAS_FILL_MODE_LOWER and trans_flag == 1
+        full_band_256 = n == 256 and k == 255
+
+        if direct_ready:
+            if upper_n:
+                if k == 16 and n % 2 == 0:
+                    stbsv_upper16_pair_kernel[grid](
+                        A,
+                        x,
+                        n,
+                        k,
+                        lda,
+                        incx,
+                        band_key,
+                        mode,
+                    )
+                    return
+                if k == 64 and n % 16 == 0:
+                    stbsv_upper64_hex_kernel[grid](
+                        A,
+                        x,
+                        n,
+                        k,
+                        lda,
+                        incx,
+                        band_key,
+                        mode,
+                    )
+                    return
+                if k == 256 and n % 2 == 0:
+                    stbsv_upper256_pair_kernel[grid](
+                        A,
+                        x,
+                        n,
+                        k,
+                        lda,
+                        incx,
+                        band_key,
+                        mode,
+                    )
+                    return
+                if full_band_256:
+                    stbsv_upper_full_kernel[grid](
+                        A,
+                        x,
+                        n,
+                        k,
+                        lda,
+                        incx,
+                        band_key,
+                        mode,
+                    )
+                    return
+            elif lower_n:
+                if n == 1024 and k == 64:
+                    stbsv_lower64_1024_kernel[grid](
+                        A,
+                        x,
+                        n,
+                        k,
+                        lda,
+                        incx,
+                        band_key,
+                        mode,
+                    )
+                    return
+                if n <= 2048 and k == 64:
+                    stbsv_lower64_small_kernel[grid](
+                        A,
+                        x,
+                        n,
+                        k,
+                        lda,
+                        incx,
+                        band_key,
+                        mode,
+                    )
+                    return
+            elif lower_t:
+                if full_band_256:
+                    stbsv_lower_trans_full_kernel[grid](
+                        A,
+                        x,
+                        n,
+                        k,
+                        lda,
+                        incx,
+                        band_key,
+                        mode,
+                    )
+                    return
+                if k == 16:
+                    stbsv_lower_trans16_kernel[grid](
+                        A,
+                        x,
+                        n,
+                        k,
+                        lda,
+                        incx,
+                        band_key,
+                        mode,
+                    )
+                    return
+            elif upper_t:
+                if full_band_256:
+                    stbsv_upper_trans_full_kernel[grid](
+                        A,
+                        x,
+                        n,
+                        k,
+                        lda,
+                        incx,
+                        band_key,
+                        mode,
+                    )
+                    return
+                if n == 256 and (k == 16 or k == 64):
+                    stbsv_upper_trans_small_kernel[grid](
+                        A,
+                        x,
+                        n,
+                        k,
+                        lda,
+                        incx,
+                        band_key,
+                        mode,
+                    )
+                    return
+        kernel = (
+            stbsv_direct_kernel
+            if (
+                (k == 1 or k == 4 or k == 16 or k == 64 or k == 256)
+                and (upper_n or lower_n or upper_t or lower_t)
+                and direct_ready
+            )
+            else stbsv_kernel
+        )
+        kernel[grid](
             A,
             x,
             n,
             k,
             lda,
             incx,
-            _band_bucket(k + 1),
-            _mode_key(uplo, trans_flag, unit),
+            band_key,
+            mode,
             UPLO=uplo,
             TRANS=trans_flag,
             UNIT=unit,
-            BS=bs,
         )
