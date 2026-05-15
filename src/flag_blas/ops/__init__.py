@@ -76,6 +76,12 @@ from flag_blas.ops.level2.trmv import (
     ctrmv,
     ztrmv,
 )
+from flag_blas.ops.level2.tbmv import (
+    stbmv,
+    dtbmv,
+    ctbmv,
+    ztbmv,
+)
 from flag_blas.ops.level2.hemv import (
     chemv,
     zhemv,
@@ -156,6 +162,11 @@ __all__ = [
     "dtrmv",
     "ctrmv",
     "ztrmv",
+    # tbmv
+    "stbmv",
+    "dtbmv",
+    "ctbmv",
+    "ztbmv",
     # hemv
     "chemv",
     "zhemv",
