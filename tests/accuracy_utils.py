@@ -10,17 +10,9 @@ import os
 import sys
 
 QUICK_MODE = False
-TO_CPU = False
 GEN_SHAPE = False
-try:
-    import conftest
 
-    if hasattr(conftest, "QUICK_MODE"):
-        QUICK_MODE = conftest.QUICK_MODE
-    if hasattr(conftest, "TO_CPU"):
-        TO_CPU = conftest.TO_CPU
-except (ImportError, AttributeError):
-    pass
+from .conftest import QUICK_MODE, TO_CPU
 
 fp64_is_supported = flag_blas.runtime.device.support_fp64
 bf16_is_supported = flag_blas.runtime.device.support_bf16
@@ -259,6 +251,51 @@ KRON_SHAPES = [
     [(3, 3), (3, 3)],
     [(1, 1, 1), (2, 2, 2)],
 ]
+
+GEMM_SHAPES = [
+    (1024, 1024, 1024),
+    (511, 511, 511),
+    (1023, 1023, 1023),
+    (2048, 2048, 2048),
+    (4096, 4096, 4096),
+    (8192, 8192, 8192),
+    (16384, 16384, 16384),
+    (2048, 12288, 4096),
+    (2048, 11008, 4096),
+    (2048, 4096, 11008),
+    (4096, 24576, 8192),
+    (4096, 8192, 28672),
+    (8192, 28672, 8192),
+    (16384, 2048, 2048),
+    (2048, 16384, 2048),
+    (2048, 2048, 16384),
+    (32768, 1024, 1024),
+    (4095, 4095, 4095),
+    (8191, 8191, 8191),
+    (4097, 8191, 4095),
+]
+
+FP8_GEMM_SHAPES = [
+    (128, 128, 128),
+    (256, 256, 256),
+    (512, 512, 512),
+    (1024, 1024, 1024),
+    (2048, 2048, 2048),
+    (4096, 4096, 4096),
+    (8192, 8192, 8192),
+    (16384, 16384, 16384),
+    (2048, 12288, 4096),
+    (2048, 4096, 11008),
+    (4096, 24576, 8192),
+    (4096, 8192, 28672),
+    (8192, 28672, 8192),
+    (16384, 2048, 2048),
+    (2048, 16384, 2048),
+    (2048, 2048, 16384),
+    (32768, 1024, 1024),
+    (4096, 8192, 4096),
+]
+
 # Add some test cases with zeor-dimensional tensor and zero-sized tensors.
 PRIMARY_FLOAT_DTYPES = [torch.float16, torch.float32]
 FLOAT_DTYPES = (
@@ -297,18 +334,18 @@ def to_cpu(res, ref):
     if TO_CPU and isinstance(res, torch.Tensor) and isinstance(ref, torch.Tensor):
         res = res.to("cpu")
         assert ref.device == torch.device("cpu")
-    return res
+    return res, ref
 
 
-def gems_assert_close(res, ref, dtype, equal_nan=False, reduce_dim=1, atol=1e-4):
-    res = to_cpu(res, ref)
+def blas_assert_close(res, ref, dtype, equal_nan=False, reduce_dim=1, atol=1e-4):
+    res, ref = to_cpu(res, ref)
     flag_blas.testing.assert_close(
         res, ref, dtype, equal_nan=equal_nan, reduce_dim=reduce_dim, atol=atol
     )
 
 
-def gems_assert_equal(res, ref, equal_nan=False):
-    res = to_cpu(res, ref)
+def blas_assert_equal(res, ref, equal_nan=False):
+    res, ref = to_cpu(res, ref)
     flag_blas.testing.assert_equal(res, ref, equal_nan=equal_nan)
 
 

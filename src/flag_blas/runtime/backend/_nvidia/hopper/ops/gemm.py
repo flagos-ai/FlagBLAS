@@ -90,7 +90,7 @@ def _sgemm_nn_kernel2(
         a_t = a_desc.load([pid_m * BLOCK_M, i * BLOCK_K])
         b_t = b_desc.load([i * BLOCK_K, pid_n * BLOCK_N])
 
-        acc = tl.dot(a_t, b_t, acc, out_dtype=tl.float32, allow_tf32=False)
+        acc = tl.dot(a_t, b_t, acc, out_dtype=tl.float32, input_precision="tf32x3")
 
     if BETA_IS_ZERO:
         result = (alpha * acc).to(tl.float32)
@@ -154,7 +154,7 @@ def _sgemm_tn_kernel2(
         a_t = a_desc.load([i * BLOCK_K, pid_m * BLOCK_M])
         b_t = b_desc.load([i * BLOCK_K, pid_n * BLOCK_N])
 
-        acc = tl.dot(tl.trans(a_t), b_t, acc, out_dtype=tl.float32, allow_tf32=False)
+        acc = tl.dot(tl.trans(a_t), b_t, acc, out_dtype=tl.float32, input_precision="tf32x3")
 
     if BETA_IS_ZERO:
         result = (alpha * acc).to(tl.float32)
@@ -218,7 +218,7 @@ def _sgemm_nt_kernel2(
         a_t = a_desc.load([pid_m * BLOCK_M, i * BLOCK_K])
         b_t = b_desc.load([pid_n * BLOCK_N, i * BLOCK_K])
 
-        acc = tl.dot(a_t, tl.trans(b_t), acc, out_dtype=tl.float32, allow_tf32=False)
+        acc = tl.dot(a_t, tl.trans(b_t), acc, out_dtype=tl.float32, input_precision="tf32x3")
 
     if BETA_IS_ZERO:
         result = (alpha * acc).to(tl.float32)
@@ -282,7 +282,7 @@ def _sgemm_tt_kernel2(
         a_t = a_desc.load([i * BLOCK_K, pid_m * BLOCK_M])
         b_t = b_desc.load([pid_n * BLOCK_N, i * BLOCK_K])
 
-        acc_t = tl.dot(b_t, a_t, acc_t, out_dtype=tl.float32, allow_tf32=False)
+        acc_t = tl.dot(b_t, a_t, acc_t, out_dtype=tl.float32, input_precision="tf32x3")
 
     acc = tl.trans(acc_t)
 
