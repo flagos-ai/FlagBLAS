@@ -127,18 +127,9 @@ def test_accuracy_sgemm(m, n, k, transa, transb):
         ldc_flag,
     )
     if TO_CPU:
-        utils.blas_assert_close(C_row, torch.tensor(C_ref), dtype, reduce_dim=k)
-    #     C_flag_blas = C_row.to("cpu")
-    #     rtol = 1.3e-6
-    #     atol = 1.3e-6
-    #     torch.testing.assert_close(C_flag_blas, torch.tensor(C_ref).to(dtype), rtol=rtol, atol=atol)
-        
+        utils.blas_assert_close(C_row, torch.tensor(C_ref), dtype, reduce_dim=k)  
     else:
         utils.blas_assert_close(C_row, C_col.contiguous(), dtype, reduce_dim=k)
-        # rtol = 1e-5
-        # atol = 1e-5
-        # torch.testing.assert_close(C_row, C_col.contiguous(), rtol=rtol, atol=atol)
-
 
 @pytest.mark.sgemm
 def test_sgemm_alpha_zero():
@@ -151,7 +142,10 @@ def test_sgemm_alpha_zero():
 
     flag_blas.sgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 0.0, A, k, B, n, 2.0, C, n)
 
-    torch.testing.assert_close(C, C_orig * 2.0)
+    if TO_CPU:
+        utils.blas_assert_close(C, C_orig.to("cpu") * 2.0, torch.float32, reduce_dim=k)
+    else:
+        utils.blas_assert_close(C, C_orig * 2.0, torch.float32, reduce_dim=k)
 
 
 @pytest.mark.sgemm
@@ -166,7 +160,10 @@ def test_sgemm_beta_zero():
     flag_blas.sgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_nan, n)
     flag_blas.sgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_zero, n)
 
-    torch.testing.assert_close(C_nan, C_zero)
+    if TO_CPU:
+        utils.blas_assert_close(C_nan, C_zero.to("cpu"), torch.float32, reduce_dim=k)
+    else:
+        utils.blas_assert_close(C_nan, C_zero, torch.float32, reduce_dim=k)
 
 
 @pytest.mark.sgemm
@@ -197,8 +194,10 @@ def test_sgemm_empty(m, n, k):
         C,
         max(cols_c, 1),
     )
-
-    torch.testing.assert_close(C, C_orig * 0.5)
+    if TO_CPU:
+        utils.blas_assert_close(C, C_orig.to("cpu") * 0.5, torch.float32, reduce_dim=k)
+    else:
+        utils.blas_assert_close(C, C_orig * 0.5, torch.float32, reduce_dim=k)
 
 
 @pytest.mark.sgemm
@@ -224,6 +223,8 @@ def test_sgemm_alpha_beta(alpha, beta):
     flag_blas.sgemm(
         CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_row, k, B_row, n, beta, C_row, n
     )
-
-    torch.testing.assert_close(C_row, C_col.contiguous(), rtol=1e-5, atol=1e-5)
-
+    if TO_CPU:
+        utils.blas_assert_close(C_row, C_col.contiguous().to("cpu"), torch.float32, reduce_dim=k)
+    
+    else:
+        utils.blas_assert_close(C_row, C_col.contiguous(), torch.float32, reduce_dim=k)

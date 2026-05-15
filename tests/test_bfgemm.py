@@ -5,48 +5,16 @@ import numpy as np
 from cupy_backends.cuda.libs import cublas
 import flag_blas
 from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
-
-GEMM_SHAPES = [
-    (1024, 1024, 1024),
-    (511, 511, 511),
-    (1023, 1023, 1023),
-    (2048, 2048, 2048),
-    (4096, 4096, 4096),
-    (8192, 8192, 8192),
-    (16384, 16384, 16384),
-    (2048, 12288, 4096),
-    (2048, 11008, 4096),
-    (2048, 4096, 11008),
-    (4096, 24576, 8192),
-    (4096, 8192, 28672),
-    (8192, 28672, 8192),
-    (16384, 2048, 2048),
-    (2048, 16384, 2048),
-    (2048, 2048, 16384),
-    (32768, 1024, 1024),
-    (4095, 4095, 4095),
-    (8191, 8191, 8191),
-    (4097, 8191, 4095),
-]
+import scipy
+from scipy.linalg import blas
+from .conftest import TO_CPU
+from . import accuracy_utils as utils
 
 
 CUDA_R_32F = 0
 CUDA_R_16F = 2
 CUDA_R_16BF = 14
 
-
-
-@pytest.mark.sgemm
-@pytest.mark.parametrize("m,n,k", GEMM_SHAPES)
-@pytest.mark.parametrize(
-    "transa,transb",
-    [
-        (CUBLAS_OP_N, CUBLAS_OP_N),
-        (CUBLAS_OP_N, CUBLAS_OP_T),
-        (CUBLAS_OP_T, CUBLAS_OP_N),
-        (CUBLAS_OP_T, CUBLAS_OP_T),
-    ],
-)
 
 
 def cublas_bfgemm_reference(
@@ -85,7 +53,7 @@ def cublas_bfgemm_reference(
 
 
 @pytest.mark.bfgemm
-@pytest.mark.parametrize("m,n,k", GEMM_SHAPES)
+@pytest.mark.parametrize("m,n,k", utils.GEMM_SHAPES)
 @pytest.mark.parametrize(
     "transa,transb",
     [
@@ -115,25 +83,41 @@ def test_accuracy_bfgemm(m, n, k, transa, transb):
         ldb_cublas, ldb_flag = n, k
     B_row = B_col.contiguous()
 
-    C_col = (torch.randn(n, m, dtype=dtype, device=flag_blas.device) * scale).t()
+    C_col = torch.randn(n, m, dtype=dtype, device=flag_blas.device).t()
     C_row = C_col.contiguous()
     ldc_cublas, ldc_flag = m, n
 
-    cublas_bfgemm_reference(
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha,
-        A_col,
-        lda_cublas,
-        B_col,
-        ldb_cublas,
-        beta,
-        C_col,
-        ldc_cublas,
-    )
+    if TO_CPU:
+        print("cpu reference computation")
+        A_ref = A_row.to("cpu").to(torch.float64)
+        B_ref = B_row.to("cpu").to(torch.float64)
+        C_ref = C_row.to("cpu").to(torch.float64)
+        C_ref = blas.dgemm(
+            alpha, 
+            A_ref.numpy(), 
+            B_ref.numpy(), 
+            beta, 
+            c=C_ref.numpy(), 
+            trans_b=transb, 
+            trans_a=transa
+        )
+    else:
+        print("gpu reference computation")
+        cublas_bfgemm_reference(
+            transa,
+            transb,
+            m,
+            n,
+            k,
+            alpha,
+            A_col,
+            lda_cublas,
+            B_col,
+            ldb_cublas,
+            beta,
+            C_col,
+            ldc_cublas,
+        )
     flag_blas.bfgemm(
         transa,
         transb,
@@ -149,10 +133,10 @@ def test_accuracy_bfgemm(m, n, k, transa, transb):
         C_row,
         ldc_flag,
     )
-
-    rtol = 1e-3
-    atol = 1e-3
-    torch.testing.assert_close(C_row, C_col.contiguous(), rtol=rtol, atol=atol)
+    if TO_CPU:
+        utils.blas_assert_close(C_row, torch.tensor(C_ref), dtype, reduce_dim=k)  
+    else:
+        utils.blas_assert_close(C_row, C_col.contiguous(), dtype, reduce_dim=k)
 
 
 @pytest.mark.bfgemm
@@ -166,7 +150,10 @@ def test_bfgemm_alpha_zero():
 
     flag_blas.bfgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 0.0, A, k, B, n, 2.0, C, n)
 
-    torch.testing.assert_close(C, C_orig * 2.0)
+    if TO_CPU:
+        utils.blas_assert_close(C, C_orig.to("cpu") * 2.0, torch.bfloat16, reduce_dim=k)
+    else:   
+        utils.blas_assert_close(C, C_orig * 2.0, torch.bfloat16, reduce_dim=k)
 
 
 @pytest.mark.bfgemm
@@ -181,7 +168,10 @@ def test_bfgemm_beta_zero():
     flag_blas.bfgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_nan, n)
     flag_blas.bfgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 1.0, A, k, B, n, 0.0, C_zero, n)
 
-    torch.testing.assert_close(C_nan, C_zero)
+    if TO_CPU:
+        utils.blas_assert_close(C_nan, C_zero.to("cpu"), torch.bfloat16, reduce_dim=k)
+    else:
+        utils.blas_assert_close(C_nan, C_zero, torch.bfloat16, reduce_dim=k)
 
 
 @pytest.mark.bfgemm
@@ -212,8 +202,10 @@ def test_bfgemm_empty(m, n, k):
         C,
         max(cols_c, 1),
     )
-
-    torch.testing.assert_close(C, C_orig * 0.5)
+    if TO_CPU:
+        utils.blas_assert_close(C, C_orig.to("cpu") * 0.5, torch.bfloat16, reduce_dim=k)
+    else:
+        utils.blas_assert_close(C, C_orig * 0.5, torch.bfloat16, reduce_dim=k)
 
 
 @pytest.mark.bfgemm
@@ -224,8 +216,8 @@ def test_bfgemm_alpha_beta(alpha, beta):
     m, n, k = 256, 256, 256
     dtype = torch.bfloat16
     device = flag_blas.device
-    scale = k**-0.5
 
+    scale = k**-0.5
     A_col = (torch.randn(k, m, dtype=dtype, device=device) * scale).t()
     A_row = A_col.contiguous()
     B_col = (torch.randn(n, k, dtype=dtype, device=device) * scale).t()
@@ -239,6 +231,9 @@ def test_bfgemm_alpha_beta(alpha, beta):
     flag_blas.bfgemm(
         CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_row, k, B_row, n, beta, C_row, n
     )
-
-    torch.testing.assert_close(C_row, C_col.contiguous(), rtol=1e-3, atol=1e-3)
+    
+    if TO_CPU:
+        utils.blas_assert_close(C_row, torch.tensor(C_col.contiguous().to("cpu")), torch.bfloat16, reduce_dim=k)
+    else:   
+        utils.blas_assert_close(C_row, C_col.contiguous(), torch.bfloat16, reduce_dim=k)
 
