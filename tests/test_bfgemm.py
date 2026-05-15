@@ -88,7 +88,6 @@ def test_accuracy_bfgemm(m, n, k, transa, transb):
     ldc_cublas, ldc_flag = m, n
 
     if TO_CPU:
-        print("cpu reference computation")
         A_ref = A_row.to("cpu").to(torch.float64)
         B_ref = B_row.to("cpu").to(torch.float64)
         C_ref = C_row.to("cpu").to(torch.float64)
@@ -102,7 +101,6 @@ def test_accuracy_bfgemm(m, n, k, transa, transb):
             trans_a=transa
         )
     else:
-        print("gpu reference computation")
         cublas_bfgemm_reference(
             transa,
             transb,
