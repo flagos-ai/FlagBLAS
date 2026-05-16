@@ -1,4 +1,5 @@
-from typing import Generator
+import itertools
+from typing import Generator, List, Tuple
 
 import cupy as cp
 import numpy as np
@@ -38,6 +39,34 @@ GEMM_SHAPES = [
     (8191, 8191, 8191),
     (4097, 8191, 4095),
 ]
+
+
+def model_shapes() -> List[Tuple[int, int, int]]:
+    """
+    Generate shapes extracted from real-world LLMs (llama3-8b, qwen2.5-7b).
+    These shapes represent common attention and FFN weight matrix dimensions.
+    """
+    # attn: wqkv, wo; ffn: w13, w2
+    NK = [
+        # extract from llama3-8b
+        (1024, 4096),
+        (128256, 4096),
+        (14336, 4096),
+        (4096, 14336),
+        (4096, 4096),
+        (6144, 4096),
+        (28672, 4096),
+        # extract from qwen2.5-7b
+        (3584, 3584),
+        (18944, 3584),
+        (3584, 18944),
+        (152064, 3584),
+        (37888, 3584),
+        (512, 3584),
+        (4608, 3584),
+    ]
+
+    return [(bs, n, k) for bs, (n, k) in itertools.product([1, 2, 4, 8], NK)]
 
 
 def cublas_sgemm(
@@ -394,6 +423,7 @@ FP8_GEMM_SHAPES = [s for s in GEMM_SHAPES if all(d % 16 == 0 for d in s)]
 
 
 class GemmBenchmark(Benchmark):
+    DEFAULT_SHAPE_DESC = "M, N, K"
 
     def __init__(
         self,
@@ -414,8 +444,11 @@ class GemmBenchmark(Benchmark):
         return ["tflops", "gbps"]
 
     def set_more_shapes(self):
-        self.shapes = GEMM_SHAPES
-        return None
+        """
+        Return additional shapes for COMPREHENSIVE benchmark level.
+        These include shapes from real-world LLMs and special large-k cases.
+        """
+        return GEMM_SHAPES + model_shapes()
 
     def get_input_iter(self, cur_dtype) -> Generator:
         handle = cp.cuda.device.get_cublas_handle()
@@ -670,6 +703,7 @@ def test_perf_hgemm_tt():
             bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
     bench.run()
 
+
 @pytest.mark.bfgemm
 def test_perf_bfgemm_nn():
     bench = GemmBenchmark(
@@ -760,8 +794,12 @@ class Fp8GemmBenchmark(GemmBenchmark):
         self.out_dtype = out_dtype
 
     def set_more_shapes(self):
-        self.shapes = FP8_GEMM_SHAPES
-        return None
+        # FP8 requires all dimensions divisible by 16
+        filtered_model_shapes = [
+            (bs, n, k) for bs, n, k in model_shapes() 
+            if all(d % 16 == 0 for d in (bs, n, k))
+        ]
+        return FP8_GEMM_SHAPES + filtered_model_shapes
 
     def get_input_iter(self, cur_dtype) -> Generator:
         handle = cp.cuda.device.get_cublas_handle()
