@@ -54,6 +54,7 @@ class BenchConfig:
         self.user_desired_metrics = None
         self.shape_file = os.path.join(os.path.dirname(__file__), "core_shapes.yaml")
         self.query = False
+        self.skip_correctness = False
 
 
 Config = BenchConfig()
@@ -100,6 +101,13 @@ def pytest_addoption(parser):
     )
 
     parser.addoption(
+        "--skip_correctness",
+        action="store_true",
+        default=False,
+        help="Skip correctness checks that run before benchmark measurements.",
+    )
+
+    parser.addoption(
         "--metrics",
         action="append",
         default=None,
@@ -107,7 +115,8 @@ def pytest_addoption(parser):
         choices=ALL_AVAILABLE_METRICS,
         help=(
             "Specify the metrics we want to benchmark. "
-            "If not specified, the metric items will vary according to the specified operation's category and name."
+            "If not specified, the metric items will vary according to the "
+            "specified operation's category and name."
         ),
     )
 
@@ -122,7 +131,8 @@ def pytest_addoption(parser):
         ],
         help=(
             "Specify the data types for benchmarks. "
-            "If not specified, the dtype items will vary according to the specified operation's category and name."
+            "If not specified, the dtype items will vary according to the "
+            "specified operation's category and name."
         ),
     )
 
@@ -131,7 +141,10 @@ def pytest_addoption(parser):
         action="store",
         default=os.path.join(os.path.dirname(__file__), "core_shapes.yaml"),
         required=False,
-        help="Specify the shape file name for benchmarks. If not specified, a default shape list will be used.",
+        help=(
+            "Specify the shape file name for benchmarks. If not specified, "
+            "a default shape list will be used."
+        ),
     )
 
     parser.addoption(
@@ -152,6 +165,7 @@ def pytest_configure(config):
     Config.mode = BenchMode(mode_value)
 
     Config.query = config.getoption("--query")
+    Config.skip_correctness = config.getoption("--skip_correctness")
 
     level_value = config.getoption("--level")
     Config.bench_level = BenchLevel(level_value)
@@ -217,7 +231,8 @@ def setup_once(request):
         print("\nThis is query mode; all benchmark functions will be skipped.")
     # else:
     #     note_info = (
-    #         "\n\nNote: The 'size' field below is for backward compatibility with previous versions of the benchmark. "
+    #         "\n\nNote: The 'size' field below is for backward compatibility "
+    #         "with previous versions of the benchmark. "
     #         "\nThis field will be removed in a future release."
     #     )
     #     print(note_info)

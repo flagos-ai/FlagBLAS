@@ -128,11 +128,20 @@ def caxpy_kernel(
 @libentry()
 @triton.autotune(
     configs=[
+        triton.Config({"BLOCK_SIZE": 64}, num_warps=1, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 64}, num_warps=1, num_stages=2),
         triton.Config({"BLOCK_SIZE": 64}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=1, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=1, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=2, num_stages=2),
         triton.Config({"BLOCK_SIZE": 128}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=1, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=2, num_stages=2),
         triton.Config({"BLOCK_SIZE": 256}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=2, num_stages=2),
         triton.Config({"BLOCK_SIZE": 512}, num_warps=4, num_stages=3),
         triton.Config({"BLOCK_SIZE": 1024}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 2048}, num_warps=4, num_stages=3),
     ],
     key=["n", "INCX", "INCY"],
     restore_value=["y_ptr"],
@@ -196,7 +205,9 @@ def saxpy(
         y.numel() >= req_size_y
     ), f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
 
-    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+    def grid(meta):
+        return (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+
     with torch_device_fn.device(x.device):
         saxpy_kernel[grid](x, y, alpha, n, incx, incy)
 
@@ -228,7 +239,9 @@ def daxpy(
         y.numel() >= req_size_y
     ), f"y is too short: need {req_size_y} elements for n={n}, incy={incy}"
 
-    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+    def grid(meta):
+        return (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+
     with torch_device_fn.device(x.device):
         daxpy_kernel[grid](x, y, alpha_int, n, incx, incy)
 
@@ -264,7 +277,9 @@ def caxpy(
     x_real = torch.view_as_real(x)
     y_real = torch.view_as_real(y)
 
-    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+    def grid(meta):
+        return (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+
     with torch_device_fn.device(x.device):
         caxpy_kernel[grid](x_real, y_real, alpha_real, alpha_imag, n, incx, incy)
 
@@ -307,7 +322,9 @@ def zaxpy(
     x_real = torch.view_as_real(x)
     y_real = torch.view_as_real(y)
 
-    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+    def grid(meta):
+        return (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+
     with torch_device_fn.device(x.device):
         zaxpy_kernel[grid](
             x_real, y_real, alpha_real_int, alpha_imag_int, n, incx, incy

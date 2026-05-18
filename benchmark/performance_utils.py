@@ -89,6 +89,7 @@ class Benchmark:
         if is_backward and self.op_name.find("_backward") == -1:
             self.op_name += "_backward"
         self.torch_op = torch_op
+        self.blas_op = None
         self.gems_op = None
         self.is_backward = is_backward
         self.is_inplace = is_inplace
@@ -120,7 +121,8 @@ class Benchmark:
             ]
             if invalid_metrics:
                 raise ValueError(
-                    f"Invalid metrics: {', '.join(invalid_metrics)} for operation: '{self.op_name}'"
+                    f"Invalid metrics: {', '.join(invalid_metrics)} for "
+                    f"operation: '{self.op_name}'"
                 )
             unsatisfied_metrics = check_metric_dependencies(user_desired_metrics)
             if unsatisfied_metrics:
@@ -140,7 +142,7 @@ class Benchmark:
                     self.to_bench_metrics.append(metric)
 
     def set_more_metrics(self):
-        """Base method (optional to override in subclasses). Returns additional shapes if applicable."""
+        """Return additional metrics for subclasses that need them."""
         return []
 
     def set_dtypes(self, user_desired_dtypes: Optional[List[torch.dtype]]):
@@ -199,7 +201,7 @@ class Benchmark:
                         shape for shape in self.shapes if math.prod(shape) < 1024 * 1024
                     ]
 
-            # merge shapes from subclass If subclass has `set_more_shapes`, call it to merge shapes
+            # Merge subclass-specific shapes when requested.
             if (
                 hasattr(self, "set_more_shapes")
                 and callable(getattr(self, "set_more_shapes"))
@@ -221,7 +223,7 @@ class Benchmark:
             )
 
     def set_more_shapes(self) -> Optional[List[List[int]]]:
-        """Base method (optional to override in subclasses). Returns additional shapes if applicable."""
+        """Return additional shapes for subclasses that need them."""
         return None
 
     def record_shapes(self, *args, **kwargs):
@@ -260,16 +262,24 @@ class Benchmark:
     def set_gems(self, gems_op):
         self.gems_op = gems_op
 
+    def set_blas(self, blas_op):
+        self.blas_op = blas_op
+
     def get_latency(self, op, *args, **kwargs):
-        fn = lambda: op(*args, **kwargs)
+        def fn():
+            return op(*args, **kwargs)
+
         if self.is_backward:
             out = fn()
             dout = torch.randn_like(out)
             # fn = lambda: out.backward(dout, retain_graph=True)
             xs = list(filter(lambda x: torch.is_tensor(x) and x.requires_grad, args))
-            fn = lambda: torch.autograd.grad(
-                (out,), xs, grad_outputs=(dout,), retain_graph=True
-            )
+
+            def fn():
+                return torch.autograd.grad(
+                    (out,), xs, grad_outputs=(dout,), retain_graph=True
+                )
+
         if Config.mode == BenchMode.OPERATOR:
             for i in range(Config.warm_up):
                 fn()
@@ -318,7 +328,9 @@ class Benchmark:
         A proper implementation will be developed in the future."""
         from torch.utils.flop_counter import FlopCounterMode
 
-        fn = lambda: op(*args, **kwargs)
+        def fn():
+            return op(*args, **kwargs)
+
         with FlopCounterMode(display=False) as flop_counter:
             fn()
         return flop_counter.get_total_flops()
@@ -386,10 +398,9 @@ class Benchmark:
                             self.torch_op, *args, **kwargs
                         )
                     if "latency" in self.to_bench_metrics:
-                        if self.gems_op:
-                            metric.latency = self.get_latency(
-                                self.gems_op, *args, **kwargs
-                            )
+                        blas_op = self.blas_op or self.gems_op
+                        if blas_op:
+                            metric.latency = self.get_latency(blas_op, *args, **kwargs)
                         else:
                             with flag_blas.use_gems():
                                 metric.latency = self.get_latency(
@@ -436,7 +447,9 @@ class GenericBenchmark(Benchmark):
     operations including both unary and binary operations.
 
     Usage example:
-        benchmark = GenericBenchmark(op_name="add", torch_op=torch.add, input_fn=binary_input_fn)
+        benchmark = GenericBenchmark(
+            op_name="add", torch_op=torch.add, input_fn=binary_input_fn
+        )
         benchmark.run()
     """
 
