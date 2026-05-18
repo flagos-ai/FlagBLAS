@@ -1,3 +1,137 @@
+stbsv:
+  - META: { BLOCK_K: 8 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 8 }
+    num_warps: 1
+    num_stages: 2
+  - META: { BLOCK_K: 16 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 16 }
+    num_warps: 1
+    num_stages: 2
+  - META: { BLOCK_K: 32 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 32 }
+    num_warps: 1
+    num_stages: 2
+  - META: { BLOCK_K: 32 }
+    num_warps: 1
+    num_stages: 3
+  - META: { BLOCK_K: 64 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 64 }
+    num_warps: 1
+    num_stages: 2
+  - META: { BLOCK_K: 64 }
+    num_warps: 1
+    num_stages: 3
+  - META: { BLOCK_K: 64 }
+    num_warps: 1
+    num_stages: 4
+  - META: { BLOCK_K: 128 }
+    num_warps: 1
+    num_stages: 2
+  - META: { BLOCK_K: 128 }
+    num_warps: 1
+    num_stages: 3
+  - META: { BLOCK_K: 128 }
+    num_warps: 2
+    num_stages: 2
+  - META: { BLOCK_K: 128 }
+    num_warps: 2
+    num_stages: 3
+  - META: { BLOCK_K: 256 }
+    num_warps: 1
+    num_stages: 2
+  - META: { BLOCK_K: 256 }
+    num_warps: 2
+    num_stages: 2
+  - META: { BLOCK_K: 256 }
+    num_warps: 2
+    num_stages: 3
+  - META: { BLOCK_K: 256 }
+    num_warps: 4
+    num_stages: 2
+  - META: { BLOCK_K: 512 }
+    num_warps: 1
+    num_stages: 2
+  - META: { BLOCK_K: 512 }
+    num_warps: 2
+    num_stages: 2
+  - META: { BLOCK_K: 512 }
+    num_warps: 4
+    num_stages: 2
+stbsv_direct:
+  - META: { BLOCK_K: 1 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 4 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 8 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 16 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 16 }
+    num_warps: 1
+    num_stages: 2
+  - META: { BLOCK_K: 16 }
+    num_warps: 2
+    num_stages: 1
+  - META: { BLOCK_K: 16 }
+    num_warps: 4
+    num_stages: 1
+  - META: { BLOCK_K: 32 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 32 }
+    num_warps: 2
+    num_stages: 1
+  - META: { BLOCK_K: 64 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 64 }
+    num_warps: 1
+    num_stages: 2
+  - META: { BLOCK_K: 64 }
+    num_warps: 2
+    num_stages: 1
+  - META: { BLOCK_K: 64 }
+    num_warps: 4
+    num_stages: 1
+  - META: { BLOCK_K: 64 }
+    num_warps: 8
+    num_stages: 1
+  - META: { BLOCK_K: 128 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 128 }
+    num_warps: 2
+    num_stages: 1
+  - META: { BLOCK_K: 128 }
+    num_warps: 4
+    num_stages: 1
+  - META: { BLOCK_K: 256 }
+    num_warps: 1
+    num_stages: 1
+  - META: { BLOCK_K: 256 }
+    num_warps: 1
+    num_stages: 2
+  - META: { BLOCK_K: 256 }
+    num_warps: 2
+    num_stages: 1
+  - META: { BLOCK_K: 256 }
+    num_warps: 4
+    num_stages: 1
+  - META: { BLOCK_K: 256 }
+    num_warps: 8
+    num_stages: 1
 sgemm:
   - META: {BLOCK_M: 32, BLOCK_N: 32, BLOCK_K: 64, GROUP_M: 8}
     num_warps: 4

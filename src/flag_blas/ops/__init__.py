@@ -70,6 +70,9 @@ from flag_blas.ops.level2.symv import (
     csymv,
     zsymv,
 )
+
+from flag_blas.ops.level2.tbsv import stbsv
+
 from flag_blas.ops.level2.trmv import (
     strmv,
     dtrmv,
@@ -198,4 +201,6 @@ __all__ = [
     "dcopy",
     "ccopy",
     "zcopy",
+    # tbsv
+    "stbsv",
 ]
