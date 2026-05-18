@@ -6,21 +6,13 @@ import numpy as np
 import torch
 
 import flag_blas
-import os
-import sys
+from .conftest import L1_n_end, L1_n_start, L1_n_step, QUICK_MODE, TO_CPU
 
-QUICK_MODE = False
 GEN_SHAPE = False
-
-from .conftest import QUICK_MODE, TO_CPU
 
 fp64_is_supported = flag_blas.runtime.device.support_fp64
 bf16_is_supported = flag_blas.runtime.device.support_bf16
 int64_is_supported = flag_blas.runtime.device.support_int64
-
-from .conftest import L1_n_start
-from .conftest import L1_n_end
-from .conftest import L1_n_step
 
 L1_n_start_val = int(L1_n_start)
 L1_n_end_val = int(L1_n_end)
@@ -52,33 +44,29 @@ DEFAULT_SHAPES = [
     (134217728,),
 ]
 
-### axpy shape
+# axpy shape
 AXPY_SHAPES = DEFAULT_SHAPES
 if GEN_SHAPE:
     AXPY_SHAPES.clear()
     AXPY_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
-###
 
-### amax shape
+# amax shape
 AMAX_SHAPES = DEFAULT_SHAPES
 if GEN_SHAPE:
     AMAX_SHAPES.clear()
     AMAX_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
-###
 
-### asum shape
+# asum shape
 ASUM_SHAPES = DEFAULT_SHAPES
 if GEN_SHAPE:
     ASUM_SHAPES.clear()
     ASUM_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
-###
 
-### scal shape
+# scal shape
 SCAL_SHAPES = DEFAULT_SHAPES
 if GEN_SHAPE:
     SCAL_SHAPES.clear()
     SCAL_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
-###
 
 
 def TestForwardOnly():
@@ -328,6 +316,13 @@ def to_reference(inp, upcast=False):
         else:
             ref_inp = ref_inp.to(torch.float64)
     return ref_inp
+
+
+def to_cpu_blas_tensor(inp):
+    ref_inp = inp.detach()
+    if ref_inp.is_complex():
+        return ref_inp.to(torch.complex128).contiguous()
+    return ref_inp.to(torch.float64).contiguous()
 
 
 def to_cpu(res, ref):
