@@ -553,7 +553,7 @@ def test_perf_sgemm_nn():
         transa=CUBLAS_OP_N,
         transb=CUBLAS_OP_N,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
@@ -573,7 +573,7 @@ def test_perf_sgemm_tn():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_N,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
@@ -593,7 +593,7 @@ def test_perf_sgemm_nt():
         transa=CUBLAS_OP_N,
         transb=CUBLAS_OP_T,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
@@ -613,7 +613,7 @@ def test_perf_sgemm_tt():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_T,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
@@ -631,9 +631,9 @@ def test_perf_hgemm_nn():
         gems_op=gems_hgemm_wrapper,
         dtypes=[torch.float16],
         transa=CUBLAS_OP_N,
-        transb=CUBLAS_OP_N,
+                                                                                     transb=CUBLAS_OP_N,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
@@ -654,7 +654,7 @@ def test_perf_hgemm_tn():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_N,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
@@ -674,7 +674,7 @@ def test_perf_hgemm_nt():
         transa=CUBLAS_OP_N,
         transb=CUBLAS_OP_T,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
@@ -694,7 +694,7 @@ def test_perf_hgemm_tt():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_T,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
@@ -714,7 +714,7 @@ def test_perf_bfgemm_nn():
         transa=CUBLAS_OP_N,
         transb=CUBLAS_OP_N,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_bfgemm(A, B, C.clone(), **kwargs)
@@ -734,7 +734,7 @@ def test_perf_bfgemm_tn():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_N,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_bfgemm(A, B, C.clone(), **kwargs)
@@ -754,7 +754,7 @@ def test_perf_bfgemm_nt():
         transa=CUBLAS_OP_N,
         transb=CUBLAS_OP_T,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_bfgemm(A, B, C.clone(), **kwargs)
@@ -774,7 +774,7 @@ def test_perf_bfgemm_tt():
         transa=CUBLAS_OP_T,
         transb=CUBLAS_OP_T,
     )
-    bench.set_more_shapes()
+    bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_bfgemm(A, B, C.clone(), **kwargs)

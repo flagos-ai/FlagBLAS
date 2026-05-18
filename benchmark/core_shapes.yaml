@@ -62,8 +62,8 @@ UnaryPointwiseBenchmark:
 # These shapes are used for sgemm, hgemm, bfgemm and fp8gemm benchmarks
 GemmBenchmark:
   shapes:
-    - [64, 64, 64]           # small square matrix
-    - [256, 256, 256]       # medium square matrix
+    #- [64, 64, 64]           # small square matrix
+    #- [256, 256, 256]       # medium square matrix
     - [512, 512, 512]       # large square matrix
     - [1024, 1024, 1024]    # large square matrix
     - [2048, 2048, 2048]    # extra large square matrix
