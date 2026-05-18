@@ -17,6 +17,7 @@ if runtime.device.vendor_name == "kunlunxin":
         torch.float64: 1e-7,
         torch.complex32: 1e-3,
         torch.complex64: 1.3e-6,
+        torch.complex128: 1e-7,
     }
 else:
     RESOLUTION = {
@@ -36,6 +37,7 @@ else:
         torch.float64: 1e-7,
         torch.complex32: 1e-3,
         torch.complex64: 1.3e-6,
+        torch.complex128: 1e-7,
     }
 
 

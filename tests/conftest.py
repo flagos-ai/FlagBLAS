@@ -72,26 +72,28 @@ def pytest_addoption(parser):
         help="Number of reps for each benchmark run.",
     )
 
+
 def pytest_configure(config):
     global TO_CPU
     TO_CPU = config.getoption("--ref") == "cpu"
+    ref_backend = "CPU (--ref cpu)" if TO_CPU else f"{device} (--ref {device})"
+    print(f"[correctness] reference backend: {ref_backend}", flush=True)
 
     global QUICK_MODE
     QUICK_MODE = config.getoption("--mode") == "quick"
 
     global RECORD_LOG
     RECORD_LOG = config.getoption("--record") == "log"
-    
+
     global L1_n_start
     L1_n_start = config.getoption("--L1_n_start")
 
     global L1_n_end
     L1_n_end = config.getoption("--L1_n_end")
 
-    global L1_n_step 
+    global L1_n_step
     L1_n_step = config.getoption("--L1_n_step")
-    
-    
+
     if RECORD_LOG:
         global RUNTEST_INFO, BUILTIN_MARKS, REGISTERED_MARKERS
         RUNTEST_INFO = {}
