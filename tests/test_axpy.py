@@ -2,6 +2,7 @@ import pytest
 import torch
 import cupy as cp
 import numpy as np
+from scipy.linalg import blas as cpu_blas
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
@@ -45,12 +46,33 @@ def cublas_axpy_reference(n, alpha, x, incx, y, incy):
     func(handle, n, alpha_ptr, x.data_ptr(), incx, y.data_ptr(), incy)
 
 
+def cpu_axpy_reference(n, alpha, x, incx, y, incy):
+    if n == 0:
+        return
+
+    dtype = x.dtype
+    if dtype == torch.float32:
+        func = cpu_blas.saxpy
+    elif dtype == torch.float64:
+        func = cpu_blas.daxpy
+    elif dtype == torch.complex64:
+        func = cpu_blas.caxpy
+    elif dtype == torch.complex128:
+        func = cpu_blas.zaxpy
+    else:
+        raise ValueError(f"Unsupported dtype for CPU BLAS: {dtype}")
+
+    func(x.detach().numpy(), y.detach().numpy(), n=n, a=alpha, incx=incx, incy=incy)
+
+
 def axpy_reference(n, alpha, x, incx, y, incy):
     ref_x = to_reference(x)
-    ref_y = to_reference(y).clone()
+    ref_y = to_reference(y)
+    if not TO_CPU:
+        ref_y = ref_y.clone()
 
     if TO_CPU:
-        ref_y[::incy][:n].add_(ref_x[::incx][:n], alpha=alpha)
+        cpu_axpy_reference(n, alpha, ref_x, incx, ref_y, incy)
     else:
         cublas_axpy_reference(n, alpha, ref_x, incx, ref_y, incy)
 
