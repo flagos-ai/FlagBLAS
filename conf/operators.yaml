@@ -47,3 +47,459 @@ ops:
       - BLAS
     stages:
       - beta: '0.1'
+  - id: sabs
+    description: |
+      Single-precision BLAS Level 1 absolute-value operation.
+      Computes y[i] = abs(x[i]) for a contiguous float32 vector.
+    for:
+      - sabs
+    labels:
+      - abs
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dabs
+    description: |
+      Double-precision BLAS Level 1 absolute-value operation.
+      Computes y[i] = abs(x[i]) for a contiguous float64 vector.
+    for:
+      - dabs
+    labels:
+      - abs
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: cabs
+    description: |
+      Single-precision complex BLAS Level 1 absolute-value operation.
+      Computes the magnitude of each complex64 input element into a float32 output vector.
+    for:
+      - cabs
+    labels:
+      - abs
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zabs
+    description: |
+      Double-precision complex BLAS Level 1 absolute-value operation.
+      Computes the magnitude of each complex128 input element into a float64 output vector.
+    for:
+      - zabs
+    labels:
+      - abs
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: samax
+    description: |
+      Single-precision BLAS Level 1 index-of-maximum-absolute-value reduction.
+      Returns the 1-based index of the float32 vector element with the largest absolute value.
+    for:
+      - samax
+    labels:
+      - amax
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: damax
+    description: |
+      Double-precision BLAS Level 1 index-of-maximum-absolute-value reduction.
+      Returns the 1-based index of the float64 vector element with the largest absolute value.
+    for:
+      - damax
+    labels:
+      - amax
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: camax
+    description: |
+      Single-precision complex BLAS Level 1 index-of-maximum-absolute-value reduction.
+      Returns the 1-based index of the complex64 element with the largest BLAS complex absolute value.
+    for:
+      - camax
+    labels:
+      - amax
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zamax
+    description: |
+      Double-precision complex BLAS Level 1 index-of-maximum-absolute-value reduction.
+      Returns the 1-based index of the complex128 element with the largest BLAS complex absolute value.
+    for:
+      - zamax
+    labels:
+      - amax
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: samin
+    description: |
+      Single-precision BLAS Level 1 index-of-minimum-absolute-value reduction.
+      Returns the 1-based index of the float32 vector element with the smallest absolute value.
+    for:
+      - samin
+    labels:
+      - amin
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: damin
+    description: |
+      Double-precision BLAS Level 1 index-of-minimum-absolute-value reduction.
+      Returns the 1-based index of the float64 vector element with the smallest absolute value.
+    for:
+      - damin
+    labels:
+      - amin
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: camin
+    description: |
+      Single-precision complex BLAS Level 1 index-of-minimum-absolute-value reduction.
+      Returns the 1-based index of the complex64 element with the smallest BLAS complex absolute value.
+    for:
+      - camin
+    labels:
+      - amin
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zamin
+    description: |
+      Double-precision complex BLAS Level 1 index-of-minimum-absolute-value reduction.
+      Returns the 1-based index of the complex128 element with the smallest BLAS complex absolute value.
+    for:
+      - zamin
+    labels:
+      - amin
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: sasum
+    description: |
+      Single-precision BLAS Level 1 absolute-sum reduction.
+      Computes the sum of absolute values for a strided float32 vector.
+    for:
+      - sasum
+    labels:
+      - asum
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dasum
+    description: |
+      Double-precision BLAS Level 1 absolute-sum reduction.
+      Computes the sum of absolute values for a strided float64 vector.
+    for:
+      - dasum
+    labels:
+      - asum
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: scasum
+    description: |
+      Single-precision complex BLAS Level 1 absolute-sum reduction.
+      Computes the sum of abs(real(x[i])) + abs(imag(x[i])) for a strided complex64 vector.
+    for:
+      - scasum
+    labels:
+      - asum
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dzasum
+    description: |
+      Double-precision complex BLAS Level 1 absolute-sum reduction.
+      Computes the sum of abs(real(x[i])) + abs(imag(x[i])) for a strided complex128 vector.
+    for:
+      - dzasum
+    labels:
+      - asum
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: saxpy
+    description: |
+      Single-precision BLAS Level 1 scaled vector addition.
+      Updates y in place with y = alpha * x + y for strided float32 vectors.
+    for:
+      - saxpy
+    labels:
+      - axpy
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: daxpy
+    description: |
+      Double-precision BLAS Level 1 scaled vector addition.
+      Updates y in place with y = alpha * x + y for strided float64 vectors.
+    for:
+      - daxpy
+    labels:
+      - axpy
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: caxpy
+    description: |
+      Single-precision complex BLAS Level 1 scaled vector addition.
+      Updates y in place with y = alpha * x + y for strided complex64 vectors.
+    for:
+      - caxpy
+    labels:
+      - axpy
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zaxpy
+    description: |
+      Double-precision complex BLAS Level 1 scaled vector addition.
+      Updates y in place with y = alpha * x + y for strided complex128 vectors.
+    for:
+      - zaxpy
+    labels:
+      - axpy
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: scopy
+    description: |
+      Single-precision BLAS Level 1 vector copy.
+      Copies a strided float32 source vector x into a strided destination vector y.
+    for:
+      - scopy
+    labels:
+      - copy
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dcopy
+    description: |
+      Double-precision BLAS Level 1 vector copy.
+      Copies a strided float64 source vector x into a strided destination vector y.
+    for:
+      - dcopy
+    labels:
+      - copy
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: ccopy
+    description: |
+      Single-precision complex BLAS Level 1 vector copy.
+      Copies a strided complex64 source vector x into a strided destination vector y.
+    for:
+      - ccopy
+    labels:
+      - copy
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zcopy
+    description: |
+      Double-precision complex BLAS Level 1 vector copy.
+      Copies a strided complex128 source vector x into a strided destination vector y.
+    for:
+      - zcopy
+    labels:
+      - copy
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: snrm2
+    description: |
+      Single-precision BLAS Level 1 Euclidean norm reduction.
+      Computes sqrt(sum(x[i] ** 2)) for a strided float32 vector.
+    for:
+      - snrm2
+    labels:
+      - nrm2
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dnrm2
+    description: |
+      Double-precision BLAS Level 1 Euclidean norm reduction.
+      Computes sqrt(sum(x[i] ** 2)) for a strided float64 vector.
+    for:
+      - dnrm2
+    labels:
+      - nrm2
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: scnrm2
+    description: |
+      Single-precision complex BLAS Level 1 Euclidean norm reduction.
+      Computes sqrt(sum(abs(x[i]) ** 2)) for a strided complex64 vector.
+    for:
+      - scnrm2
+    labels:
+      - nrm2
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dznrm2
+    description: |
+      Double-precision complex BLAS Level 1 Euclidean norm reduction.
+      Computes sqrt(sum(abs(x[i]) ** 2)) for a strided complex128 vector.
+    for:
+      - dznrm2
+    labels:
+      - nrm2
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: srot
+    description: |
+      Single-precision BLAS Level 1 plane rotation.
+      Applies a Givens rotation to strided float32 vectors x and y in place.
+    for:
+      - srot
+    labels:
+      - rot
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: drot
+    description: |
+      Double-precision BLAS Level 1 plane rotation.
+      Applies a Givens rotation to strided float64 vectors x and y in place.
+    for:
+      - drot
+    labels:
+      - rot
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: crot
+    description: |
+      Single-precision complex BLAS Level 1 plane rotation.
+      Applies a Givens rotation to strided complex64 vectors x and y in place.
+    for:
+      - crot
+    labels:
+      - rot
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zrot
+    description: |
+      Double-precision complex BLAS Level 1 plane rotation.
+      Applies a Givens rotation to strided complex128 vectors x and y in place.
+    for:
+      - zrot
+    labels:
+      - rot
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: sscal
+    description: |
+      Single-precision BLAS Level 1 vector scaling.
+      Updates a strided float32 vector in place with x = alpha * x.
+    for:
+      - sscal
+    labels:
+      - scal
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dscal
+    description: |
+      Double-precision BLAS Level 1 vector scaling.
+      Updates a strided float64 vector in place with x = alpha * x.
+    for:
+      - dscal
+    labels:
+      - scal
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: cscal
+    description: |
+      Single-precision complex BLAS Level 1 vector scaling.
+      Updates a strided complex64 vector in place with x = alpha * x using a complex scalar.
+    for:
+      - cscal
+    labels:
+      - scal
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zscal
+    description: |
+      Double-precision complex BLAS Level 1 vector scaling.
+      Updates a strided complex128 vector in place with x = alpha * x using a complex scalar.
+    for:
+      - zscal
+    labels:
+      - scal
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: csscal
+    description: |
+      Single-precision complex BLAS Level 1 vector scaling by a real scalar.
+      Updates a strided complex64 vector in place with x = alpha * x using a float32 scalar.
+    for:
+      - csscal
+    labels:
+      - scal
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zdscal
+    description: |
+      Double-precision complex BLAS Level 1 vector scaling by a real scalar.
+      Updates a strided complex128 vector in place with x = alpha * x using a float64 scalar.
+    for:
+      - zdscal
+    labels:
+      - scal
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
