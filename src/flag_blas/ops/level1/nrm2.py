@@ -6,19 +6,26 @@ import torch
 import triton
 import triton.language as tl
 
+from flag_blas import runtime
 from flag_blas.runtime import torch_device_fn
-from flag_blas.utils import libentry
+from flag_blas.utils import libentry, libtuner
 from flag_blas.utils import triton_lang_extension as tle
 
 logger = logging.getLogger(__name__)
 
 ScalarType = Union[float, int, complex, torch.Tensor]
 
+_NRM2_KEY = ["n", "INCX"]
+
 
 # -----------------------------
 # stage-1 / atomic kernels
 # -----------------------------
 @libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("nrm2_stage1_real"),
+    key=_NRM2_KEY,
+)
 @triton.jit
 def nrm2_kernel1_real(
     x_ptr,
@@ -41,6 +48,10 @@ def nrm2_kernel1_real(
 
 
 @libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("nrm2_stage1_complex"),
+    key=_NRM2_KEY,
+)
 @triton.jit
 def nrm2_kernel1_complex(
     x_ptr,
@@ -134,12 +145,15 @@ def _nrm2_impl(
         return
 
     required_size = 1 + (n - 1) * incx
-    assert (
-        x.numel() >= required_size
-    ), f"x is too short: need at least {required_size} elements for n={n}, incx={incx}, got {x.numel()}"
+    assert x.numel() >= required_size, (
+        f"x is too short: need at least {required_size} elements "
+        f"for n={n}, incx={incx}, got {x.numel()}"
+    )
 
     assert x.is_contiguous(), "x must be contiguous"
-    assert result.dim() == 1 and result.numel() == 1, "result must be a 1-element tensor"
+    assert (
+        result.dim() == 1 and result.numel() == 1
+    ), "result must be a 1-element tensor"
     assert x.device == result.device, "x and result must be on the same device"
 
     result.zero_()
@@ -164,6 +178,8 @@ def _nrm2_impl(
     else:
         block_size = triton.next_power_of_2(math.ceil(math.sqrt(n)))
         block_size = min(block_size, 16384)
+        if is_complex and x.dtype == torch.complex128 and incx == 1 and n >= 134217728:
+            block_size = 8192
 
         mid_size = triton.cdiv(n, block_size)
         block_mid = triton.next_power_of_2(mid_size)
@@ -173,13 +189,9 @@ def _nrm2_impl(
         with torch_device_fn.device(x.device):
             if is_complex:
                 x_real = torch.view_as_real(x)
-                nrm2_kernel1_complex[(mid_size, 1, 1)](
-                    x_real, mid, n, incx, block_size
-                )
+                nrm2_kernel1_complex[(mid_size, 1, 1)](x_real, mid, n, incx, block_size)
             else:
-                nrm2_kernel1_real[(mid_size, 1, 1)](
-                    x, mid, n, incx, block_size
-                )
+                nrm2_kernel1_real[(mid_size, 1, 1)](x, mid, n, incx, block_size)
 
             nrm2_kernel2[(1, 1, 1)](mid, result, mid_size, block_mid)
 

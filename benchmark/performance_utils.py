@@ -65,6 +65,30 @@ def SkipVersion(module_name, skip_pattern):
         return (major, minor) > (M, N)
 
 
+def _clone_correctness_value(value):
+    if torch.is_tensor(value):
+        return value.clone()
+    if isinstance(value, dict):
+        return {k: _clone_correctness_value(v) for k, v in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_clone_correctness_value(v) for v in value)
+    if isinstance(value, list):
+        return [_clone_correctness_value(v) for v in value]
+    return value
+
+
+def _format_tolerances(tolerances):
+    return ", ".join(f"{dtype}:{tolerance}" for dtype, tolerance in sorted(tolerances))
+
+
+def _format_reduce_dims(reduce_dims):
+    if not reduce_dims:
+        return "N/A"
+    if len(reduce_dims) == 1:
+        return str(next(iter(reduce_dims)))
+    return f"{min(reduce_dims)}..{max(reduce_dims)}"
+
+
 class Benchmark:
     device: str = device
     DEFAULT_METRICS = DEFAULT_METRICS
@@ -341,6 +365,110 @@ class Benchmark:
             "Each Benchmark must implement its own input iterator."
         )
 
+    def get_correctness_reduce_dim(self, args, kwargs):
+        return 1
+
+    def validate_results(self, reference_result, blas_result, dtype, reduce_dim=1):
+        tolerances = set()
+
+        def validate_value(ref, res):
+            if torch.is_tensor(ref) and torch.is_tensor(res):
+                compare_dtype = res.dtype
+                tolerance = flag_blas.testing.RESOLUTION[compare_dtype]
+                try:
+                    flag_blas.testing.assert_close(
+                        res,
+                        ref,
+                        compare_dtype,
+                        equal_nan=False,
+                        reduce_dim=reduce_dim,
+                        atol=tolerance,
+                    )
+                except AssertionError as e:
+                    ref_cpu = ref.cpu()
+                    res_cpu = res.cpu()
+                    max_abs_diff = torch.max(torch.abs(ref_cpu - res_cpu))
+                    max_rel_diff = torch.max(
+                        torch.abs((ref_cpu - res_cpu) / (torch.abs(ref_cpu) + 1e-9))
+                    )
+                    raise AssertionError(
+                        f"Results differ beyond tolerance {tolerance} "
+                        f"for dtype {dtype} output dtype {compare_dtype}:\n"
+                        f"Max absolute difference: {max_abs_diff}\n"
+                        f"Max relative difference: {max_rel_diff}\n"
+                        f"Shape: {ref_cpu.shape}"
+                    ) from e
+                tolerances.add((str(compare_dtype), tolerance))
+                return
+
+            if isinstance(ref, (tuple, list)) and isinstance(res, (tuple, list)):
+                if len(ref) != len(res):
+                    raise AssertionError(
+                        f"Result length mismatch: reference={len(ref)}, blas={len(res)}"
+                    )
+                for ref_item, res_item in zip(ref, res):
+                    validate_value(ref_item, res_item)
+                return
+
+            if ref != res:
+                raise AssertionError(f"Result mismatch: reference={ref}, blas={res}")
+
+        validate_value(reference_result, blas_result)
+        return tolerances
+
+    def run_correctness_check(self):
+        blas_op = self.blas_op or self.gems_op
+        if blas_op is None:
+            raise ValueError(f"Missing FlagBLAS op for {self.op_name}")
+
+        self.init_user_config()
+        total_cases = 0
+        reference_name = getattr(self, "correctness_reference", "cuBLAS")
+        print(
+            f"[correctness] {self.op_name}: comparing FlagBLAS against "
+            f"{reference_name} before benchmark...",
+            flush=True,
+        )
+        for cur_dtype in self.to_bench_dtypes:
+            dtype_cases = 0
+            dtype_tolerances = set()
+            dtype_reduce_dims = set()
+            for input in self.get_input_iter(cur_dtype):
+                args, kwargs = self.unpack_to_args_kwargs(input)
+                ref_args = _clone_correctness_value(args)
+                ref_kwargs = _clone_correctness_value(kwargs)
+                blas_args = _clone_correctness_value(args)
+                blas_kwargs = _clone_correctness_value(kwargs)
+                reduce_dim = self.get_correctness_reduce_dim(args, kwargs)
+
+                reference_result = self.torch_op(*ref_args, **ref_kwargs)
+                blas_result = blas_op(*blas_args, **blas_kwargs)
+                dtype_tolerances.update(
+                    self.validate_results(
+                        reference_result,
+                        blas_result,
+                        cur_dtype,
+                        reduce_dim=reduce_dim,
+                    )
+                )
+                dtype_reduce_dims.add(reduce_dim)
+                dtype_cases += 1
+
+            total_cases += dtype_cases
+            print(
+                f"[correctness] {self.op_name}: PASSED dtype={cur_dtype} "
+                f"total_cases={dtype_cases} "
+                f"tolerances={_format_tolerances(dtype_tolerances)} "
+                f"reduce_dim={_format_reduce_dims(dtype_reduce_dims)}",
+                flush=True,
+            )
+        print(
+            f"[correctness] {self.op_name}: all {total_cases} "
+            f"{reference_name} comparison cases passed; "
+            "starting performance benchmark.",
+            flush=True,
+        )
+
     def get_inputs(self, dtype):
         if self._input_iter is None:
             self._input_iter = self.get_input_iter(dtype)
@@ -436,6 +564,18 @@ class Benchmark:
             )
             print(result)
             emit_record_logger(result.to_json())
+
+
+def run_correctness_then_benchmark(bench):
+    if not Config.query and not Config.skip_correctness:
+        bench.run_correctness_check()
+    elif Config.skip_correctness:
+        print(
+            f"[correctness] {bench.op_name}: skipped by --skip_correctness; "
+            "starting performance benchmark.",
+            flush=True,
+        )
+    bench.run()
 
 
 class GenericBenchmark(Benchmark):

@@ -6,16 +6,23 @@ import torch
 import triton
 import triton.language as tl
 
+from flag_blas import runtime
 from flag_blas.runtime import torch_device_fn
-from flag_blas.utils import libentry
+from flag_blas.utils import libentry, libtuner
 from flag_blas.utils import triton_lang_extension as tle
 
 logger = logging.getLogger(__name__)
 
 ScalarType = Union[float, int, complex, torch.Tensor]
 
+_ASUM_STAGE1_KEY = ["n", "INCX"]
+
 
 @libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("asum_stage1_real"),
+    key=_ASUM_STAGE1_KEY,
+)
 @triton.jit
 def asum_kernel1_real(
     x_ptr,
@@ -38,6 +45,10 @@ def asum_kernel1_real(
 
 
 @libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("asum_stage1_complex"),
+    key=_ASUM_STAGE1_KEY,
+)
 @triton.jit
 def asum_kernel1_complex(
     x_ptr,
@@ -124,9 +135,10 @@ def _asum_impl(
         return
 
     required_size = 1 + (n - 1) * incx
-    assert (
-        x.numel() >= required_size
-    ), f"x is too short: need at least {required_size} elements for n={n}, incx={incx}, got {x.numel()}"
+    assert x.numel() >= required_size, (
+        f"x is too short: need at least {required_size} elements "
+        f"for n={n}, incx={incx}, got {x.numel()}"
+    )
 
     assert x.is_contiguous(), "x must be contiguous"
     result.zero_()
@@ -185,6 +197,7 @@ def scasum(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
     assert x.dtype == torch.complex64, "x must be complex64"
     assert result.dtype == torch.float32, "result for scasum must be float32"
     _asum_impl(n, x, incx, result, is_complex=True)
+
 
 @libentry()
 @triton.jit
@@ -254,12 +267,16 @@ def _launch_reduce_sum_fp64(cur: torch.Tensor, block_size: int = 1024) -> torch.
     out = torch.empty((next_n,), dtype=cur.dtype, device=cur.device)
 
     with torch_device_fn.device(cur.device):
-        reduce_sum_fp64_kernel[(next_n, 1, 1)](cur, out, cur.numel(), BLOCK_SIZE=block_size)
+        reduce_sum_fp64_kernel[(next_n, 1, 1)](
+            cur, out, cur.numel(), BLOCK_SIZE=block_size
+        )
 
     return out
 
 
-def _dzasum_impl_large(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
+def _dzasum_impl_large(
+    n: int, x: torch.Tensor, incx: int, result: torch.Tensor
+) -> None:
     if n <= 0 or incx <= 0:
         result.zero_()
         return
@@ -268,22 +285,22 @@ def _dzasum_impl_large(n: int, x: torch.Tensor, incx: int, result: torch.Tensor)
     assert x.dtype == torch.complex128, "x must be complex128"
     assert result.dtype == torch.float64, "result must be float64"
     assert x.dim() == 1, "x must be 1-dimensional"
-    assert result.dim() == 1 and result.numel() == 1, "result must be a 1-element tensor"
+    assert (
+        result.dim() == 1 and result.numel() == 1
+    ), "result must be a 1-element tensor"
     assert x.is_contiguous(), "x must be contiguous"
 
     required_size = 1 + (n - 1) * incx
-    assert (
-        x.numel() >= required_size
-    ), f"x is too short: need at least {required_size} elements for n={n}, incx={incx}, got {x.numel()}"
+    assert x.numel() >= required_size, (
+        f"x is too short: need at least {required_size} elements "
+        f"for n={n}, incx={incx}, got {x.numel()}"
+    )
 
     result.zero_()
 
     x_real = torch.view_as_real(x)
 
     FIRST_STAGE_BLOCK = 1024
-    SMALL_N_THRESHOLD = FIRST_STAGE_BLOCK
-
-
 
     # 第一阶段：x -> partial
     partial_size = triton.cdiv(n, FIRST_STAGE_BLOCK)
@@ -311,7 +328,10 @@ def _dzasum_impl_large(n: int, x: torch.Tensor, incx: int, result: torch.Tensor)
 #     logger.debug("FLAG_BLAS DZASUM")
 #     _dzasum_impl(n, x, incx, result)
 
-def _dzasum_impl_legacy(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
+
+def _dzasum_impl_legacy(
+    n: int, x: torch.Tensor, incx: int, result: torch.Tensor
+) -> None:
     _asum_impl(n, x, incx, result, is_complex=True)
 
 

@@ -24,6 +24,22 @@ stbsv:
   num_warps: 1
   num_stages: 1
 
+nrm2_stage1_real:
+  - META: {}
+    num_warps: 4
+    num_stages: 3
+nrm2_stage1_complex:
+  - META: {}
+    num_warps: 4
+    num_stages: 3
+asum_stage1_real:
+  - META: {}
+    num_warps: 4
+    num_stages: 3
+asum_stage1_complex:
+  - META: {}
+    num_warps: 4
+    num_stages: 3
 asum:
   - gen: true
     param_map:

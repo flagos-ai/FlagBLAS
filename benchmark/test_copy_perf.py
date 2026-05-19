@@ -2,12 +2,12 @@ import ctypes
 import ctypes.util
 from typing import Generator
 
+import cupy as cp
 import pytest
 import torch
-import cupy as cp
 
 import flag_blas
-from benchmark.performance_utils import Benchmark
+from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 from flag_blas.utils import shape_utils
 
 
@@ -63,28 +63,27 @@ def cublas_copy_reference(x, y, incx=1, incy=1, n=None):
     return x, y
 
 
-def gems_scopy_wrapper(x, y, incx=1, incy=1, n=None):
+def blas_scopy_wrapper(x, y, incx=1, incy=1, n=None):
     flag_blas.ops.scopy(n, x, incx, y, incy)
     return x, y
 
 
-def gems_dcopy_wrapper(x, y, incx=1, incy=1, n=None):
+def blas_dcopy_wrapper(x, y, incx=1, incy=1, n=None):
     flag_blas.ops.dcopy(n, x, incx, y, incy)
     return x, y
 
 
-def gems_ccopy_wrapper(x, y, incx=1, incy=1, n=None):
+def blas_ccopy_wrapper(x, y, incx=1, incy=1, n=None):
     flag_blas.ops.ccopy(n, x, incx, y, incy)
     return x, y
 
 
-def gems_zcopy_wrapper(x, y, incx=1, incy=1, n=None):
+def blas_zcopy_wrapper(x, y, incx=1, incy=1, n=None):
     flag_blas.ops.zcopy(n, x, incx, y, incy)
     return x, y
 
 
 class CopyBenchmark(Benchmark):
-
     def set_more_metrics(self):
         return ["gbps"]
 
@@ -122,7 +121,6 @@ class CopyBenchmark(Benchmark):
 
 
 class CopyStrideBenchmark(Benchmark):
-
     def __init__(self, *args, incx=1, incy=1, **kwargs):
         super().__init__(*args, **kwargs)
         self.incx = incx
@@ -169,10 +167,10 @@ def test_perf_scopy():
     bench = CopyBenchmark(
         op_name="scopy",
         torch_op=cublas_copy_reference,
-        gems_op=gems_scopy_wrapper,
+        blas_op=blas_scopy_wrapper,
         dtypes=[torch.float32],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.copy
@@ -182,10 +180,10 @@ def test_perf_dcopy():
     bench = CopyBenchmark(
         op_name="dcopy",
         torch_op=cublas_copy_reference,
-        gems_op=gems_dcopy_wrapper,
+        blas_op=blas_dcopy_wrapper,
         dtypes=[torch.float64],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.copy
@@ -193,10 +191,10 @@ def test_perf_ccopy():
     bench = CopyBenchmark(
         op_name="ccopy",
         torch_op=cublas_copy_reference,
-        gems_op=gems_ccopy_wrapper,
+        blas_op=blas_ccopy_wrapper,
         dtypes=[torch.complex64],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.copy
@@ -206,10 +204,10 @@ def test_perf_zcopy():
     bench = CopyBenchmark(
         op_name="zcopy",
         torch_op=cublas_copy_reference,
-        gems_op=gems_zcopy_wrapper,
+        blas_op=blas_zcopy_wrapper,
         dtypes=[torch.complex128],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.copy
@@ -218,12 +216,12 @@ def test_perf_scopy_stride(incx, incy):
     bench = CopyStrideBenchmark(
         op_name=f"scopy_stride_incx{incx}_incy{incy}",
         torch_op=cublas_copy_reference,
-        gems_op=gems_scopy_wrapper,
+        blas_op=blas_scopy_wrapper,
         dtypes=[torch.float32],
         incx=incx,
         incy=incy,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.copy
@@ -234,12 +232,12 @@ def test_perf_dcopy_stride(incx, incy):
     bench = CopyStrideBenchmark(
         op_name=f"dcopy_stride_incx{incx}_incy{incy}",
         torch_op=cublas_copy_reference,
-        gems_op=gems_dcopy_wrapper,
+        blas_op=blas_dcopy_wrapper,
         dtypes=[torch.float64],
         incx=incx,
         incy=incy,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.copy
@@ -248,12 +246,12 @@ def test_perf_ccopy_stride(incx, incy):
     bench = CopyStrideBenchmark(
         op_name=f"ccopy_stride_incx{incx}_incy{incy}",
         torch_op=cublas_copy_reference,
-        gems_op=gems_ccopy_wrapper,
+        blas_op=blas_ccopy_wrapper,
         dtypes=[torch.complex64],
         incx=incx,
         incy=incy,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.copy
@@ -264,9 +262,9 @@ def test_perf_zcopy_stride(incx, incy):
     bench = CopyStrideBenchmark(
         op_name=f"zcopy_stride_incx{incx}_incy{incy}",
         torch_op=cublas_copy_reference,
-        gems_op=gems_zcopy_wrapper,
+        blas_op=blas_zcopy_wrapper,
         dtypes=[torch.complex128],
         incx=incx,
         incy=incy,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)

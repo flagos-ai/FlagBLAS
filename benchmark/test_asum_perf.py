@@ -6,8 +6,7 @@ import torch
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
-
-from benchmark.performance_utils import Benchmark
+from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 from flag_blas.utils import shape_utils
 
 
@@ -31,28 +30,27 @@ def cublas_dzasum(x, incx=1, n=None, handle=None, result=None):
     return result
 
 
-def gems_sasum_wrapper(x, incx=1, n=None, handle=None, result=None):
+def blas_sasum_wrapper(x, incx=1, n=None, handle=None, result=None):
     flag_blas.ops.sasum(n, x, incx, result)
     return result
 
 
-def gems_dasum_wrapper(x, incx=1, n=None, handle=None, result=None):
+def blas_dasum_wrapper(x, incx=1, n=None, handle=None, result=None):
     flag_blas.ops.dasum(n, x, incx, result)
     return result
 
 
-def gems_scasum_wrapper(x, incx=1, n=None, handle=None, result=None):
+def blas_scasum_wrapper(x, incx=1, n=None, handle=None, result=None):
     flag_blas.ops.scasum(n, x, incx, result)
     return result
 
 
-def gems_dzasum_wrapper(x, incx=1, n=None, handle=None, result=None):
+def blas_dzasum_wrapper(x, incx=1, n=None, handle=None, result=None):
     flag_blas.ops.dzasum(n, x, incx, result)
     return result
 
 
 class AsumBenchmark(Benchmark):
-
     def set_more_metrics(self):
         return ["gbps"]
 
@@ -100,9 +98,11 @@ class AsumBenchmark(Benchmark):
         io_amount = shape_utils.size_in_bytes(inp)
         return io_amount * 1e-9 / (latency * 1e-3)
 
+    def get_correctness_reduce_dim(self, args, kwargs):
+        return kwargs["n"]
+
 
 class AsumStrideBenchmark(Benchmark):
-
     def __init__(self, *args, incx=1, **kwargs):
         super().__init__(*args, **kwargs)
         self.incx = incx
@@ -155,16 +155,19 @@ class AsumStrideBenchmark(Benchmark):
         io_amount = n * element_size
         return io_amount * 1e-9 / (latency * 1e-3)
 
+    def get_correctness_reduce_dim(self, args, kwargs):
+        return kwargs["n"]
+
 
 @pytest.mark.asum
 def test_perf_sasum():
     bench = AsumBenchmark(
         op_name="sasum",
         torch_op=cublas_sasum,
-        gems_op=gems_sasum_wrapper,
+        blas_op=blas_sasum_wrapper,
         dtypes=[torch.float32],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.asum
@@ -174,10 +177,10 @@ def test_perf_dasum():
     bench = AsumBenchmark(
         op_name="dasum",
         torch_op=cublas_dasum,
-        gems_op=gems_dasum_wrapper,
+        blas_op=blas_dasum_wrapper,
         dtypes=[torch.float64],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.asum
@@ -185,10 +188,10 @@ def test_perf_scasum():
     bench = AsumBenchmark(
         op_name="scasum",
         torch_op=cublas_scasum,
-        gems_op=gems_scasum_wrapper,
+        blas_op=blas_scasum_wrapper,
         dtypes=[torch.complex64],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.asum
@@ -198,10 +201,10 @@ def test_perf_dzasum():
     bench = AsumBenchmark(
         op_name="dzasum",
         torch_op=cublas_dzasum,
-        gems_op=gems_dzasum_wrapper,
+        blas_op=blas_dzasum_wrapper,
         dtypes=[torch.complex128],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.asum
@@ -210,11 +213,11 @@ def test_perf_sasum_stride(incx):
     bench = AsumStrideBenchmark(
         op_name=f"sasum_stride_incx{incx}",
         torch_op=cublas_sasum,
-        gems_op=gems_sasum_wrapper,
+        blas_op=blas_sasum_wrapper,
         dtypes=[torch.float32],
         incx=incx,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.asum
@@ -225,11 +228,11 @@ def test_perf_dasum_stride(incx):
     bench = AsumStrideBenchmark(
         op_name=f"dasum_stride_incx{incx}",
         torch_op=cublas_dasum,
-        gems_op=gems_dasum_wrapper,
+        blas_op=blas_dasum_wrapper,
         dtypes=[torch.float64],
         incx=incx,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.asum
@@ -238,11 +241,11 @@ def test_perf_scasum_stride(incx):
     bench = AsumStrideBenchmark(
         op_name=f"scasum_stride_incx{incx}",
         torch_op=cublas_scasum,
-        gems_op=gems_scasum_wrapper,
+        blas_op=blas_scasum_wrapper,
         dtypes=[torch.complex64],
         incx=incx,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.asum
@@ -253,8 +256,8 @@ def test_perf_dzasum_stride(incx):
     bench = AsumStrideBenchmark(
         op_name=f"dzasum_stride_incx{incx}",
         torch_op=cublas_dzasum,
-        gems_op=gems_dzasum_wrapper,
+        blas_op=blas_dzasum_wrapper,
         dtypes=[torch.complex128],
         incx=incx,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)

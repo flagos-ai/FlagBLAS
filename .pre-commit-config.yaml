@@ -1,26 +1,32 @@
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-added-large-files
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v2.3.0
+  hooks:
+  - id: check-yaml
+  - id: end-of-file-fixer
+  - id: trailing-whitespace
+  - id: flake8
+    args: ["--ignore=F405,E731,W503,E203", --max-line-length=120]
+    # F405 : Name may be undefined, or defined from star imports: module
+    # E731 : Do not assign a lambda expression, use a def
+    # W503 : Line break before binary operator
+    # E203 : Whitespace before ':'
 
-  - repo: https://github.com/psf/black
-    rev: 24.8.0
-    hooks:
-      - id: black
+- repo: https://github.com/pre-commit/mirrors-clang-format
+  rev: v13.0.0
+  hooks:
+    - id: clang-format
+      files: \.(cpp|h|cc|c|hpp)$
+      exclude: ^third_party/
 
-  - repo: https://github.com/pycqa/flake8
-    rev: 7.1.0
-    hooks:
-      - id: flake8
-        args: [--extend-ignore=E203]
+- repo: https://github.com/pycqa/isort
+  rev: 5.12.0
+  hooks:
+    - id: isort
+      args: ["--profile", "black"]
 
-  # # 可选：类型检查
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: v1.10.0
-  #   hooks:
-  #     - id: mypy
-  #       args: [--no-strict-optional, --ignore-missing-imports]
+- repo: https://github.com/psf/black.git
+  rev: 23.7.0
+  hooks:
+    - id: black
+    - id: black-jupyter

@@ -7,8 +7,7 @@ import torch
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
-
-from benchmark.performance_utils import Benchmark
+from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 from flag_blas.utils import shape_utils
 
 
@@ -26,48 +25,53 @@ def cublas_cscal(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     cublas.cscal(handle, n, alpha_ptr, x.data_ptr(), incx)
     return x
 
+
 def cublas_zscal(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     cublas.zscal(handle, n, alpha_ptr, x.data_ptr(), incx)
     return x
 
+
 def cublas_csscal(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     cublas.csscal(handle, n, alpha_ptr, x.data_ptr(), incx)
     return x
+
 
 def cublas_zdscal(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     cublas.zdscal(handle, n, alpha_ptr, x.data_ptr(), incx)
     return x
 
 
-def gems_sscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
+def blas_sscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     flag_blas.ops.sscal(n, alpha, x, incx)
     return x
 
 
-def gems_dscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
+def blas_dscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     flag_blas.ops.dscal(n, alpha, x, incx)
     return x
 
 
-def gems_cscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
+def blas_cscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     flag_blas.ops.cscal(n, alpha, x, incx)
     return x
 
-def gems_zscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
+
+def blas_zscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     flag_blas.ops.zscal(n, alpha, x, incx)
     return x
 
-def gems_csscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
+
+def blas_csscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     flag_blas.ops.csscal(n, alpha, x, incx)
     return x
 
 
-def gems_zdscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
+def blas_zdscal_wrapper(x, alpha=1e-5, incx=1, n=None, handle=None, alpha_ptr=None):
     flag_blas.ops.zdscal(n, alpha, x, incx)
     return x
 
-class ScalBenchmark(Benchmark):
 
+class ScalBenchmark(Benchmark):
     def __init__(self, *args, alpha=1e-5, **kwargs):
         super().__init__(*args, **kwargs)
         self.alpha = alpha
@@ -129,7 +133,6 @@ class ScalBenchmark(Benchmark):
 
 
 class ScalStrideBenchmark(Benchmark):
-
     def __init__(self, *args, incx=1, alpha=1e-5, **kwargs):
         super().__init__(*args, **kwargs)
         self.incx = incx
@@ -193,10 +196,10 @@ def test_perf_sscal():
     bench = ScalBenchmark(
         op_name="sscal",
         torch_op=cublas_sscal,
-        gems_op=gems_sscal_wrapper,
+        blas_op=blas_sscal_wrapper,
         dtypes=[torch.float32],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.scal
@@ -206,10 +209,10 @@ def test_perf_dscal():
     bench = ScalBenchmark(
         op_name="dscal",
         torch_op=cublas_dscal,
-        gems_op=gems_dscal_wrapper,
+        blas_op=blas_dscal_wrapper,
         dtypes=[torch.float64],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.scal
@@ -217,11 +220,12 @@ def test_perf_cscal():
     bench = ScalBenchmark(
         op_name="cscal",
         torch_op=cublas_cscal,
-        gems_op=gems_cscal_wrapper,
+        blas_op=blas_cscal_wrapper,
         dtypes=[torch.complex64],
         alpha=0.01 + 0.01j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
+
 
 @pytest.mark.scal
 def test_perf_zscal():
@@ -230,22 +234,24 @@ def test_perf_zscal():
     bench = ScalBenchmark(
         op_name="zscal",
         torch_op=cublas_zscal,
-        gems_op=gems_zscal_wrapper,
+        blas_op=blas_zscal_wrapper,
         dtypes=[torch.complex128],
         alpha=0.01 + 0.01j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
+
 
 @pytest.mark.scal
 def test_perf_csscal():
     bench = ScalBenchmark(
         op_name="csscal",
         torch_op=cublas_csscal,
-        gems_op=gems_csscal_wrapper,
+        blas_op=blas_csscal_wrapper,
         dtypes=[torch.complex64],
         alpha=0.01,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
+
 
 @pytest.mark.scal
 def test_perf_zdscal():
@@ -254,11 +260,12 @@ def test_perf_zdscal():
     bench = ScalBenchmark(
         op_name="zdscal",
         torch_op=cublas_zdscal,
-        gems_op=gems_zdscal_wrapper,
+        blas_op=blas_zdscal_wrapper,
         dtypes=[torch.complex128],
         alpha=0.01,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
+
 
 @pytest.mark.scal
 @pytest.mark.parametrize("incx", [2, 3, 5])
@@ -266,11 +273,11 @@ def test_perf_sscal_stride(incx):
     bench = ScalStrideBenchmark(
         op_name=f"sscal_stride_incx{incx}",
         torch_op=cublas_sscal,
-        gems_op=gems_sscal_wrapper,
+        blas_op=blas_sscal_wrapper,
         dtypes=[torch.float32],
         incx=incx,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.scal
@@ -281,11 +288,11 @@ def test_perf_dscal_stride(incx):
     bench = ScalStrideBenchmark(
         op_name=f"dscal_stride_incx{incx}",
         torch_op=cublas_dscal,
-        gems_op=gems_dscal_wrapper,
+        blas_op=blas_dscal_wrapper,
         dtypes=[torch.float64],
         incx=incx,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.scal
@@ -294,12 +301,13 @@ def test_perf_cscal_stride(incx):
     bench = ScalStrideBenchmark(
         op_name=f"cscal_stride_incx{incx}",
         torch_op=cublas_cscal,
-        gems_op=gems_cscal_wrapper,
+        blas_op=blas_cscal_wrapper,
         dtypes=[torch.complex64],
         incx=incx,
         alpha=0.01 + 0.01j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
+
 
 @pytest.mark.scal
 @pytest.mark.parametrize("incx", [2, 3, 5])
@@ -309,12 +317,12 @@ def test_perf_zscal_stride(incx):
     bench = ScalStrideBenchmark(
         op_name=f"zscal_stride_incx{incx}",
         torch_op=cublas_zscal,
-        gems_op=gems_zscal_wrapper,
+        blas_op=blas_zscal_wrapper,
         dtypes=[torch.complex128],
         incx=incx,
         alpha=0.01 + 0.01j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.scal
@@ -323,12 +331,13 @@ def test_perf_csscal_stride(incx):
     bench = ScalStrideBenchmark(
         op_name=f"csscal_stride_incx{incx}",
         torch_op=cublas_csscal,
-        gems_op=gems_csscal_wrapper,
+        blas_op=blas_csscal_wrapper,
         dtypes=[torch.complex64],
         incx=incx,
         alpha=0.01,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
+
 
 @pytest.mark.scal
 @pytest.mark.parametrize("incx", [2, 3, 5])
@@ -338,9 +347,9 @@ def test_perf_zdscal_stride(incx):
     bench = ScalStrideBenchmark(
         op_name=f"zdscal_stride_incx{incx}",
         torch_op=cublas_zdscal,
-        gems_op=gems_zdscal_wrapper,
+        blas_op=blas_zdscal_wrapper,
         dtypes=[torch.complex128],
         incx=incx,
         alpha=0.01,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)

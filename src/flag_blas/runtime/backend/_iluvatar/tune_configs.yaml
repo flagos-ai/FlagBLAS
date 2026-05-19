@@ -132,6 +132,64 @@ stbsv_direct:
   - META: { BLOCK_K: 256 }
     num_warps: 8
     num_stages: 1
+nrm2_stage1_real:
+  - gen: true
+    param_map:
+      META: {}
+      num_warps: warps
+      num_stages: stages
+    warps:
+      - 2
+      - 4
+      - 8
+      - 16
+    stages:
+      - 1
+      - 2
+      - 3
+nrm2_stage1_complex:
+  - gen: true
+    param_map:
+      META: {}
+      num_warps: warps
+      num_stages: stages
+    warps:
+      - 2
+      - 4
+      - 8
+      - 16
+    stages:
+      - 1
+      - 2
+      - 3
+asum_stage1_real:
+  - gen: true
+    param_map:
+      META: {}
+      num_warps: warps
+      num_stages: stages
+    warps:
+      - 4
+      - 8
+      - 16
+    stages:
+      - 1
+      - 2
+      - 3
+asum_stage1_complex:
+  - gen: true
+    param_map:
+      META: {}
+      num_warps: warps
+      num_stages: stages
+    warps:
+      - 4
+      - 8
+      - 16
+    stages:
+      - 1
+      - 2
+      - 3
 sgemm:
   - META: {BLOCK_M: 32, BLOCK_N: 32, BLOCK_K: 64, GROUP_M: 8}
     num_warps: 4

@@ -2,7 +2,8 @@ import pytest
 import torch
 
 import flag_blas
-from .accuracy_utils import ASUM_SHAPES
+
+from .accuracy_utils import ASUM_SHAPES, blas_assert_close, to_reference
 
 
 def torch_abs_reference(n, x, y):
@@ -12,7 +13,13 @@ def torch_abs_reference(n, x, y):
     if n <= 0:
         return
 
-    y[:n].copy_(torch.abs(x[:n]))
+    ref_x = x[:n]
+    if ref_x.device.type == "cpu":
+        if ref_x.is_complex():
+            ref_x = ref_x.to(torch.complex128)
+        else:
+            ref_x = ref_x.to(torch.float64)
+    y[:n].copy_(torch.abs(ref_x).to(y.dtype))
 
 
 @pytest.mark.abs
@@ -25,18 +32,18 @@ def test_accuracy_abs_real(dtype, shape):
     n = shape[0]
     x = torch.randn(n, dtype=dtype, device=flag_blas.device)
 
-    ref_x = x.clone()
-    ref_y = torch.empty(n, dtype=dtype, device=flag_blas.device)
+    ref_x = to_reference(x)
+    ref_y = torch.empty(n, dtype=dtype, device=ref_x.device)
     y = torch.empty(n, dtype=dtype, device=flag_blas.device)
 
     torch_abs_reference(n, ref_x, ref_y)
 
     if dtype == torch.float32:
         flag_blas.ops.sabs(n, x, y)
-        torch.testing.assert_close(y[:n], ref_y[:n], rtol=1e-5, atol=1e-5)
     else:
         flag_blas.ops.dabs(n, x, y)
-        torch.testing.assert_close(y[:n], ref_y[:n], rtol=1e-15, atol=1e-15)
+
+    blas_assert_close(y[:n], ref_y[:n], dtype)
 
 
 @pytest.mark.abs
@@ -50,18 +57,18 @@ def test_accuracy_abs_complex(dtype, shape):
     x = torch.randn(n, dtype=dtype, device=flag_blas.device)
 
     result_dtype = torch.float32 if dtype == torch.complex64 else torch.float64
-    ref_x = x.clone()
-    ref_y = torch.empty(n, dtype=result_dtype, device=flag_blas.device)
+    ref_x = to_reference(x)
+    ref_y = torch.empty(n, dtype=result_dtype, device=ref_x.device)
     y = torch.empty(n, dtype=result_dtype, device=flag_blas.device)
 
     torch_abs_reference(n, ref_x, ref_y)
 
     if dtype == torch.complex64:
         flag_blas.ops.cabs(n, x, y)
-        torch.testing.assert_close(y[:n], ref_y[:n], rtol=1e-5, atol=1e-5)
     else:
         flag_blas.ops.zabs(n, x, y)
-        torch.testing.assert_close(y[:n], ref_y[:n], rtol=1e-15, atol=1e-15)
+
+    blas_assert_close(y[:n], ref_y[:n], result_dtype)
 
 
 @pytest.mark.abs
@@ -106,18 +113,18 @@ def test_accuracy_abs_different_n_real(dtype, n, vec_size):
 
     x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
 
-    ref_x = x.clone()
-    ref_y = torch.empty(vec_size, dtype=dtype, device=flag_blas.device)
+    ref_x = to_reference(x)
+    ref_y = torch.empty(vec_size, dtype=dtype, device=ref_x.device)
     y = torch.empty(vec_size, dtype=dtype, device=flag_blas.device)
 
     torch_abs_reference(n, ref_x, ref_y)
 
     if dtype == torch.float32:
         flag_blas.ops.sabs(n, x, y)
-        torch.testing.assert_close(y[:n], ref_y[:n], rtol=1e-5, atol=1e-5)
     else:
         flag_blas.ops.dabs(n, x, y)
-        torch.testing.assert_close(y[:n], ref_y[:n], rtol=1e-15, atol=1e-15)
+
+    blas_assert_close(y[:n], ref_y[:n], dtype)
 
 
 @pytest.mark.abs
@@ -133,15 +140,15 @@ def test_accuracy_abs_different_n_complex(dtype, n, vec_size):
     x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
     result_dtype = torch.float32 if dtype == torch.complex64 else torch.float64
 
-    ref_x = x.clone()
-    ref_y = torch.empty(vec_size, dtype=result_dtype, device=flag_blas.device)
+    ref_x = to_reference(x)
+    ref_y = torch.empty(vec_size, dtype=result_dtype, device=ref_x.device)
     y = torch.empty(vec_size, dtype=result_dtype, device=flag_blas.device)
 
     torch_abs_reference(n, ref_x, ref_y)
 
     if dtype == torch.complex64:
         flag_blas.ops.cabs(n, x, y)
-        torch.testing.assert_close(y[:n], ref_y[:n], rtol=1e-5, atol=1e-5)
     else:
         flag_blas.ops.zabs(n, x, y)
-        torch.testing.assert_close(y[:n], ref_y[:n], rtol=1e-15, atol=1e-15)
+
+    blas_assert_close(y[:n], ref_y[:n], result_dtype)

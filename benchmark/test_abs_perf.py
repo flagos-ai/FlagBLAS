@@ -4,47 +4,51 @@ import pytest
 import torch
 
 import flag_blas
+from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 
-from benchmark.performance_utils import Benchmark
-from flag_blas.utils import shape_utils
 
 def torch_sabs(x, n=None, out=None):
     torch.abs(x[:n], out=out[:n])
     return out
 
+
 def torch_dabs(x, n=None, out=None):
     torch.abs(x[:n], out=out[:n])
     return out
+
 
 def torch_cabs(x, n=None, out=None):
     torch.abs(x[:n], out=out[:n])
     return out
 
+
 def torch_zabs(x, n=None, out=None):
     torch.abs(x[:n], out=out[:n])
     return out
 
-def gems_sabs_wrapper(x, n=None, out=None):
+
+def blas_sabs_wrapper(x, n=None, out=None):
     flag_blas.ops.sabs(n, x, out)
     return out
 
 
-def gems_dabs_wrapper(x, n=None, out=None):
+def blas_dabs_wrapper(x, n=None, out=None):
     flag_blas.ops.dabs(n, x, out)
     return out
 
 
-def gems_cabs_wrapper(x, n=None, out=None):
+def blas_cabs_wrapper(x, n=None, out=None):
     flag_blas.ops.cabs(n, x, out)
     return out
 
 
-def gems_zabs_wrapper(x, n=None, out=None):
+def blas_zabs_wrapper(x, n=None, out=None):
     flag_blas.ops.zabs(n, x, out)
     return out
 
 
 class AbsBenchmark(Benchmark):
+    correctness_reference = "torch"
 
     def set_more_metrics(self):
         return ["gbps"]
@@ -104,10 +108,10 @@ def test_perf_sabs():
     bench = AbsBenchmark(
         op_name="sabs",
         torch_op=torch_sabs,
-        gems_op=gems_sabs_wrapper,
+        blas_op=blas_sabs_wrapper,
         dtypes=[torch.float32],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.abs
@@ -117,10 +121,10 @@ def test_perf_dabs():
     bench = AbsBenchmark(
         op_name="dabs",
         torch_op=torch_dabs,
-        gems_op=gems_dabs_wrapper,
+        blas_op=blas_dabs_wrapper,
         dtypes=[torch.float64],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.abs
@@ -128,10 +132,10 @@ def test_perf_cabs():
     bench = AbsBenchmark(
         op_name="cabs",
         torch_op=torch_cabs,
-        gems_op=gems_cabs_wrapper,
+        blas_op=blas_cabs_wrapper,
         dtypes=[torch.complex64],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.abs
@@ -141,7 +145,7 @@ def test_perf_zabs():
     bench = AbsBenchmark(
         op_name="zabs",
         torch_op=torch_zabs,
-        gems_op=gems_zabs_wrapper,
+        blas_op=blas_zabs_wrapper,
         dtypes=[torch.complex128],
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)

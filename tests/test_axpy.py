@@ -1,24 +1,33 @@
-import pytest
-import torch
 import cupy as cp
 import numpy as np
-from scipy.linalg import blas as cpu_blas
+import pytest
+import torch
 from cupy_backends.cuda.libs import cublas
+from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
 from .accuracy_utils import (
-    SCALARS,
     AXPY_SHAPES,
+    SCALARS,
     blas_assert_close,
     to_cpu_blas_tensor,
     to_reference,
 )
 from .conftest import TO_CPU
 
-
 # SHAPES = [(32,), (1024,), (5333,), (16384,), (1024 * 1024,)]
 STRIDES = [(1, 1), (2, 2), (2, 3), (3, 2), (3, 3)]
+STRIDE_PAIRS = [(2, 2), (2, 3), (3, 2), (3, 3)]
+STRIDE_SHAPES = [
+    (1024,),
+    (5333,),
+    (65536,),
+    (100000,),
+    (1048576,),
+    (3000000,),
+    (4194304,),
+]
 
 COMPLEX_SCALARS = [1.0 + 2.0j, -0.5 + 1.5j]
 
@@ -54,7 +63,7 @@ def cublas_axpy_reference(n, alpha, x, incx, y, incy):
 
 def cpu_axpy_reference(n, alpha, x, incx, y, incy):
     if n == 0:
-        return
+        return to_cpu_blas_tensor(y)
 
     ref_x = to_cpu_blas_tensor(x)
     ref_y = to_cpu_blas_tensor(y)
@@ -67,20 +76,17 @@ def cpu_axpy_reference(n, alpha, x, incx, y, incy):
         raise ValueError(f"Unsupported dtype for CPU BLAS: {dtype}")
 
     func(ref_x.numpy(), ref_y.numpy(), n=n, a=alpha, incx=incx, incy=incy)
-    y.copy_(ref_y.to(y.dtype))
+    return ref_y
 
 
 def axpy_reference(n, alpha, x, incx, y, incy):
-    ref_x = to_reference(x)
-    ref_y = to_reference(y)
-    if not TO_CPU:
-        ref_y = ref_y.clone()
-
     if TO_CPU:
-        cpu_axpy_reference(n, alpha, ref_x, incx, ref_y, incy)
-    else:
-        cublas_axpy_reference(n, alpha, ref_x, incx, ref_y, incy)
+        return cpu_axpy_reference(n, alpha, x, incx, y, incy)
 
+    ref_x = to_reference(x)
+    ref_y = to_reference(y).clone()
+
+    cublas_axpy_reference(n, alpha, ref_x, incx, ref_y, incy)
     return ref_y
 
 
@@ -88,12 +94,13 @@ def axpy_reference(n, alpha, x, incx, y, incy):
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("shape", AXPY_SHAPES)
 @pytest.mark.parametrize("alpha", SCALARS)
-@pytest.mark.parametrize("incx,incy", STRIDES)
-def test_accuracy_axpy_real(dtype, shape, alpha, incx, incy):
+def test_accuracy_axpy_real(dtype, shape, alpha):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
     n = shape[0]
+    incx = 1
+    incy = 1
     x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
 
@@ -111,12 +118,13 @@ def test_accuracy_axpy_real(dtype, shape, alpha, incx, incy):
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
 @pytest.mark.parametrize("shape", AXPY_SHAPES)
 @pytest.mark.parametrize("alpha", COMPLEX_SCALARS + SCALARS)
-@pytest.mark.parametrize("incx,incy", STRIDES)
-def test_accuracy_axpy_complex(dtype, shape, alpha, incx, incy):
+def test_accuracy_axpy_complex(dtype, shape, alpha):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
     n = shape[0]
+    incx = 1
+    incy = 1
     x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
 
@@ -128,6 +136,52 @@ def test_accuracy_axpy_complex(dtype, shape, alpha, incx, incy):
         flag_blas.ops.zaxpy(n, alpha, x, incx, y, incy)
 
     blas_assert_close(y, ref_y, dtype)
+
+
+@pytest.mark.axpy
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("shape", STRIDE_SHAPES)
+@pytest.mark.parametrize("incx,incy", STRIDE_PAIRS)
+def test_accuracy_axpy_different_n_with_stride_real(dtype, shape, incx, incy):
+    if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
+        pytest.skip("Device does not support float64")
+
+    n = shape[0]
+    alpha = -111.999
+    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+
+    ref_y = axpy_reference(n, alpha, x, incx, y, incy)
+
+    if dtype == torch.float32:
+        flag_blas.ops.saxpy(n, alpha, x, incx, y, incy)
+    else:
+        flag_blas.ops.daxpy(n, alpha, x, incx, y, incy)
+
+    blas_assert_close(y[::incy][:n], ref_y[::incy][:n], dtype)
+
+
+@pytest.mark.axpy
+@pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
+@pytest.mark.parametrize("shape", STRIDE_SHAPES)
+@pytest.mark.parametrize("incx,incy", STRIDE_PAIRS)
+def test_accuracy_axpy_different_n_with_stride_complex(dtype, shape, incx, incy):
+    if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
+        pytest.skip("Device does not support float64")
+
+    n = shape[0]
+    alpha = -0.5 + 1.5j
+    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+
+    ref_y = axpy_reference(n, alpha, x, incx, y, incy)
+
+    if dtype == torch.complex64:
+        flag_blas.ops.caxpy(n, alpha, x, incx, y, incy)
+    else:
+        flag_blas.ops.zaxpy(n, alpha, x, incx, y, incy)
+
+    blas_assert_close(y[::incy][:n], ref_y[::incy][:n], dtype)
 
 
 @pytest.mark.axpy

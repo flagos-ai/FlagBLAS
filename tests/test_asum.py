@@ -1,16 +1,29 @@
+import cupy as cp
 import pytest
 import torch
-import cupy as cp
-import numpy as np
 from cupy_backends.cuda.libs import cublas
+from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-from .accuracy_utils import ASUM_SHAPES, SCALARS, gems_assert_close, to_reference
+from .accuracy_utils import (
+    ASUM_SHAPES,
+    blas_assert_close,
+    to_cpu_blas_tensor,
+    to_reference,
+)
+from .conftest import TO_CPU
 
 STRIDES = [1, 2, 3, 5]
-
-COMPLEX_SCALARS = [1.0 + 2.0j, -0.5 + 1.5j]
+STRIDE_SHAPES = [
+    (1024,),
+    (5333,),
+    (65536,),
+    (100000,),
+    (1048576,),
+    (3000000,),
+    (4194304,),
+]
 
 
 def cublas_asum_reference(n, x, incx, result):
@@ -45,55 +58,87 @@ def cublas_asum_reference(n, x, incx, result):
     func(handle, n, x.data_ptr(), incx, result.data_ptr())
 
 
+def cpu_asum_reference(n, x, incx, result):
+    assert x.dim() == 1, "x must be 1-dimensional"
+    assert result.numel() == 1, "result must be a single-element tensor"
+
+    if n == 0:
+        result.zero_()
+        return
+
+    ref_x = to_cpu_blas_tensor(x)
+    dtype = ref_x.dtype
+    if dtype == torch.float64:
+        func = cpu_blas.dasum
+    elif dtype == torch.complex128:
+        func = cpu_blas.dzasum
+    else:
+        raise ValueError(f"Unsupported dtype for CPU BLAS: {dtype}")
+
+    value = func(ref_x.numpy(), n=n, incx=incx)
+    result.fill_(value)
+
+
+def asum_reference(n, x, incx, result):
+    if TO_CPU:
+        ref_result = torch.zeros(result.shape, dtype=result.dtype, device="cpu")
+        cpu_asum_reference(n, x, incx, ref_result)
+        return ref_result
+
+    ref_x = to_reference(x)
+    ref_result = to_reference(result).clone()
+
+    cublas_asum_reference(n, ref_x, incx, ref_result)
+    return ref_result
+
+
 @pytest.mark.asum
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("shape", ASUM_SHAPES)
-@pytest.mark.parametrize("incx", STRIDES)
-def test_accuracy_asum_real(dtype, shape, incx):
+def test_accuracy_asum_real(dtype, shape):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
     n = shape[0]
+    incx = 1
     x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
 
-    ref_x = x.clone()
     ref_result = torch.zeros(1, dtype=dtype, device=flag_blas.device)
     result = torch.zeros(1, dtype=dtype, device=flag_blas.device)
 
-    cublas_asum_reference(n, ref_x, incx, ref_result)
+    ref_result = asum_reference(n, x, incx, ref_result)
 
     if dtype == torch.float32:
         flag_blas.ops.sasum(n, x, incx, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-5, atol=1e-5)
     else:
         flag_blas.ops.dasum(n, x, incx, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-15, atol=1e-15)
+
+    blas_assert_close(result, ref_result, dtype, reduce_dim=n)
 
 
 @pytest.mark.asum
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
 @pytest.mark.parametrize("shape", ASUM_SHAPES)
-@pytest.mark.parametrize("incx", STRIDES)
-def test_accuracy_asum_complex(dtype, shape, incx):
+def test_accuracy_asum_complex(dtype, shape):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
     n = shape[0]
+    incx = 1
     x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
 
-    ref_x = x.clone()
     result_dtype = torch.float32 if dtype == torch.complex64 else torch.float64
     ref_result = torch.zeros(1, dtype=result_dtype, device=flag_blas.device)
     result = torch.zeros(1, dtype=result_dtype, device=flag_blas.device)
 
-    cublas_asum_reference(n, ref_x, incx, ref_result)
+    ref_result = asum_reference(n, x, incx, ref_result)
 
     if dtype == torch.complex64:
         flag_blas.ops.scasum(n, x, incx, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-5, atol=1e-5)
     else:
         flag_blas.ops.dzasum(n, x, incx, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-15, atol=1e-15)
+
+    blas_assert_close(result, ref_result, result_dtype, reduce_dim=n)
 
 
 @pytest.mark.asum
@@ -142,18 +187,17 @@ def test_accuracy_asum_different_n_real(dtype, n, vec_size):
 
     x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
 
-    ref_x = x.clone()
     ref_result = torch.zeros(1, dtype=dtype, device=flag_blas.device)
     result = torch.zeros(1, dtype=dtype, device=flag_blas.device)
 
-    cublas_asum_reference(n, ref_x, 1, ref_result)
+    ref_result = asum_reference(n, x, 1, ref_result)
 
     if dtype == torch.float32:
         flag_blas.ops.sasum(n, x, 1, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-5, atol=1e-5)
     else:
         flag_blas.ops.dasum(n, x, 1, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-15, atol=1e-15)
+
+    blas_assert_close(result, ref_result, dtype, reduce_dim=n)
 
 
 @pytest.mark.asum
@@ -167,79 +211,64 @@ def test_accuracy_asum_different_n_complex(dtype, n, vec_size):
 
     x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
 
-    ref_x = x.clone()
     result_dtype = torch.float32 if dtype == torch.complex64 else torch.float64
     ref_result = torch.zeros(1, dtype=result_dtype, device=flag_blas.device)
     result = torch.zeros(1, dtype=result_dtype, device=flag_blas.device)
 
-    cublas_asum_reference(n, ref_x, 1, ref_result)
+    ref_result = asum_reference(n, x, 1, ref_result)
 
     if dtype == torch.complex64:
         flag_blas.ops.scasum(n, x, 1, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-5, atol=1e-5)
     else:
         flag_blas.ops.dzasum(n, x, 1, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-15, atol=1e-15)
+
+    blas_assert_close(result, ref_result, result_dtype, reduce_dim=n)
 
 
 @pytest.mark.asum
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize(
-    "n,vec_size,incx",
-    [
-        (5, 20, 2),
-        (5, 20, 3),
-        (10, 50, 2),
-        (10, 100, 5),
-    ],
-)
-def test_accuracy_asum_different_n_with_stride_real(dtype, n, vec_size, incx):
+@pytest.mark.parametrize("shape", STRIDE_SHAPES)
+@pytest.mark.parametrize("incx", [2, 3, 5])
+def test_accuracy_asum_different_n_with_stride_real(dtype, shape, incx):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    n = shape[0]
+    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
 
-    ref_x = x.clone()
     ref_result = torch.zeros(1, dtype=dtype, device=flag_blas.device)
     result = torch.zeros(1, dtype=dtype, device=flag_blas.device)
 
-    cublas_asum_reference(n, ref_x, incx, ref_result)
+    ref_result = asum_reference(n, x, incx, ref_result)
 
     if dtype == torch.float32:
         flag_blas.ops.sasum(n, x, incx, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-5, atol=1e-5)
     else:
         flag_blas.ops.dasum(n, x, incx, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-15, atol=1e-15)
+
+    blas_assert_close(result, ref_result, dtype, reduce_dim=n)
 
 
 @pytest.mark.asum
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-@pytest.mark.parametrize(
-    "n,vec_size,incx",
-    [
-        (5, 20, 2),
-        (5, 20, 3),
-        (10, 50, 2),
-        (10, 100, 5),
-    ],
-)
-def test_accuracy_asum_different_n_with_stride_complex(dtype, n, vec_size, incx):
+@pytest.mark.parametrize("shape", STRIDE_SHAPES)
+@pytest.mark.parametrize("incx", [2, 3, 5])
+def test_accuracy_asum_different_n_with_stride_complex(dtype, shape, incx):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    n = shape[0]
+    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
 
-    ref_x = x.clone()
     result_dtype = torch.float32 if dtype == torch.complex64 else torch.float64
     ref_result = torch.zeros(1, dtype=result_dtype, device=flag_blas.device)
     result = torch.zeros(1, dtype=result_dtype, device=flag_blas.device)
 
-    cublas_asum_reference(n, ref_x, incx, ref_result)
+    ref_result = asum_reference(n, x, incx, ref_result)
 
     if dtype == torch.complex64:
         flag_blas.ops.scasum(n, x, incx, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-5, atol=1e-5)
     else:
         flag_blas.ops.dzasum(n, x, incx, result)
-        torch.testing.assert_close(result, ref_result, rtol=1e-15, atol=1e-15)
+
+    blas_assert_close(result, ref_result, result_dtype, reduce_dim=n)

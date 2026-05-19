@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 ScalarType = Union[float, int, complex, torch.Tensor]
 
 
+def _make_grid(n: int):
+    def grid(meta):
+        return (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+
+    return grid
+
+
 @libentry()
 @triton.autotune(
     configs=[
@@ -112,9 +119,27 @@ def cscal_kernel(
 @libentry()
 @triton.autotune(
     configs=[
+        triton.Config({"BLOCK_SIZE": 64}, num_warps=1, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 64}, num_warps=1, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=1, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=1, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 128}, num_warps=2, num_stages=2),
         triton.Config({"BLOCK_SIZE": 128}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=1, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=1, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=2, num_stages=2),
         triton.Config({"BLOCK_SIZE": 256}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=1, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=1, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=2, num_stages=2),
         triton.Config({"BLOCK_SIZE": 512}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_SIZE": 1024}, num_warps=1, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 1024}, num_warps=1, num_stages=2),
+        triton.Config({"BLOCK_SIZE": 1024}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_SIZE": 1024}, num_warps=2, num_stages=2),
         triton.Config({"BLOCK_SIZE": 1024}, num_warps=4, num_stages=3),
     ],
     key=["n", "INCX"],
@@ -177,6 +202,7 @@ def csscal_kernel(
     tl.store(x_ptr + x_base_offset, alpha * x_real, mask=mask)
     tl.store(x_ptr + x_base_offset + 1, alpha * x_imag, mask=mask)
 
+
 @libentry()
 @triton.autotune(
     configs=[
@@ -209,6 +235,7 @@ def zdscal_kernel(
     tl.store(x_ptr + x_base_offset, alpha * x_real, mask=mask)
     tl.store(x_ptr + x_base_offset + 1, alpha * x_imag, mask=mask)
 
+
 def sscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
     logger.debug("FLAG_BLAS SSCAL")
 
@@ -227,7 +254,7 @@ def sscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
         x.numel() >= req_size_x
     ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
 
-    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+    grid = _make_grid(n)
     with torch_device_fn.device(x.device):
         sscal_kernel[grid](x, alpha, n, incx)
 
@@ -251,7 +278,7 @@ def dscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
         x.numel() >= req_size_x
     ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
 
-    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+    grid = _make_grid(n)
     with torch_device_fn.device(x.device):
         dscal_kernel[grid](x, alpha_int, n, incx)
 
@@ -278,9 +305,10 @@ def cscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
 
     x_real = torch.view_as_real(x)
 
-    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+    grid = _make_grid(n)
     with torch_device_fn.device(x.device):
         cscal_kernel[grid](x_real, alpha_real, alpha_imag, n, incx)
+
 
 def zscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
     logger.debug("FLAG_BLAS ZSCAL")
@@ -298,24 +326,20 @@ def zscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
     alpha_imag = float(alpha.imag) if isinstance(alpha, complex) else 0.0
 
     alpha_real_bits = (
-        torch.tensor(alpha_real, dtype=torch.float64)
-        .view(torch.int64)
-        .item()
+        torch.tensor(alpha_real, dtype=torch.float64).view(torch.int64).item()
     )
     alpha_imag_bits = (
-        torch.tensor(alpha_imag, dtype=torch.float64)
-        .view(torch.int64)
-        .item()
+        torch.tensor(alpha_imag, dtype=torch.float64).view(torch.int64).item()
     )
 
     req_size_x = 1 + (n - 1) * incx
-    assert x.numel() >= req_size_x, (
-        f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
-    )
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
 
     x_real = torch.view_as_real(x)
 
-    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+    grid = _make_grid(n)
     with torch_device_fn.device(x.device):
         zscal_kernel[grid](x_real, alpha_real_bits, alpha_imag_bits, n, incx)
 
@@ -342,7 +366,7 @@ def csscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
 
     x_real = torch.view_as_real(x)
 
-    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+    grid = _make_grid(n)
     with torch_device_fn.device(x.device):
         csscal_kernel[grid](x_real, alpha, n, incx)
 
@@ -362,19 +386,15 @@ def zdscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
     assert not isinstance(alpha, complex), "alpha must be real for zdscal"
     alpha_val = float(alpha)
 
-    alpha_bits = (
-        torch.tensor(alpha_val, dtype=torch.float64)
-        .view(torch.int64)
-        .item()
-    )
+    alpha_bits = torch.tensor(alpha_val, dtype=torch.float64).view(torch.int64).item()
 
     req_size_x = 1 + (n - 1) * incx
-    assert x.numel() >= req_size_x, (
-        f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
-    )
+    assert (
+        x.numel() >= req_size_x
+    ), f"x is too short: need {req_size_x} elements for n={n}, incx={incx}"
 
     x_real = torch.view_as_real(x)
 
-    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+    grid = _make_grid(n)
     with torch_device_fn.device(x.device):
         zdscal_kernel[grid](x_real, alpha_bits, n, incx)

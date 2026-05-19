@@ -6,7 +6,8 @@ import numpy as np
 import torch
 
 import flag_blas
-from .conftest import L1_n_end, L1_n_start, L1_n_step, QUICK_MODE, TO_CPU
+
+from .conftest import QUICK_MODE, TO_CPU, L1_n_end, L1_n_start, L1_n_step
 
 GEN_SHAPE = False
 
@@ -321,8 +322,8 @@ def to_reference(inp, upcast=False):
 def to_cpu_blas_tensor(inp):
     ref_inp = inp.detach()
     if ref_inp.is_complex():
-        return ref_inp.to(torch.complex128).contiguous()
-    return ref_inp.to(torch.float64).contiguous()
+        return ref_inp.to(device="cpu", dtype=torch.complex128).contiguous()
+    return ref_inp.to(device="cpu", dtype=torch.float64).contiguous()
 
 
 def to_cpu(res, ref):
