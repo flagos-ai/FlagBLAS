@@ -69,6 +69,12 @@ if GEN_SHAPE:
     SCAL_SHAPES.clear()
     SCAL_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
 
+###
+L1_VECTOR_SHAPES = DEFAULT_SHAPES
+L1_STRIDES = [1, 2, 3, 5]
+L1_PAIR_STRIDES = [(1, 1), (2, 2), (2, 3), (3, 2), (3, 3)]
+AMIN_SHAPES = L1_VECTOR_SHAPES
+
 
 def TestForwardOnly():
     return flag_blas.vendor_name in []
