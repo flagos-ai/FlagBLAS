@@ -63,21 +63,20 @@ def cublas_hgemm_reference(
 )
 def test_accuracy_hgemm(m, n, k, transa, transb):
     dtype, alpha, beta = torch.float16, 1.5, 0.5
-    scale = k**-0.5
 
     if transa == CUBLAS_OP_N:
-        A_col = (torch.randn(k, m, dtype=dtype, device=flag_blas.device) * scale).t()
+        A_col = (torch.randn(k, m, dtype=dtype, device=flag_blas.device)).t()
         lda_cublas, lda_flag = m, k
     else:
-        A_col = (torch.randn(m, k, dtype=dtype, device=flag_blas.device) * scale).t()
+        A_col = (torch.randn(m, k, dtype=dtype, device=flag_blas.device)).t()
         lda_cublas, lda_flag = k, m
     A_row = A_col.contiguous()
 
     if transb == CUBLAS_OP_N:
-        B_col = (torch.randn(n, k, dtype=dtype, device=flag_blas.device) * scale).t()
+        B_col = (torch.randn(n, k, dtype=dtype, device=flag_blas.device)).t()
         ldb_cublas, ldb_flag = k, n
     else:
-        B_col = (torch.randn(k, n, dtype=dtype, device=flag_blas.device) * scale).t()
+        B_col = (torch.randn(k, n, dtype=dtype, device=flag_blas.device)).t()
         ldb_cublas, ldb_flag = n, k
     B_row = B_col.contiguous()
 
@@ -214,12 +213,11 @@ def test_hgemm_alpha_beta(alpha, beta):
     dtype = torch.float16
     device = flag_blas.device
 
-    scale = k**-0.5
-    A_col = (torch.randn(k, m, dtype=dtype, device=device) * scale).t()
+    A_col = (torch.randn(k, m, dtype=dtype, device=device)).t()
     A_row = A_col.contiguous()
-    B_col = (torch.randn(n, k, dtype=dtype, device=device) * scale).t()
+    B_col = (torch.randn(n, k, dtype=dtype, device=device)).t()
     B_row = B_col.contiguous()
-    C_col = (torch.randn(n, m, dtype=dtype, device=device) * scale).t()
+    C_col = (torch.randn(n, m, dtype=dtype, device=device)).t()
     C_row = C_col.contiguous()
 
     cublas_hgemm_reference(
