@@ -109,9 +109,9 @@ def test_accuracy_nrm2_real(dtype, shape):
     ref_result = nrm2_reference(n, x, incx, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.ops.snrm2(n, x, incx, result)
+        flag_blas.snrm2(n, x, incx, result)
     else:
-        flag_blas.ops.dnrm2(n, x, incx, result)
+        flag_blas.dnrm2(n, x, incx, result)
 
     blas_assert_close(result, ref_result, dtype, reduce_dim=n)
 
@@ -134,9 +134,9 @@ def test_accuracy_nrm2_complex(dtype, shape):
     ref_result = nrm2_reference(n, x, incx, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.ops.scnrm2(n, x, incx, result)
+        flag_blas.scnrm2(n, x, incx, result)
     else:
-        flag_blas.ops.dznrm2(n, x, incx, result)
+        flag_blas.dznrm2(n, x, incx, result)
 
     blas_assert_close(result, ref_result, result_dtype, reduce_dim=n)
 
@@ -163,13 +163,13 @@ def test_accuracy_nrm2_empty_tensor(dtype):
     n = 0
 
     if dtype == torch.float32:
-        flag_blas.ops.snrm2(n, x, 1, result)
+        flag_blas.snrm2(n, x, 1, result)
     elif dtype == torch.float64:
-        flag_blas.ops.dnrm2(n, x, 1, result)
+        flag_blas.dnrm2(n, x, 1, result)
     elif dtype == torch.complex64:
-        flag_blas.ops.scnrm2(n, x, 1, result)
+        flag_blas.scnrm2(n, x, 1, result)
     else:
-        flag_blas.ops.dznrm2(n, x, 1, result)
+        flag_blas.dznrm2(n, x, 1, result)
 
     assert result.item() == 0.0
     assert result.dtype == result_dtype
@@ -193,9 +193,9 @@ def test_accuracy_nrm2_different_n_real(dtype, n, vec_size):
     ref_result = nrm2_reference(n, x, 1, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.ops.snrm2(n, x, 1, result)
+        flag_blas.snrm2(n, x, 1, result)
     else:
-        flag_blas.ops.dnrm2(n, x, 1, result)
+        flag_blas.dnrm2(n, x, 1, result)
 
     blas_assert_close(result, ref_result, dtype, reduce_dim=n)
 
@@ -218,9 +218,9 @@ def test_accuracy_nrm2_different_n_complex(dtype, n, vec_size):
     ref_result = nrm2_reference(n, x, 1, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.ops.scnrm2(n, x, 1, result)
+        flag_blas.scnrm2(n, x, 1, result)
     else:
-        flag_blas.ops.dznrm2(n, x, 1, result)
+        flag_blas.dznrm2(n, x, 1, result)
 
     blas_assert_close(result, ref_result, result_dtype, reduce_dim=n)
 
@@ -242,9 +242,9 @@ def test_accuracy_nrm2_different_n_with_stride_real(dtype, shape, incx):
     ref_result = nrm2_reference(n, x, incx, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.ops.snrm2(n, x, incx, result)
+        flag_blas.snrm2(n, x, incx, result)
     else:
-        flag_blas.ops.dnrm2(n, x, incx, result)
+        flag_blas.dnrm2(n, x, incx, result)
 
     blas_assert_close(result, ref_result, dtype, reduce_dim=n)
 
@@ -267,8 +267,8 @@ def test_accuracy_nrm2_different_n_with_stride_complex(dtype, shape, incx):
     ref_result = nrm2_reference(n, x, incx, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.ops.scnrm2(n, x, incx, result)
+        flag_blas.scnrm2(n, x, incx, result)
     else:
-        flag_blas.ops.dznrm2(n, x, incx, result)
+        flag_blas.dznrm2(n, x, incx, result)
 
     blas_assert_close(result, ref_result, result_dtype, reduce_dim=n)

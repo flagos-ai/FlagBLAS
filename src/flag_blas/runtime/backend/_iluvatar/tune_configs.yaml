@@ -139,7 +139,6 @@ nrm2_stage1_real:
       num_warps: warps
       num_stages: stages
     warps:
-      - 2
       - 4
       - 8
       - 16
@@ -154,7 +153,50 @@ nrm2_stage1_complex:
       num_warps: warps
       num_stages: stages
     warps:
+      - 4
+      - 8
+      - 16
+    stages:
+      - 1
       - 2
+      - 3
+nrm2_iluvatar_stage1_real:
+  - gen: true
+    param_map:
+      META:
+        BLOCK_SIZE: block_size
+      num_warps: warps
+      num_stages: stages
+    block_size:
+      - 512
+      - 1024
+      - 2048
+      - 4096
+      - 8192
+      - 16384
+    warps:
+      - 4
+      - 8
+      - 16
+    stages:
+      - 1
+      - 2
+      - 3
+nrm2_iluvatar_stage1_complex:
+  - gen: true
+    param_map:
+      META:
+        BLOCK_SIZE: block_size
+      num_warps: warps
+      num_stages: stages
+    block_size:
+      - 512
+      - 1024
+      - 2048
+      - 4096
+      - 8192
+      - 16384
+    warps:
       - 4
       - 8
       - 16

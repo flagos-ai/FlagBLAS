@@ -31,22 +31,22 @@ def cublas_dznrm2(x, incx=1, n=None, handle=None, result=None):
 
 
 def blas_snrm2_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.ops.snrm2(n, x, incx, result)
+    flag_blas.snrm2(n, x, incx, result)
     return result
 
 
 def blas_dnrm2_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.ops.dnrm2(n, x, incx, result)
+    flag_blas.dnrm2(n, x, incx, result)
     return result
 
 
 def blas_scnrm2_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.ops.scnrm2(n, x, incx, result)
+    flag_blas.scnrm2(n, x, incx, result)
     return result
 
 
 def blas_dznrm2_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.ops.dznrm2(n, x, incx, result)
+    flag_blas.dznrm2(n, x, incx, result)
     return result
 
 
