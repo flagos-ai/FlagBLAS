@@ -694,8 +694,8 @@ def _hgemm_nn_kernel2(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
     for i in range(0, tl.cdiv(k, BLOCK_K)):
-        a = tl.load(a_block_ptr)
-        b = tl.load(b_block_ptr)
+        a = tl.load(a_block_ptr, boundary_check=(0, 1))
+        b = tl.load(b_block_ptr, boundary_check=(0, 1))
         acc = tl.dot(a, b, acc, out_dtype=tl.float32)
 
         a_block_ptr = tl.advance(a_block_ptr, (0, BLOCK_K))
@@ -948,8 +948,8 @@ def _hgemm_tn_kernel2(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
     for _ in range(0, tl.cdiv(k, BLOCK_K)):
-        a_t = tl.load(a_block_ptr)
-        b = tl.load(b_block_ptr)
+        a_t = tl.load(a_block_ptr, boundary_check=(0, 1))
+        b = tl.load(b_block_ptr, boundary_check=(0, 1))
 
         a = tl.trans(a_t)
 
@@ -960,11 +960,11 @@ def _hgemm_tn_kernel2(
 
     if BETA_IS_ZERO:
         result = (alpha * acc).to(tl.float16)
-        tl.store(c_block_ptr, result)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
     else:
-        c_vals = tl.load(c_block_ptr).to(tl.float32)
+        c_vals = tl.load(c_block_ptr, boundary_check=(0, 1)).to(tl.float32)
         result = (alpha * acc + beta * c_vals).to(tl.float16)
-        tl.store(c_block_ptr, result)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
 
 
 @libentry()
@@ -1117,8 +1117,8 @@ def _hgemm_tt_kernel2(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
     for _ in range(0, tl.cdiv(k, BLOCK_K)):
-        a = tl.load(a_block_ptr)
-        b = tl.load(b_block_ptr)
+        a = tl.load(a_block_ptr, boundary_check=(0, 1))
+        b = tl.load(b_block_ptr, boundary_check=(0, 1))
         acc = tl.dot(a, b, acc, out_dtype=tl.float32)
 
         a_block_ptr = tl.advance(a_block_ptr, (0, BLOCK_K))
@@ -1126,11 +1126,11 @@ def _hgemm_tt_kernel2(
 
     if BETA_IS_ZERO:
         result = (alpha * acc).to(tl.float16)
-        tl.store(c_block_ptr, result)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
     else:
-        c_vals = tl.load(c_block_ptr).to(tl.float32)
+        c_vals = tl.load(c_block_ptr, boundary_check=(0, 1)).to(tl.float32)
         result = (alpha * acc + beta * c_vals).to(tl.float16)
-        tl.store(c_block_ptr, result)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
 
 
 @libentry()
@@ -1340,6 +1340,7 @@ def hgemm(
                     strides=[ldc, 1],
                     block_shape=[BLOCK_M, BLOCK_N],
                 )
+                print("debug kerne3=====")
                 grid = (triton.cdiv(m, BLOCK_M) * triton.cdiv(n, BLOCK_N),)
                 _hgemm_tn_kernel3[grid](
                     desc_a,
@@ -1493,8 +1494,8 @@ def _bfgemm_nn_kernel2(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
     for i in range(0, tl.cdiv(k, BLOCK_K)):
-        a = tl.load(a_block_ptr)
-        b = tl.load(b_block_ptr)
+        a = tl.load(a_block_ptr, boundary_check=(0, 1))
+        b = tl.load(b_block_ptr, boundary_check=(0, 1))
         acc = tl.dot(a, b, acc, out_dtype=tl.float32)
 
         a_block_ptr = tl.advance(a_block_ptr, (0, BLOCK_K))
@@ -1511,11 +1512,11 @@ def _bfgemm_nn_kernel2(
 
     if BETA_IS_ZERO:
         result = acc * alpha
-        tl.store(c_block_ptr, result.to(tl.bfloat16))
+        tl.store(c_block_ptr, result.to(tl.bfloat16), boundary_check=(0, 1))
     else:
-        c_vals = tl.load(c_block_ptr).to(tl.float32)
+        c_vals = tl.load(c_block_ptr, boundary_check=(0, 1)).to(tl.float32)
         result = acc * alpha + beta * c_vals
-        tl.store(c_block_ptr, result.to(tl.bfloat16))
+        tl.store(c_block_ptr, result.to(tl.bfloat16), boundary_check=(0, 1))
 
 
 @libentry()
@@ -1747,8 +1748,8 @@ def _bfgemm_tn_kernel2(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
     for _ in range(0, tl.cdiv(k, BLOCK_K)):
-        a_t = tl.load(a_block_ptr)
-        b = tl.load(b_block_ptr)
+        a_t = tl.load(a_block_ptr, boundary_check=(0, 1))
+        b = tl.load(b_block_ptr, boundary_check=(0, 1))
 
         a = tl.trans(a_t)
 
@@ -1759,11 +1760,11 @@ def _bfgemm_tn_kernel2(
 
     if BETA_IS_ZERO:
         result = (alpha * acc).to(tl.bfloat16)
-        tl.store(c_block_ptr, result)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
     else:
-        c_vals = tl.load(c_block_ptr).to(tl.float32)
+        c_vals = tl.load(c_block_ptr, boundary_check=(0, 1)).to(tl.float32)
         result = (alpha * acc + beta * c_vals).to(tl.bfloat16)
-        tl.store(c_block_ptr, result)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
 
 
 @libentry()
@@ -1916,8 +1917,8 @@ def _bfgemm_tt_kernel2(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
     for _ in range(0, tl.cdiv(k, BLOCK_K)):
-        a = tl.load(a_block_ptr)
-        b = tl.load(b_block_ptr)
+        a = tl.load(a_block_ptr, boundary_check=(0, 1))
+        b = tl.load(b_block_ptr, boundary_check=(0, 1))
         acc = tl.dot(a, b, acc, out_dtype=tl.float32)
 
         a_block_ptr = tl.advance(a_block_ptr, (0, BLOCK_K))
@@ -1925,11 +1926,11 @@ def _bfgemm_tt_kernel2(
 
     if BETA_IS_ZERO:
         result = (alpha * acc).to(tl.bfloat16)
-        tl.store(c_block_ptr, result)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
     else:
-        c_vals = tl.load(c_block_ptr).to(tl.float32)
+        c_vals = tl.load(c_block_ptr, boundary_check=(0, 1)).to(tl.float32)
         result = (alpha * acc + beta * c_vals).to(tl.bfloat16)
-        tl.store(c_block_ptr, result)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
 
 
 @libentry()
