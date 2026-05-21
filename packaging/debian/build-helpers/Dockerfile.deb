@@ -1,4 +1,6 @@
-ARG BASE_IMAGE_VERSION=22.04
+# Default to 24.04 (noble): pybuild-plugin-pyproject is not available
+# in 22.04 (jammy) repos, so the deb build would fail there.
+ARG BASE_IMAGE_VERSION=24.04
 FROM ubuntu:${BASE_IMAGE_VERSION}
 ENV DEBIAN_FRONTEND=noninteractive
 
