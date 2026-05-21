@@ -62,15 +62,28 @@ UnaryPointwiseBenchmark:
 # These shapes are used for sgemm, hgemm, bfgemm and fp8gemm benchmarks
 GemmBenchmark:
   shapes:
-    #- [64, 64, 64]           # small square matrix
-    #- [256, 256, 256]       # medium square matrix
+    - [64, 64, 64]           # small square matrix
+    - [256, 256, 256]       # medium square matrix
     - [512, 512, 512]       # large square matrix
     - [1024, 1024, 1024]    # large square matrix
     - [2048, 2048, 2048]    # extra large square matrix
+    - [4096, 4096, 4096]    # extra large square matrix
+    - [8192, 8192, 8192]    # extra large square matrix
+    - [16384, 16384, 16384] # extra large square matrix
     - [64, 512, 512]        # tall and skinny
+    - [64, 1024, 512]       # tall and skinny
+    - [64, 2048, 1024]      # tall and skinny
+    - [64, 4096, 2048]      # tall and skinny
+    - [128, 4096, 1024]     # tall and skinny
+    - [256, 8192, 2048]     # tall and skinny
+    - [512, 16384, 4096]    # tall and skinny
     - [512, 64, 512]        # short and wide
-    - [1024, 4096, 1024]    # typical transformer attention shape
-    - [4096, 1024, 4096]    # typical transformer FFN shape
+    - [1024, 64, 512]       # short and wide
+    - [2048, 64, 1024]      # short and wide
+    - [4096, 64, 2048]      # short and wide
+    - [4096, 128, 1024]     # short and wide
+    - [8192, 256, 2048]     # short and wide
+    - [16384, 512, 4096]    # short and wide
   shape_desc: "M, N, K"
 
 # the default shapes info
