@@ -1,11 +1,18 @@
 import ctypes
 import ctypes.util
 import math
+import warnings
+
+import cupy as cp
 import pytest
 import torch
-import cupy as cp
+from scipy.linalg import blas as cpu_blas
+
 import flag_blas
-from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C
+from flag_blas.ops import CUBLAS_OP_C, CUBLAS_OP_N, CUBLAS_OP_T
+
+from .accuracy_utils import blas_assert_close, to_cpu_blas_tensor, to_reference
+from .conftest import TO_CPU
 
 
 def load_cublas():
@@ -79,6 +86,68 @@ def cublas_gbmv_reference(trans, m, n, kl, ku, alpha, AB, lda, x, incx, beta, y,
         raise RuntimeError(f"cublasXgbmv_v2 execution failed with error code: {status}")
 
 
+def cpu_gbmv_reference(trans, m, n, kl, ku, alpha, AB, lda, x, incx, beta, y, incy):
+    if m == 0 or n == 0:
+        return to_cpu_blas_tensor(y)
+
+    if beta == 0 and incy == 1:
+        ref_dtype = torch.complex128 if y.is_complex() else torch.float64
+        ref_y = torch.empty(y.shape, dtype=ref_dtype)
+    else:
+        ref_y = to_cpu_blas_tensor(y)
+    ref_AB = to_cpu_blas_tensor(AB)
+    ref_x = to_cpu_blas_tensor(x)
+    func = cpu_blas.zgbmv if ref_AB.dtype.is_complex else cpu_blas.dgbmv
+
+    yout = func(
+        m,
+        n,
+        kl,
+        ku,
+        alpha,
+        ref_AB.numpy().T,
+        ref_x.numpy(),
+        incx=incx,
+        beta=beta,
+        y=ref_y.numpy(),
+        incy=incy,
+        trans=trans,
+        overwrite_y=1,
+    )
+    return torch.from_numpy(yout)
+
+
+def gbmv_reference(trans, m, n, kl, ku, alpha, AB, lda, x, incx, beta, y, incy):
+    if TO_CPU:
+        # Fallback condition: m < kl + ku + 1. cuBLAS/NETLIB allow this because
+        # only lda must cover the stored band height. SciPy's gbmv wrapper
+        # rejects these valid inputs and may crash for complex transpose cases,
+        # so --ref cpu uses the original cuBLAS reference for this CPU gap.
+        if m < kl + ku + 1:
+            warnings.warn(
+                "SciPy gbmv unsupported for "
+                f"m < kl + ku + 1 ({m} < {kl} + {ku} + 1), "
+                f"dtype={AB.dtype}, trans={trans}, n={n}; "
+                "falling back to cuBLAS reference.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            ref_y = y.clone()
+            cublas_gbmv_reference(
+                trans, m, n, kl, ku, alpha, AB, lda, x, incx, beta, ref_y, incy
+            )
+            return to_reference(ref_y)
+        return cpu_gbmv_reference(
+            trans, m, n, kl, ku, alpha, AB, lda, x, incx, beta, y, incy
+        )
+
+    ref_y = y.clone()
+    cublas_gbmv_reference(
+        trans, m, n, kl, ku, alpha, AB, lda, x, incx, beta, ref_y, incy
+    )
+    return ref_y
+
+
 GBMV_SHAPES = [
     (64, 64),
     (256, 256),
@@ -130,6 +199,12 @@ def get_effective_bands(m, n, kl, ku):
     return actual_kl, actual_ku, is_truncated
 
 
+def gbmv_reduce_dim(trans, m, n, kl, ku):
+    band_width = kl + ku + 1
+    input_len = n if trans == CUBLAS_OP_N else m
+    return max(1, min(input_len, band_width))
+
+
 def check_fp64_support():
     if not getattr(flag_blas.runtime.device, "support_fp64", True):
         pytest.skip("No FP64 support on this device")
@@ -165,17 +240,16 @@ def test_accuracy_sgbmv(m, n, kl, ku, trans, beta):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gbmv_reference(
-        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, ref_y, 1
+    ref_y = gbmv_reference(
+        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, y, 1
     )
     flag_blas.ops.sgbmv(
         trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, y, 1
     )
 
-    tol = _gbmv_tol(dtype, actual_kl, actual_ku)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(
+        y, ref_y, dtype, reduce_dim=gbmv_reduce_dim(trans, m, n, actual_kl, actual_ku)
+    )
 
 
 @pytest.mark.sgbmv
@@ -192,17 +266,16 @@ def test_accuracy_sgbmv_stride(m, n, kl, ku, trans, incx, incy):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gbmv_reference(
-        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, ref_y, incy
+    ref_y = gbmv_reference(
+        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, y, incy
     )
     flag_blas.ops.sgbmv(
         trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, y, incy
     )
 
-    tol = _gbmv_tol(dtype, actual_kl, actual_ku)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(
+        y, ref_y, dtype, reduce_dim=gbmv_reduce_dim(trans, m, n, actual_kl, actual_ku)
+    )
 
 
 @pytest.mark.sgbmv
@@ -212,12 +285,13 @@ def test_sgbmv_alpha_zero():
     AB = create_banded_data(m, n, kl, ku, lda, dtype, flag_blas.device)
     x = torch.randn(n, dtype=dtype, device=flag_blas.device)
     y = torch.randn(m, dtype=dtype, device=flag_blas.device)
-    y_orig, y_ref = y.clone(), y.clone()
-
-    cublas_gbmv_reference(CUBLAS_OP_N, m, n, kl, ku, 0.0, AB, lda, x, 1, 2.0, y_ref, 1)
+    y_orig = y.clone()
+    y_ref = gbmv_reference(CUBLAS_OP_N, m, n, kl, ku, 0.0, AB, lda, x, 1, 2.0, y, 1)
     flag_blas.ops.sgbmv(CUBLAS_OP_N, m, n, kl, ku, 0.0, AB, lda, x, 1, 2.0, y, 1)
-    torch.testing.assert_close(y, y_ref)
-    torch.testing.assert_close(y, y_orig * 2.0)
+    blas_assert_close(
+        y, y_ref, dtype, reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku)
+    )
+    blas_assert_close(y, to_reference(y_orig * 2.0), dtype)
 
 
 @pytest.mark.sgbmv
@@ -229,15 +303,23 @@ def test_sgbmv_beta_zero():
 
     y_nan = torch.full((m,), float("nan"), dtype=dtype, device=flag_blas.device)
     y_zero = torch.zeros(m, dtype=dtype, device=flag_blas.device)
-    ref_y_nan = y_nan.clone()
-
-    cublas_gbmv_reference(
-        CUBLAS_OP_N, m, n, kl, ku, 1.0, AB, lda, x, 1, 0.0, ref_y_nan, 1
+    ref_y_nan = gbmv_reference(
+        CUBLAS_OP_N, m, n, kl, ku, 1.0, AB, lda, x, 1, 0.0, y_nan, 1
     )
     flag_blas.ops.sgbmv(CUBLAS_OP_N, m, n, kl, ku, 1.0, AB, lda, x, 1, 0.0, y_nan, 1)
     flag_blas.ops.sgbmv(CUBLAS_OP_N, m, n, kl, ku, 1.0, AB, lda, x, 1, 0.0, y_zero, 1)
-    torch.testing.assert_close(y_nan, ref_y_nan)
-    torch.testing.assert_close(y_nan, y_zero)
+    blas_assert_close(
+        y_nan,
+        ref_y_nan,
+        dtype,
+        reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku),
+    )
+    blas_assert_close(
+        y_nan,
+        to_reference(y_zero),
+        dtype,
+        reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku),
+    )
 
 
 @pytest.mark.dgbmv
@@ -258,17 +340,16 @@ def test_accuracy_dgbmv(m, n, kl, ku, trans, beta):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gbmv_reference(
-        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, ref_y, 1
+    ref_y = gbmv_reference(
+        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, y, 1
     )
     flag_blas.ops.dgbmv(
         trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, y, 1
     )
 
-    tol = _gbmv_tol(dtype, actual_kl, actual_ku)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(
+        y, ref_y, dtype, reduce_dim=gbmv_reduce_dim(trans, m, n, actual_kl, actual_ku)
+    )
 
 
 @pytest.mark.dgbmv
@@ -286,17 +367,16 @@ def test_accuracy_dgbmv_stride(m, n, kl, ku, trans, incx, incy):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gbmv_reference(
-        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, ref_y, incy
+    ref_y = gbmv_reference(
+        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, y, incy
     )
     flag_blas.ops.dgbmv(
         trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, y, incy
     )
 
-    tol = _gbmv_tol(dtype, actual_kl, actual_ku)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(
+        y, ref_y, dtype, reduce_dim=gbmv_reduce_dim(trans, m, n, actual_kl, actual_ku)
+    )
 
 
 @pytest.mark.dgbmv
@@ -307,12 +387,13 @@ def test_dgbmv_alpha_zero():
     AB = create_banded_data(m, n, kl, ku, lda, dtype, flag_blas.device)
     x = torch.randn(n, dtype=dtype, device=flag_blas.device)
     y = torch.randn(m, dtype=dtype, device=flag_blas.device)
-    y_orig, y_ref = y.clone(), y.clone()
-
-    cublas_gbmv_reference(CUBLAS_OP_N, m, n, kl, ku, 0.0, AB, lda, x, 1, 2.0, y_ref, 1)
+    y_orig = y.clone()
+    y_ref = gbmv_reference(CUBLAS_OP_N, m, n, kl, ku, 0.0, AB, lda, x, 1, 2.0, y, 1)
     flag_blas.ops.dgbmv(CUBLAS_OP_N, m, n, kl, ku, 0.0, AB, lda, x, 1, 2.0, y, 1)
-    torch.testing.assert_close(y, y_ref)
-    torch.testing.assert_close(y, y_orig * 2.0)
+    blas_assert_close(
+        y, y_ref, dtype, reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku)
+    )
+    blas_assert_close(y, to_reference(y_orig * 2.0), dtype)
 
 
 @pytest.mark.dgbmv
@@ -325,15 +406,23 @@ def test_dgbmv_beta_zero():
 
     y_nan = torch.full((m,), float("nan"), dtype=dtype, device=flag_blas.device)
     y_zero = torch.zeros(m, dtype=dtype, device=flag_blas.device)
-    ref_y_nan = y_nan.clone()
-
-    cublas_gbmv_reference(
-        CUBLAS_OP_N, m, n, kl, ku, 1.0, AB, lda, x, 1, 0.0, ref_y_nan, 1
+    ref_y_nan = gbmv_reference(
+        CUBLAS_OP_N, m, n, kl, ku, 1.0, AB, lda, x, 1, 0.0, y_nan, 1
     )
     flag_blas.ops.dgbmv(CUBLAS_OP_N, m, n, kl, ku, 1.0, AB, lda, x, 1, 0.0, y_nan, 1)
     flag_blas.ops.dgbmv(CUBLAS_OP_N, m, n, kl, ku, 1.0, AB, lda, x, 1, 0.0, y_zero, 1)
-    torch.testing.assert_close(y_nan, ref_y_nan)
-    torch.testing.assert_close(y_nan, y_zero)
+    blas_assert_close(
+        y_nan,
+        ref_y_nan,
+        dtype,
+        reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku),
+    )
+    blas_assert_close(
+        y_nan,
+        to_reference(y_zero),
+        dtype,
+        reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku),
+    )
 
 
 @pytest.mark.cgbmv
@@ -353,17 +442,16 @@ def test_accuracy_cgbmv(m, n, kl, ku, trans, beta):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gbmv_reference(
-        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, ref_y, 1
+    ref_y = gbmv_reference(
+        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, y, 1
     )
     flag_blas.ops.cgbmv(
         trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, y, 1
     )
 
-    tol = _gbmv_tol(dtype, actual_kl, actual_ku)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(
+        y, ref_y, dtype, reduce_dim=gbmv_reduce_dim(trans, m, n, actual_kl, actual_ku)
+    )
 
 
 @pytest.mark.cgbmv
@@ -380,17 +468,16 @@ def test_accuracy_cgbmv_stride(m, n, kl, ku, trans, incx, incy):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gbmv_reference(
-        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, ref_y, incy
+    ref_y = gbmv_reference(
+        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, y, incy
     )
     flag_blas.ops.cgbmv(
         trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, y, incy
     )
 
-    tol = _gbmv_tol(dtype, actual_kl, actual_ku)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(
+        y, ref_y, dtype, reduce_dim=gbmv_reduce_dim(trans, m, n, actual_kl, actual_ku)
+    )
 
 
 @pytest.mark.cgbmv
@@ -400,16 +487,17 @@ def test_cgbmv_alpha_zero():
     AB = create_banded_data(m, n, kl, ku, lda, dtype, flag_blas.device)
     x = torch.randn(n, dtype=dtype, device=flag_blas.device)
     y = torch.randn(m, dtype=dtype, device=flag_blas.device)
-    y_orig, y_ref = y.clone(), y.clone()
-
-    cublas_gbmv_reference(
-        CUBLAS_OP_N, m, n, kl, ku, 0.0j, AB, lda, x, 1, 2.0 + 1.0j, y_ref, 1
+    y_orig = y.clone()
+    y_ref = gbmv_reference(
+        CUBLAS_OP_N, m, n, kl, ku, 0.0j, AB, lda, x, 1, 2.0 + 1.0j, y, 1
     )
     flag_blas.ops.cgbmv(
         CUBLAS_OP_N, m, n, kl, ku, 0.0j, AB, lda, x, 1, 2.0 + 1.0j, y, 1
     )
-    torch.testing.assert_close(y, y_ref)
-    torch.testing.assert_close(y, y_orig * (2.0 + 1.0j))
+    blas_assert_close(
+        y, y_ref, dtype, reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku)
+    )
+    blas_assert_close(y, to_reference(y_orig * (2.0 + 1.0j)), dtype)
 
 
 @pytest.mark.cgbmv
@@ -421,10 +509,8 @@ def test_cgbmv_beta_zero():
 
     y_nan = torch.full((m,), float("nan"), dtype=dtype, device=flag_blas.device)
     y_zero = torch.zeros(m, dtype=dtype, device=flag_blas.device)
-    ref_y_nan = y_nan.clone()
-
-    cublas_gbmv_reference(
-        CUBLAS_OP_N, m, n, kl, ku, 1.0 + 0.5j, AB, lda, x, 1, 0.0j, ref_y_nan, 1
+    ref_y_nan = gbmv_reference(
+        CUBLAS_OP_N, m, n, kl, ku, 1.0 + 0.5j, AB, lda, x, 1, 0.0j, y_nan, 1
     )
     flag_blas.ops.cgbmv(
         CUBLAS_OP_N, m, n, kl, ku, 1.0 + 0.5j, AB, lda, x, 1, 0.0j, y_nan, 1
@@ -432,8 +518,18 @@ def test_cgbmv_beta_zero():
     flag_blas.ops.cgbmv(
         CUBLAS_OP_N, m, n, kl, ku, 1.0 + 0.5j, AB, lda, x, 1, 0.0j, y_zero, 1
     )
-    torch.testing.assert_close(y_nan, ref_y_nan)
-    torch.testing.assert_close(y_nan, y_zero)
+    blas_assert_close(
+        y_nan,
+        ref_y_nan,
+        dtype,
+        reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku),
+    )
+    blas_assert_close(
+        y_nan,
+        to_reference(y_zero),
+        dtype,
+        reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku),
+    )
 
 
 @pytest.mark.zgbmv
@@ -454,17 +550,16 @@ def test_accuracy_zgbmv(m, n, kl, ku, trans, beta):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gbmv_reference(
-        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, ref_y, 1
+    ref_y = gbmv_reference(
+        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, y, 1
     )
     flag_blas.ops.zgbmv(
         trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, 1, beta, y, 1
     )
 
-    tol = _gbmv_tol(dtype, actual_kl, actual_ku)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(
+        y, ref_y, dtype, reduce_dim=gbmv_reduce_dim(trans, m, n, actual_kl, actual_ku)
+    )
 
 
 @pytest.mark.zgbmv
@@ -482,17 +577,16 @@ def test_accuracy_zgbmv_stride(m, n, kl, ku, trans, incx, incy):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gbmv_reference(
-        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, ref_y, incy
+    ref_y = gbmv_reference(
+        trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, y, incy
     )
     flag_blas.ops.zgbmv(
         trans, m, n, actual_kl, actual_ku, alpha, AB, lda, x, incx, beta, y, incy
     )
 
-    tol = _gbmv_tol(dtype, actual_kl, actual_ku)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(
+        y, ref_y, dtype, reduce_dim=gbmv_reduce_dim(trans, m, n, actual_kl, actual_ku)
+    )
 
 
 @pytest.mark.zgbmv
@@ -503,16 +597,17 @@ def test_zgbmv_alpha_zero():
     AB = create_banded_data(m, n, kl, ku, lda, dtype, flag_blas.device)
     x = torch.randn(n, dtype=dtype, device=flag_blas.device)
     y = torch.randn(m, dtype=dtype, device=flag_blas.device)
-    y_orig, y_ref = y.clone(), y.clone()
-
-    cublas_gbmv_reference(
-        CUBLAS_OP_N, m, n, kl, ku, 0.0j, AB, lda, x, 1, 2.0 + 1.0j, y_ref, 1
+    y_orig = y.clone()
+    y_ref = gbmv_reference(
+        CUBLAS_OP_N, m, n, kl, ku, 0.0j, AB, lda, x, 1, 2.0 + 1.0j, y, 1
     )
     flag_blas.ops.zgbmv(
         CUBLAS_OP_N, m, n, kl, ku, 0.0j, AB, lda, x, 1, 2.0 + 1.0j, y, 1
     )
-    torch.testing.assert_close(y, y_ref)
-    torch.testing.assert_close(y, y_orig * (2.0 + 1.0j))
+    blas_assert_close(
+        y, y_ref, dtype, reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku)
+    )
+    blas_assert_close(y, to_reference(y_orig * (2.0 + 1.0j)), dtype)
 
 
 @pytest.mark.zgbmv
@@ -525,10 +620,8 @@ def test_zgbmv_beta_zero():
 
     y_nan = torch.full((m,), float("nan"), dtype=dtype, device=flag_blas.device)
     y_zero = torch.zeros(m, dtype=dtype, device=flag_blas.device)
-    ref_y_nan = y_nan.clone()
-
-    cublas_gbmv_reference(
-        CUBLAS_OP_N, m, n, kl, ku, 1.0 + 0.5j, AB, lda, x, 1, 0.0j, ref_y_nan, 1
+    ref_y_nan = gbmv_reference(
+        CUBLAS_OP_N, m, n, kl, ku, 1.0 + 0.5j, AB, lda, x, 1, 0.0j, y_nan, 1
     )
     flag_blas.ops.zgbmv(
         CUBLAS_OP_N, m, n, kl, ku, 1.0 + 0.5j, AB, lda, x, 1, 0.0j, y_nan, 1
@@ -536,5 +629,15 @@ def test_zgbmv_beta_zero():
     flag_blas.ops.zgbmv(
         CUBLAS_OP_N, m, n, kl, ku, 1.0 + 0.5j, AB, lda, x, 1, 0.0j, y_zero, 1
     )
-    torch.testing.assert_close(y_nan, ref_y_nan)
-    torch.testing.assert_close(y_nan, y_zero)
+    blas_assert_close(
+        y_nan,
+        ref_y_nan,
+        dtype,
+        reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku),
+    )
+    blas_assert_close(
+        y_nan,
+        to_reference(y_zero),
+        dtype,
+        reduce_dim=gbmv_reduce_dim(CUBLAS_OP_N, m, n, kl, ku),
+    )

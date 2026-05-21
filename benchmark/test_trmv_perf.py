@@ -8,17 +8,16 @@ import torch
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
+from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 from flag_blas.ops import (
-    CUBLAS_OP_N,
-    CUBLAS_OP_T,
-    CUBLAS_OP_C,
-    CUBLAS_FILL_MODE_LOWER,
-    CUBLAS_FILL_MODE_UPPER,
     CUBLAS_DIAG_NON_UNIT,
     CUBLAS_DIAG_UNIT,
+    CUBLAS_FILL_MODE_LOWER,
+    CUBLAS_FILL_MODE_UPPER,
+    CUBLAS_OP_C,
+    CUBLAS_OP_N,
+    CUBLAS_OP_T,
 )
-
-from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
 
 TRMV_SIZES = [
@@ -124,7 +123,6 @@ def _generate_triangular_A(n, lda, uplo, dtype, device):
 
 
 class TrmvBenchmark(Benchmark):
-
     def __init__(
         self,
         *args,
@@ -185,6 +183,15 @@ class TrmvBenchmark(Benchmark):
         io_amount = a_bytes + 2 * shape_utils.size_in_bytes(x)
         return io_amount * 1e-9 / (latency * 1e-3)
 
+    def get_correctness_reduce_dim(self, args, kwargs):
+        return kwargs["n"]
+
+    def clone_correctness_inputs(self, args, kwargs):
+        A, x = args
+        ref_args = (A, x.clone())
+        blas_args = (A, x.clone())
+        return ref_args, kwargs, blas_args, kwargs
+
 
 @pytest.mark.strmv
 def test_perf_strmv():
@@ -197,7 +204,7 @@ def test_perf_strmv():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.strmv
@@ -211,7 +218,7 @@ def test_perf_strmv_upper():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.strmv
@@ -225,7 +232,7 @@ def test_perf_strmv_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.strmv
@@ -239,7 +246,7 @@ def test_perf_strmv_upper_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.strmv
@@ -253,7 +260,7 @@ def test_perf_strmv_unit():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dtrmv
@@ -269,7 +276,7 @@ def test_perf_dtrmv():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dtrmv
@@ -285,7 +292,7 @@ def test_perf_dtrmv_upper():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dtrmv
@@ -301,7 +308,7 @@ def test_perf_dtrmv_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dtrmv
@@ -317,7 +324,7 @@ def test_perf_dtrmv_upper_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dtrmv
@@ -333,7 +340,7 @@ def test_perf_dtrmv_unit():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctrmv
@@ -347,7 +354,7 @@ def test_perf_ctrmv():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctrmv
@@ -361,7 +368,7 @@ def test_perf_ctrmv_upper():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctrmv
@@ -375,7 +382,7 @@ def test_perf_ctrmv_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctrmv
@@ -389,7 +396,7 @@ def test_perf_ctrmv_conj():
         trans=CUBLAS_OP_C,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctrmv
@@ -403,7 +410,7 @@ def test_perf_ctrmv_upper_conj():
         trans=CUBLAS_OP_C,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctrmv
@@ -417,7 +424,7 @@ def test_perf_ctrmv_unit():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztrmv
@@ -433,7 +440,7 @@ def test_perf_ztrmv():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztrmv
@@ -449,7 +456,7 @@ def test_perf_ztrmv_upper():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztrmv
@@ -465,7 +472,7 @@ def test_perf_ztrmv_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztrmv
@@ -481,7 +488,7 @@ def test_perf_ztrmv_conj():
         trans=CUBLAS_OP_C,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztrmv
@@ -497,7 +504,7 @@ def test_perf_ztrmv_upper_conj():
         trans=CUBLAS_OP_C,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztrmv
@@ -513,4 +520,4 @@ def test_perf_ztrmv_unit():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)

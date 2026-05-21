@@ -8,9 +8,8 @@ import torch
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
+from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
-
-from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
 
 SYMV_SIZES = [
@@ -137,7 +136,6 @@ def _generate_sym_A(n, lda, dtype, device):
 
 
 class SymvBenchmark(Benchmark):
-
     def __init__(
         self,
         *args,
@@ -206,6 +204,15 @@ class SymvBenchmark(Benchmark):
         )
         return io_amount * 1e-9 / (latency * 1e-3)
 
+    def get_correctness_reduce_dim(self, args, kwargs):
+        return kwargs["n"]
+
+    def clone_correctness_inputs(self, args, kwargs):
+        A, x, y = args
+        ref_args = (A, x, y.clone())
+        blas_args = (A, x, y.clone())
+        return ref_args, kwargs, blas_args, kwargs
+
 
 @pytest.mark.ssymv
 def test_perf_ssymv():
@@ -216,7 +223,7 @@ def test_perf_ssymv():
         dtypes=[torch.float32],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ssymv
@@ -228,7 +235,7 @@ def test_perf_ssymv_upper():
         dtypes=[torch.float32],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dsymv
@@ -242,7 +249,7 @@ def test_perf_dsymv():
         dtypes=[torch.float64],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dsymv
@@ -256,7 +263,7 @@ def test_perf_dsymv_upper():
         dtypes=[torch.float64],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.csymv
@@ -270,7 +277,7 @@ def test_perf_csymv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.csymv
@@ -284,7 +291,7 @@ def test_perf_csymv_upper():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.zsymv
@@ -300,7 +307,7 @@ def test_perf_zsymv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.zsymv
@@ -316,4 +323,4 @@ def test_perf_zsymv_upper():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)

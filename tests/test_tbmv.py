@@ -1,19 +1,25 @@
 import ctypes
 import ctypes.util
 import math
+
+import cupy as cp
 import pytest
 import torch
-import cupy as cp
+from scipy.linalg import blas as cpu_blas
+
 import flag_blas
 from flag_blas.ops import (
-    CUBLAS_OP_N,
-    CUBLAS_OP_T,
-    CUBLAS_OP_C,
-    CUBLAS_FILL_MODE_LOWER,
-    CUBLAS_FILL_MODE_UPPER,
     CUBLAS_DIAG_NON_UNIT,
     CUBLAS_DIAG_UNIT,
+    CUBLAS_FILL_MODE_LOWER,
+    CUBLAS_FILL_MODE_UPPER,
+    CUBLAS_OP_C,
+    CUBLAS_OP_N,
+    CUBLAS_OP_T,
 )
+
+from .accuracy_utils import blas_assert_close, to_cpu_blas_tensor
+from .conftest import TO_CPU
 
 
 def load_cublas():
@@ -62,6 +68,35 @@ def cublas_tbmv_reference(uplo, trans, diag, n, k, A, lda, x, incx):
     )
     if status != 0:
         raise RuntimeError(f"cublasXtbmv_v2 execution failed with error code: {status}")
+
+
+def cpu_tbmv_reference(uplo, trans, diag, n, k, A, lda, x, incx):
+    ref_x = to_cpu_blas_tensor(x)
+    if n == 0:
+        return ref_x
+
+    ref_A = to_cpu_blas_tensor(A)
+    func = cpu_blas.ztbmv if ref_A.dtype.is_complex else cpu_blas.dtbmv
+    xout = func(
+        k,
+        ref_A.numpy().T,
+        ref_x.numpy(),
+        incx=incx,
+        lower=int(uplo == CUBLAS_FILL_MODE_LOWER),
+        trans=trans,
+        diag=diag,
+        overwrite_x=1,
+    )
+    return torch.from_numpy(xout)
+
+
+def tbmv_reference(uplo, trans, diag, n, k, A, lda, x, incx):
+    if TO_CPU:
+        return cpu_tbmv_reference(uplo, trans, diag, n, k, A, lda, x, incx)
+
+    ref_x = x.clone()
+    cublas_tbmv_reference(uplo, trans, diag, n, k, A, lda, ref_x, incx)
+    return ref_x
 
 
 TBMV_SIZES = [
@@ -145,13 +180,10 @@ def test_accuracy_stbmv(n, k, uplo, trans, diag, lda_extra):
     lda = k + 1 + lda_extra
     A = make_triangular_banded(n, k, lda, uplo, diag, dtype, flag_blas.device)
     x = torch.randn(max(n, 1), dtype=dtype, device=flag_blas.device)
-    ref_x = x.clone()
-
-    cublas_tbmv_reference(uplo, trans, diag, n, k, A, lda, ref_x, 1)
+    ref_x = tbmv_reference(uplo, trans, diag, n, k, A, lda, x, 1)
     flag_blas.ops.stbmv(uplo, trans, diag, n, k, A, lda, x, 1)
 
-    tol = _tbmv_tol(dtype, k)
-    torch.testing.assert_close(x, ref_x, rtol=tol, atol=tol)
+    blas_assert_close(x, ref_x, dtype, reduce_dim=k + 1)
 
 
 @pytest.mark.stbmv
@@ -168,13 +200,10 @@ def test_accuracy_stbmv_stride(n, k, uplo, trans, diag, incx, lda_extra):
     lda = k + 1 + lda_extra
     A = make_triangular_banded(n, k, lda, uplo, diag, dtype, flag_blas.device)
     x = torch.randn(1 + (n - 1) * incx, dtype=dtype, device=flag_blas.device)
-    ref_x = x.clone()
-
-    cublas_tbmv_reference(uplo, trans, diag, n, k, A, lda, ref_x, incx)
+    ref_x = tbmv_reference(uplo, trans, diag, n, k, A, lda, x, incx)
     flag_blas.ops.stbmv(uplo, trans, diag, n, k, A, lda, x, incx)
 
-    tol = _tbmv_tol(dtype, k)
-    torch.testing.assert_close(x, ref_x, rtol=tol, atol=tol)
+    blas_assert_close(x, ref_x, dtype, reduce_dim=k + 1)
 
 
 @pytest.mark.dtbmv
@@ -191,13 +220,10 @@ def test_accuracy_dtbmv(n, k, uplo, trans, diag, lda_extra):
     lda = k + 1 + lda_extra
     A = make_triangular_banded(n, k, lda, uplo, diag, dtype, flag_blas.device)
     x = torch.randn(max(n, 1), dtype=dtype, device=flag_blas.device)
-    ref_x = x.clone()
-
-    cublas_tbmv_reference(uplo, trans, diag, n, k, A, lda, ref_x, 1)
+    ref_x = tbmv_reference(uplo, trans, diag, n, k, A, lda, x, 1)
     flag_blas.ops.dtbmv(uplo, trans, diag, n, k, A, lda, x, 1)
 
-    tol = _tbmv_tol(dtype, k)
-    torch.testing.assert_close(x, ref_x, rtol=tol, atol=tol)
+    blas_assert_close(x, ref_x, dtype, reduce_dim=k + 1)
 
 
 @pytest.mark.dtbmv
@@ -215,13 +241,10 @@ def test_accuracy_dtbmv_stride(n, k, uplo, trans, diag, incx, lda_extra):
     lda = k + 1 + lda_extra
     A = make_triangular_banded(n, k, lda, uplo, diag, dtype, flag_blas.device)
     x = torch.randn(1 + (n - 1) * incx, dtype=dtype, device=flag_blas.device)
-    ref_x = x.clone()
-
-    cublas_tbmv_reference(uplo, trans, diag, n, k, A, lda, ref_x, incx)
+    ref_x = tbmv_reference(uplo, trans, diag, n, k, A, lda, x, incx)
     flag_blas.ops.dtbmv(uplo, trans, diag, n, k, A, lda, x, incx)
 
-    tol = _tbmv_tol(dtype, k)
-    torch.testing.assert_close(x, ref_x, rtol=tol, atol=tol)
+    blas_assert_close(x, ref_x, dtype, reduce_dim=k + 1)
 
 
 @pytest.mark.ctbmv
@@ -237,13 +260,10 @@ def test_accuracy_ctbmv(n, k, uplo, trans, diag, lda_extra):
     lda = k + 1 + lda_extra
     A = make_triangular_banded(n, k, lda, uplo, diag, dtype, flag_blas.device)
     x = torch.randn(max(n, 1), dtype=dtype, device=flag_blas.device)
-    ref_x = x.clone()
-
-    cublas_tbmv_reference(uplo, trans, diag, n, k, A, lda, ref_x, 1)
+    ref_x = tbmv_reference(uplo, trans, diag, n, k, A, lda, x, 1)
     flag_blas.ops.ctbmv(uplo, trans, diag, n, k, A, lda, x, 1)
 
-    tol = _tbmv_tol(dtype, k)
-    torch.testing.assert_close(x, ref_x, rtol=tol, atol=tol)
+    blas_assert_close(x, ref_x, dtype, reduce_dim=k + 1)
 
 
 @pytest.mark.ctbmv
@@ -260,13 +280,10 @@ def test_accuracy_ctbmv_stride(n, k, uplo, trans, diag, incx, lda_extra):
     lda = k + 1 + lda_extra
     A = make_triangular_banded(n, k, lda, uplo, diag, dtype, flag_blas.device)
     x = torch.randn(1 + (n - 1) * incx, dtype=dtype, device=flag_blas.device)
-    ref_x = x.clone()
-
-    cublas_tbmv_reference(uplo, trans, diag, n, k, A, lda, ref_x, incx)
+    ref_x = tbmv_reference(uplo, trans, diag, n, k, A, lda, x, incx)
     flag_blas.ops.ctbmv(uplo, trans, diag, n, k, A, lda, x, incx)
 
-    tol = _tbmv_tol(dtype, k)
-    torch.testing.assert_close(x, ref_x, rtol=tol, atol=tol)
+    blas_assert_close(x, ref_x, dtype, reduce_dim=k + 1)
 
 
 @pytest.mark.ztbmv
@@ -283,13 +300,10 @@ def test_accuracy_ztbmv(n, k, uplo, trans, diag, lda_extra):
     lda = k + 1 + lda_extra
     A = make_triangular_banded(n, k, lda, uplo, diag, dtype, flag_blas.device)
     x = torch.randn(max(n, 1), dtype=dtype, device=flag_blas.device)
-    ref_x = x.clone()
-
-    cublas_tbmv_reference(uplo, trans, diag, n, k, A, lda, ref_x, 1)
+    ref_x = tbmv_reference(uplo, trans, diag, n, k, A, lda, x, 1)
     flag_blas.ops.ztbmv(uplo, trans, diag, n, k, A, lda, x, 1)
 
-    tol = _tbmv_tol(dtype, k)
-    torch.testing.assert_close(x, ref_x, rtol=tol, atol=tol)
+    blas_assert_close(x, ref_x, dtype, reduce_dim=k + 1)
 
 
 @pytest.mark.ztbmv
@@ -307,10 +321,7 @@ def test_accuracy_ztbmv_stride(n, k, uplo, trans, diag, incx, lda_extra):
     lda = k + 1 + lda_extra
     A = make_triangular_banded(n, k, lda, uplo, diag, dtype, flag_blas.device)
     x = torch.randn(1 + (n - 1) * incx, dtype=dtype, device=flag_blas.device)
-    ref_x = x.clone()
-
-    cublas_tbmv_reference(uplo, trans, diag, n, k, A, lda, ref_x, incx)
+    ref_x = tbmv_reference(uplo, trans, diag, n, k, A, lda, x, incx)
     flag_blas.ops.ztbmv(uplo, trans, diag, n, k, A, lda, x, incx)
 
-    tol = _tbmv_tol(dtype, k)
-    torch.testing.assert_close(x, ref_x, rtol=tol, atol=tol)
+    blas_assert_close(x, ref_x, dtype, reduce_dim=k + 1)

@@ -8,9 +8,8 @@ import torch
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
+from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
-
-from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
 
 HEMV_SIZES = [
@@ -127,7 +126,6 @@ def _generate_her_A(n, lda, dtype, device):
 
 
 class HemvBenchmark(Benchmark):
-
     def __init__(
         self,
         *args,
@@ -192,6 +190,15 @@ class HemvBenchmark(Benchmark):
         )
         return io_amount * 1e-9 / (latency * 1e-3)
 
+    def get_correctness_reduce_dim(self, args, kwargs):
+        return kwargs["n"]
+
+    def clone_correctness_inputs(self, args, kwargs):
+        A, x, y = args
+        ref_args = (A, x, y.clone())
+        blas_args = (A, x, y.clone())
+        return ref_args, kwargs, blas_args, kwargs
+
 
 @pytest.mark.chemv
 def test_perf_chemv():
@@ -204,7 +211,7 @@ def test_perf_chemv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.chemv
@@ -218,7 +225,7 @@ def test_perf_chemv_upper():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.zhemv
@@ -234,7 +241,7 @@ def test_perf_zhemv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.zhemv
@@ -250,4 +257,4 @@ def test_perf_zhemv_upper():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)

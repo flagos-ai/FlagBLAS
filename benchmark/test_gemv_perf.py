@@ -7,9 +7,8 @@ import torch
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
-from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C
-
-from benchmark.performance_utils import Benchmark
+from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
+from flag_blas.ops import CUBLAS_OP_C, CUBLAS_OP_N, CUBLAS_OP_T
 from flag_blas.utils import shape_utils
 
 
@@ -343,7 +342,6 @@ def gems_bfgemv_wrapper(
 
 
 class GemvBenchmark(Benchmark):
-
     def __init__(self, *args, trans=CUBLAS_OP_N, alpha=1.5, beta=0.5, **kwargs):
         super().__init__(*args, **kwargs)
         self.trans = trans
@@ -469,6 +467,15 @@ class GemvBenchmark(Benchmark):
         )
         return io_amount * 1e-9 / (latency * 1e-3)
 
+    def get_correctness_reduce_dim(self, args, kwargs):
+        return kwargs["n"] if kwargs["trans"] == CUBLAS_OP_N else kwargs["m"]
+
+    def clone_correctness_inputs(self, args, kwargs):
+        A, x, y = args
+        ref_args = (A, x, y.clone())
+        blas_args = (A, x, y.clone())
+        return ref_args, kwargs, blas_args, kwargs
+
 
 @pytest.mark.sgemv
 def test_perf_sgemv():
@@ -479,7 +486,7 @@ def test_perf_sgemv():
         dtypes=[torch.float32],
         trans=CUBLAS_OP_N,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.sgemv
@@ -491,7 +498,7 @@ def test_perf_sgemv_trans():
         dtypes=[torch.float32],
         trans=CUBLAS_OP_T,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dgemv
@@ -505,7 +512,7 @@ def test_perf_dgemv():
         dtypes=[torch.float64],
         trans=CUBLAS_OP_N,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dgemv
@@ -519,7 +526,7 @@ def test_perf_dgemv_trans():
         dtypes=[torch.float64],
         trans=CUBLAS_OP_T,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.cgemv
@@ -533,7 +540,7 @@ def test_perf_cgemv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.cgemv
@@ -547,7 +554,7 @@ def test_perf_cgemv_trans():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.cgemv
@@ -561,7 +568,7 @@ def test_perf_cgemv_conj():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.zgemv
@@ -577,7 +584,7 @@ def test_perf_zgemv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.zgemv
@@ -593,7 +600,7 @@ def test_perf_zgemv_trans():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.zgemv
@@ -609,7 +616,7 @@ def test_perf_zgemv_conj():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 class HalfGemvBenchmark(GemvBenchmark):
@@ -662,7 +669,7 @@ def test_perf_hgemv():
         dtypes=[torch.float16],
         trans=CUBLAS_OP_N,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.hgemv
@@ -674,7 +681,7 @@ def test_perf_hgemv_trans():
         dtypes=[torch.float16],
         trans=CUBLAS_OP_T,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.bfgemv
@@ -686,7 +693,7 @@ def test_perf_bfgemv():
         dtypes=[torch.bfloat16],
         trans=CUBLAS_OP_N,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.bfgemv
@@ -698,7 +705,7 @@ def test_perf_bfgemv_trans():
         dtypes=[torch.bfloat16],
         trans=CUBLAS_OP_T,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 def cublas_sgemv_fp8_baseline(
@@ -760,7 +767,6 @@ def gems_fp8_gemv_wrapper(
 
 
 class Fp8GemvBenchmark(Benchmark):
-
     def __init__(
         self,
         *args,
@@ -865,6 +871,15 @@ class Fp8GemvBenchmark(Benchmark):
         )
         return io_amount * 1e-9 / (latency * 1e-3)
 
+    def get_correctness_reduce_dim(self, args, kwargs):
+        return kwargs["n"] if kwargs["trans"] == CUBLAS_OP_N else kwargs["m"]
+
+    def clone_correctness_inputs(self, args, kwargs):
+        A_fp8, x_fp8, y = args
+        ref_args = (A_fp8, x_fp8, y.clone())
+        blas_args = (A_fp8, x_fp8, y.clone())
+        return ref_args, kwargs, blas_args, kwargs
+
 
 @pytest.mark.fp8gemv
 def test_perf_fp8_gemv_e4m3_vs_sgemv_trans():
@@ -876,7 +891,7 @@ def test_perf_fp8_gemv_e4m3_vs_sgemv_trans():
         trans=CUBLAS_OP_T,
         fp8_dtype=torch.float8_e4m3fn,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.fp8gemv
@@ -889,4 +904,4 @@ def test_perf_fp8_gemv_e5m2_vs_sgemv_trans():
         trans=CUBLAS_OP_T,
         fp8_dtype=torch.float8_e5m2,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)

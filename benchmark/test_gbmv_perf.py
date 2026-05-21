@@ -9,9 +9,8 @@ import torch
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
-from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C
-
-from benchmark.performance_utils import Benchmark
+from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
+from flag_blas.ops import CUBLAS_OP_C, CUBLAS_OP_N, CUBLAS_OP_T
 from flag_blas.utils import shape_utils
 
 GBMV_BANDS = [
@@ -172,7 +171,6 @@ def _generate_banded_AB(m, n, kl, ku, lda, dtype, device):
 
 
 class GbmvBenchmark(Benchmark):
-
     def __init__(
         self,
         *args,
@@ -284,6 +282,15 @@ class GbmvBenchmark(Benchmark):
         )
         return io_amount * 1e-9 / (latency * 1e-3)
 
+    def get_correctness_reduce_dim(self, args, kwargs):
+        return kwargs["n"] if kwargs["trans"] == CUBLAS_OP_N else kwargs["m"]
+
+    def clone_correctness_inputs(self, args, kwargs):
+        AB, x, y = args
+        ref_args = (AB, x, y.clone())
+        blas_args = (AB, x, y.clone())
+        return ref_args, kwargs, blas_args, kwargs
+
 
 @pytest.mark.sgbmv
 def test_perf_sgbmv():
@@ -294,7 +301,7 @@ def test_perf_sgbmv():
         dtypes=[torch.float32],
         trans=CUBLAS_OP_N,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.sgbmv
@@ -306,7 +313,7 @@ def test_perf_sgbmv_trans():
         dtypes=[torch.float32],
         trans=CUBLAS_OP_T,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dgbmv
@@ -320,7 +327,7 @@ def test_perf_dgbmv():
         dtypes=[torch.float64],
         trans=CUBLAS_OP_N,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dgbmv
@@ -334,7 +341,7 @@ def test_perf_dgbmv_trans():
         dtypes=[torch.float64],
         trans=CUBLAS_OP_T,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.cgbmv
@@ -348,7 +355,7 @@ def test_perf_cgbmv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.cgbmv
@@ -362,7 +369,7 @@ def test_perf_cgbmv_trans():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.cgbmv
@@ -376,7 +383,7 @@ def test_perf_cgbmv_conj():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.zgbmv
@@ -392,7 +399,7 @@ def test_perf_zgbmv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.zgbmv
@@ -408,7 +415,7 @@ def test_perf_zgbmv_trans():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.zgbmv
@@ -424,4 +431,4 @@ def test_perf_zgbmv_conj():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)

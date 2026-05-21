@@ -1,10 +1,15 @@
-import pytest
-import torch
 import cupy as cp
 import numpy as np
+import pytest
+import torch
 from cupy_backends.cuda.libs import cublas
+from scipy.linalg import blas as cpu_blas
+
 import flag_blas
-from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C
+from flag_blas.ops import CUBLAS_OP_C, CUBLAS_OP_N, CUBLAS_OP_T
+
+from .accuracy_utils import blas_assert_close, to_cpu_blas_tensor, to_reference
+from .conftest import TO_CPU
 
 GEMV_SHAPES = [
     (64, 64),
@@ -80,18 +85,20 @@ STRIDES = [(1, 1), (2, 1), (1, 2), (2, 2)]
 
 
 def prepare_fp8_gemv_data(m, n, incx, incy, fp8_dtype, y_dtype, device):
-    A_f32 = torch.randn(m, n, dtype=torch.float32, device=device) * 0.1
+    A_f32 = torch.randn(m, n, dtype=torch.float32, device=device)
     A_fp8 = A_f32.to(fp8_dtype)
-    A_col_f32 = A_fp8.float().t().contiguous().t()
 
-    x_f32 = torch.randn(m * incx, dtype=torch.float32, device=device) * 0.1
+    x_f32 = torch.randn(m * incx, dtype=torch.float32, device=device)
     x_fp8 = x_f32.to(fp8_dtype)
-    x_f32_ref = x_fp8.float()
 
     y = torch.randn(n * incy, dtype=y_dtype, device=device)
-    ref_y = y.float().clone()
+    if TO_CPU:
+        return A_fp8, None, x_fp8, None, y, None
 
-    return A_fp8, A_col_f32, x_fp8, x_f32_ref, y, ref_y
+    A_col_f32 = A_fp8.float().t().contiguous().t()
+    x_f32_ref = x_fp8.float()
+
+    return A_fp8, A_col_f32, x_fp8, x_f32_ref, y, None
 
 
 def cublas_gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
@@ -130,6 +137,56 @@ def cublas_gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
         y.data_ptr(),
         incy,
     )
+
+
+def cpu_gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
+    if m == 0 or n == 0:
+        return to_cpu_blas_tensor(y)
+
+    ref_A = to_cpu_blas_tensor(A)
+    ref_x = to_cpu_blas_tensor(x)
+    if beta == 0 and incy == 1:
+        ref_dtype = torch.complex128 if y.is_complex() else torch.float64
+        ref_y = torch.empty(y.shape, dtype=ref_dtype)
+    else:
+        ref_y = to_cpu_blas_tensor(y)
+    func = cpu_blas.zgemv if ref_A.dtype.is_complex else cpu_blas.dgemv
+
+    yout = func(
+        alpha,
+        ref_A.numpy(),
+        ref_x.numpy(),
+        beta=beta,
+        y=ref_y.numpy(),
+        incx=incx,
+        incy=incy,
+        trans=trans,
+        overwrite_y=1,
+    )
+    return torch.from_numpy(yout)
+
+
+def gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
+    if TO_CPU:
+        return cpu_gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy)
+
+    ref_y = y.clone()
+    if A.dtype in (torch.float16, torch.bfloat16):
+        cupy_half_gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, ref_y, incy)
+    else:
+        cublas_gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, ref_y, incy)
+    return ref_y
+
+
+def fp8_gemv_reference(trans, m, n, alpha, A, A_col_ref, x, x_ref, incx, beta, y, incy):
+    if TO_CPU:
+        return cpu_gemv_reference(trans, m, n, alpha, A, n, x, incx, beta, y, incy)
+
+    ref_y = y.float().clone()
+    cublas_gemv_reference(
+        trans, m, n, alpha, A_col_ref, m, x_ref, incx, beta, ref_y, incy
+    )
+    return ref_y
 
 
 def cupy_half_gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
@@ -210,13 +267,14 @@ def test_accuracy_sgemv(m, n, trans, beta):
     x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len, dtype=dtype, device=flag_blas.device)
 
-    ref_y = y.clone()
-
-    cublas_gemv_reference(trans, m, n, alpha, A_col, m, x, 1, beta, ref_y, 1)
+    ref_y = gemv_reference(trans, m, n, alpha, A_col, m, x, 1, beta, y, 1)
     flag_blas.ops.sgemv(trans, m, n, alpha, A_row, n, x, 1, beta, y, 1)
 
-    tol = min(1e-5 * (x_len**0.5), 1e-3)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        tol = min(1e-5 * (x_len**0.5), 1e-3)
+        torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
 
 @pytest.mark.sgemv
@@ -232,13 +290,14 @@ def test_accuracy_sgemv_stride(m, n, trans, incx, incy):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gemv_reference(trans, m, n, alpha, A_col, m, x, incx, beta, ref_y, incy)
+    ref_y = gemv_reference(trans, m, n, alpha, A_col, m, x, incx, beta, y, incy)
     flag_blas.ops.sgemv(trans, m, n, alpha, A_row, n, x, incx, beta, y, incy)
 
-    tol = min(1e-5 * (x_len**0.5), 1e-3)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        tol = min(1e-5 * (x_len**0.5), 1e-3)
+        torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
 
 @pytest.mark.dgemv
@@ -257,13 +316,14 @@ def test_accuracy_dgemv_stride(m, n, trans, incx, incy):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gemv_reference(trans, m, n, alpha, A_col, m, x, incx, beta, ref_y, incy)
+    ref_y = gemv_reference(trans, m, n, alpha, A_col, m, x, incx, beta, y, incy)
     flag_blas.ops.dgemv(trans, m, n, alpha, A_row, n, x, incx, beta, y, incy)
 
-    tol = min(1e-14 * (x_len**0.5), 1e-11)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        tol = min(1e-14 * (x_len**0.5), 1e-11)
+        torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
 
 @pytest.mark.dgemv
@@ -283,13 +343,14 @@ def test_accuracy_dgemv(m, n, trans, beta):
     x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len, dtype=dtype, device=flag_blas.device)
 
-    ref_y = y.clone()
-
-    cublas_gemv_reference(trans, m, n, alpha, A_col, m, x, 1, beta, ref_y, 1)
+    ref_y = gemv_reference(trans, m, n, alpha, A_col, m, x, 1, beta, y, 1)
     flag_blas.ops.dgemv(trans, m, n, alpha, A_row, n, x, 1, beta, y, 1)
 
-    tol = min(1e-13 * (x_len**0.5), 1e-11)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        tol = min(1e-13 * (x_len**0.5), 1e-11)
+        torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
 
 @pytest.mark.cgemv
@@ -305,13 +366,14 @@ def test_accuracy_cgemv_stride(m, n, trans, incx, incy):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gemv_reference(trans, m, n, alpha, A_col, m, x, incx, beta, ref_y, incy)
+    ref_y = gemv_reference(trans, m, n, alpha, A_col, m, x, incx, beta, y, incy)
     flag_blas.ops.cgemv(trans, m, n, alpha, A_row, n, x, incx, beta, y, incy)
 
-    tol = min(1e-5 * (x_len**0.5), 1e-3)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        tol = min(1e-5 * (x_len**0.5), 1e-3)
+        torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
 
 @pytest.mark.cgemv
@@ -328,13 +390,14 @@ def test_accuracy_cgemv(m, n, trans, beta):
     x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len, dtype=dtype, device=flag_blas.device)
 
-    ref_y = y.clone()
-
-    cublas_gemv_reference(trans, m, n, alpha, A_col, m, x, 1, beta, ref_y, 1)
+    ref_y = gemv_reference(trans, m, n, alpha, A_col, m, x, 1, beta, y, 1)
     flag_blas.ops.cgemv(trans, m, n, alpha, A_row, n, x, 1, beta, y, 1)
 
-    tol = min(1e-5 * (x_len**0.5), 1e-3)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        tol = min(1e-5 * (x_len**0.5), 1e-3)
+        torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
 
 @pytest.mark.zgemv
@@ -353,13 +416,14 @@ def test_accuracy_zgemv_stride(m, n, trans, incx, incy):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_gemv_reference(trans, m, n, alpha, A_col, m, x, incx, beta, ref_y, incy)
+    ref_y = gemv_reference(trans, m, n, alpha, A_col, m, x, incx, beta, y, incy)
     flag_blas.ops.zgemv(trans, m, n, alpha, A_row, n, x, incx, beta, y, incy)
 
-    tol = min(1e-14 * (x_len**0.5), 1e-11)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        tol = min(1e-14 * (x_len**0.5), 1e-11)
+        torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
 
 @pytest.mark.zgemv
@@ -379,13 +443,14 @@ def test_accuracy_zgemv(m, n, trans, beta):
     x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len, dtype=dtype, device=flag_blas.device)
 
-    ref_y = y.clone()
-
-    cublas_gemv_reference(trans, m, n, alpha, A_col, m, x, 1, beta, ref_y, 1)
+    ref_y = gemv_reference(trans, m, n, alpha, A_col, m, x, 1, beta, y, 1)
     flag_blas.ops.zgemv(trans, m, n, alpha, A_row, n, x, 1, beta, y, 1)
 
-    tol = min(1e-14 * (x_len**0.5), 1e-11)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        tol = min(1e-14 * (x_len**0.5), 1e-11)
+        torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
 
 
 @pytest.mark.hgemv
@@ -401,14 +466,15 @@ def test_accuracy_hgemv(m, n, trans, beta):
     x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len, dtype=dtype, device=flag_blas.device)
 
-    ref_y = y.clone()
-
-    cupy_half_gemv_reference(trans, m, n, alpha, A, n, x, 1, beta, ref_y, 1)
+    ref_y = gemv_reference(trans, m, n, alpha, A, n, x, 1, beta, y, 1)
     flag_blas.ops.hgemv(trans, m, n, alpha, A, n, x, 1, beta, y, 1)
 
-    rtol = 1e-3
-    atol = 3e-3 * (x_len**0.5)
-    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        rtol = 1e-3
+        atol = 3e-3 * (x_len**0.5)
+        torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
 
 
 @pytest.mark.hgemv
@@ -423,14 +489,15 @@ def test_accuracy_hgemv_stride(m, n, trans, incx, incy):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cupy_half_gemv_reference(trans, m, n, alpha, A, n, x, incx, beta, ref_y, incy)
+    ref_y = gemv_reference(trans, m, n, alpha, A, n, x, incx, beta, y, incy)
     flag_blas.ops.hgemv(trans, m, n, alpha, A, n, x, incx, beta, y, incy)
 
-    rtol = 1e-3
-    atol = 3e-3 * (x_len**0.5)
-    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        rtol = 1e-3
+        atol = 3e-3 * (x_len**0.5)
+        torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
 
 
 @pytest.mark.bfgemv
@@ -446,14 +513,15 @@ def test_accuracy_bfgemv(m, n, trans, beta):
     x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len, dtype=dtype, device=flag_blas.device)
 
-    ref_y = y.clone()
-
-    cupy_half_gemv_reference(trans, m, n, alpha, A, n, x, 1, beta, ref_y, 1)
+    ref_y = gemv_reference(trans, m, n, alpha, A, n, x, 1, beta, y, 1)
     flag_blas.ops.bfgemv(trans, m, n, alpha, A, n, x, 1, beta, y, 1)
 
-    rtol = 1.6e-2
-    atol = 3e-2 * (x_len**0.5)
-    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        rtol = 1.6e-2
+        atol = 3e-2 * (x_len**0.5)
+        torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
 
 
 @pytest.mark.bfgemv
@@ -468,14 +536,15 @@ def test_accuracy_bfgemv_stride(m, n, trans, incx, incy):
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(y_len * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cupy_half_gemv_reference(trans, m, n, alpha, A, n, x, incx, beta, ref_y, incy)
+    ref_y = gemv_reference(trans, m, n, alpha, A, n, x, incx, beta, y, incy)
     flag_blas.ops.bfgemv(trans, m, n, alpha, A, n, x, incx, beta, y, incy)
 
-    rtol = 1.6e-2
-    atol = 3e-2 * (x_len**0.5)
-    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, dtype, reduce_dim=x_len)
+    else:
+        rtol = 1.6e-2
+        atol = 3e-2 * (x_len**0.5)
+        torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
 
 
 @pytest.mark.fp8gemv
@@ -490,14 +559,17 @@ def test_accuracy_fp8_gemv_e4m3(m, n, beta):
         m, n, 1, 1, fp8_dtype, torch.float32, flag_blas.device
     )
 
-    cublas_gemv_reference(
-        trans, m, n, alpha, A_col_f32, m, x_f32_ref, 1, beta, ref_y, 1
+    ref_y = fp8_gemv_reference(
+        trans, m, n, alpha, A_fp8, A_col_f32, x_fp8, x_f32_ref, 1, beta, y, 1
     )
     flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, 1, beta, y, 1)
 
-    rtol = 1e-3
-    atol = 3e-3 * (m**0.5)
-    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, torch.float32, reduce_dim=m)
+    else:
+        rtol = 1e-3
+        atol = 3e-3 * (m**0.5)
+        torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
 
 
 @pytest.mark.fp8gemv
@@ -512,14 +584,17 @@ def test_accuracy_fp8_gemv_e4m3_stride(m, n, incx, incy):
         m, n, incx, incy, fp8_dtype, torch.float32, flag_blas.device
     )
 
-    cublas_gemv_reference(
-        trans, m, n, alpha, A_col_f32, m, x_f32_ref, incx, beta, ref_y, incy
+    ref_y = fp8_gemv_reference(
+        trans, m, n, alpha, A_fp8, A_col_f32, x_fp8, x_f32_ref, incx, beta, y, incy
     )
     flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, incx, beta, y, incy)
 
-    rtol = 1e-3
-    atol = 3e-3 * (m**0.5)
-    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, torch.float32, reduce_dim=m)
+    else:
+        rtol = 1e-3
+        atol = 3e-3 * (m**0.5)
+        torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
 
 
 @pytest.mark.fp8gemv
@@ -534,14 +609,17 @@ def test_accuracy_fp8_gemv_e5m2(m, n, beta):
         m, n, 1, 1, fp8_dtype, torch.float32, flag_blas.device
     )
 
-    cublas_gemv_reference(
-        trans, m, n, alpha, A_col_f32, m, x_f32_ref, 1, beta, ref_y, 1
+    ref_y = fp8_gemv_reference(
+        trans, m, n, alpha, A_fp8, A_col_f32, x_fp8, x_f32_ref, 1, beta, y, 1
     )
     flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, 1, beta, y, 1)
 
-    rtol = 1e-3
-    atol = 3e-3 * (m**0.5)
-    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, torch.float32, reduce_dim=m)
+    else:
+        rtol = 1e-3
+        atol = 3e-3 * (m**0.5)
+        torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
 
 
 @pytest.mark.fp8gemv
@@ -556,14 +634,17 @@ def test_accuracy_fp8_gemv_e5m2_stride(m, n, incx, incy):
         m, n, incx, incy, fp8_dtype, torch.float32, flag_blas.device
     )
 
-    cublas_gemv_reference(
-        trans, m, n, alpha, A_col_f32, m, x_f32_ref, incx, beta, ref_y, incy
+    ref_y = fp8_gemv_reference(
+        trans, m, n, alpha, A_fp8, A_col_f32, x_fp8, x_f32_ref, incx, beta, y, incy
     )
     flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, incx, beta, y, incy)
 
-    rtol = 1e-3
-    atol = 3e-3 * (m**0.5)
-    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, torch.float32, reduce_dim=m)
+    else:
+        rtol = 1e-3
+        atol = 3e-3 * (m**0.5)
+        torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
 
 
 @pytest.mark.fp8gemv
@@ -578,14 +659,17 @@ def test_accuracy_fp8_gemv_output_dtype(m, n, y_dtype):
         m, n, 1, 1, fp8_dtype, y_dtype, flag_blas.device
     )
 
-    cublas_gemv_reference(
-        trans, m, n, alpha, A_col_f32, m, x_f32_ref, 1, beta, ref_y, 1
+    ref_y = fp8_gemv_reference(
+        trans, m, n, alpha, A_fp8, A_col_f32, x_fp8, x_f32_ref, 1, beta, y, 1
     )
     flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, 1, beta, y, 1)
 
-    rtol = 1e-3 if y_dtype == torch.float16 else 1.6e-2
-    atol = (3e-3 if y_dtype == torch.float16 else 3e-2) * (m**0.5)
-    torch.testing.assert_close(y.float(), ref_y, rtol=rtol, atol=atol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, y_dtype, reduce_dim=m)
+    else:
+        rtol = 1e-3 if y_dtype == torch.float16 else 1.6e-2
+        atol = (3e-3 if y_dtype == torch.float16 else 3e-2) * (m**0.5)
+        torch.testing.assert_close(y.float(), ref_y, rtol=rtol, atol=atol)
 
 
 @pytest.mark.fp8gemv
@@ -604,7 +688,10 @@ def test_fp8_gemv_alpha_zero():
 
     flag_blas.ops.fp8_gemv(CUBLAS_OP_T, m, n, 0.0, A_fp8, n, x_fp8, 1, 2.0, y, 1)
 
-    torch.testing.assert_close(y, y_orig * 2.0)
+    if TO_CPU:
+        blas_assert_close(y, to_reference(y_orig * 2.0, upcast=True), torch.float32)
+    else:
+        torch.testing.assert_close(y, y_orig * 2.0)
 
 
 @pytest.mark.fp8gemv
@@ -620,11 +707,21 @@ def test_fp8_gemv_beta_zero():
 
     y_nan = torch.full((n,), float("nan"), dtype=torch.float32, device=flag_blas.device)
     y_zero = torch.zeros(n, dtype=torch.float32, device=flag_blas.device)
+    if TO_CPU:
+        ref_y_nan = fp8_gemv_reference(
+            CUBLAS_OP_T, m, n, 1.0, A_fp8, None, x_fp8, None, 1, 0.0, y_nan, 1
+        )
 
     flag_blas.ops.fp8_gemv(CUBLAS_OP_T, m, n, 1.0, A_fp8, n, x_fp8, 1, 0.0, y_nan, 1)
     flag_blas.ops.fp8_gemv(CUBLAS_OP_T, m, n, 1.0, A_fp8, n, x_fp8, 1, 0.0, y_zero, 1)
 
-    torch.testing.assert_close(y_nan, y_zero)
+    if TO_CPU:
+        blas_assert_close(y_nan, ref_y_nan, torch.float32, reduce_dim=m)
+        blas_assert_close(
+            y_nan, to_reference(y_zero, upcast=True), torch.float32, reduce_dim=m
+        )
+    else:
+        torch.testing.assert_close(y_nan, y_zero)
 
 
 @pytest.mark.fp8gemv
@@ -640,7 +737,10 @@ def test_fp8_gemv_empty():
     y_orig = y.clone()
 
     flag_blas.ops.fp8_gemv(CUBLAS_OP_T, m, n, 1.0, A_fp8, n, x_fp8, 1, 0.0, y, 1)
-    torch.testing.assert_close(y, y_orig)
+    if TO_CPU:
+        blas_assert_close(y, to_reference(y_orig, upcast=True), torch.float32)
+    else:
+        torch.testing.assert_close(y, y_orig)
 
 
 @pytest.mark.fp8gemv
@@ -650,23 +750,36 @@ def test_accuracy_fp8_gemv_mixed_dtype(m, n):
     device = flag_blas.device
     trans = CUBLAS_OP_T
 
-    A_f32 = torch.randn(m, n, dtype=torch.float32, device=device) * 0.1
+    A_f32 = torch.randn(m, n, dtype=torch.float32, device=device)
     A_fp8_e4m3 = A_f32.to(torch.float8_e4m3fn)
 
-    A_col_f32 = A_fp8_e4m3.float().t().contiguous().t()
+    A_col_f32 = None if TO_CPU else A_fp8_e4m3.float().t().contiguous().t()
 
-    x_f32 = torch.randn(m, dtype=torch.float32, device=device) * 0.1
+    x_f32 = torch.randn(m, dtype=torch.float32, device=device)
     x_fp8_e4m3 = x_f32.to(torch.float8_e4m3fn)
-    x_f32_ref = x_fp8_e4m3.float()
+    x_f32_ref = None if TO_CPU else x_fp8_e4m3.float()
 
     y = torch.zeros(n, dtype=torch.float32, device=device)
-    ref_y = torch.zeros(n, dtype=torch.float32, device=device)
 
-    cublas_gemv_reference(
-        trans, m, n, alpha, A_col_f32, m, x_f32_ref, 1, beta, ref_y, 1
+    ref_y = fp8_gemv_reference(
+        trans,
+        m,
+        n,
+        alpha,
+        A_fp8_e4m3,
+        A_col_f32,
+        x_fp8_e4m3,
+        x_f32_ref,
+        1,
+        beta,
+        y,
+        1,
     )
     flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8_e4m3, n, x_fp8_e4m3, 1, beta, y, 1)
 
-    rtol = 1e-3
-    atol = 3e-3 * (m**0.5)
-    torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)
+    if TO_CPU:
+        blas_assert_close(y, ref_y, torch.float32, reduce_dim=m)
+    else:
+        rtol = 1e-3
+        atol = 3e-3 * (m**0.5)
+        torch.testing.assert_close(y, ref_y, rtol=rtol, atol=atol)

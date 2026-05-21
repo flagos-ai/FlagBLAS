@@ -1,11 +1,17 @@
 import ctypes
 import ctypes.util
 import math
+
+import cupy as cp
 import pytest
 import torch
-import cupy as cp
+from scipy.linalg import blas as cpu_blas
+
 import flag_blas
 from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
+
+from .accuracy_utils import blas_assert_close, to_cpu_blas_tensor, to_reference
+from .conftest import TO_CPU
 
 
 def load_cublas():
@@ -68,6 +74,39 @@ def cublas_hemv_reference(uplo, n, alpha, A, lda, x, incx, beta, y, incy):
         raise RuntimeError(f"cublasXhemv_v2 execution failed with error code: {status}")
 
 
+def cpu_hemv_reference(uplo, n, alpha, A, lda, x, incx, beta, y, incy):
+    if n == 0:
+        return to_cpu_blas_tensor(y)
+
+    ref_A = to_cpu_blas_tensor(A)
+    ref_x = to_cpu_blas_tensor(x)
+    if beta == 0 and incy == 1:
+        ref_y = torch.empty(y.shape, dtype=torch.complex128)
+    else:
+        ref_y = to_cpu_blas_tensor(y)
+    yout = cpu_blas.zhemv(
+        alpha,
+        ref_A[:n, :n].T.numpy(),
+        ref_x.numpy(),
+        beta=beta,
+        y=ref_y.numpy(),
+        incx=incx,
+        incy=incy,
+        lower=int(uplo == CUBLAS_FILL_MODE_LOWER),
+        overwrite_y=1,
+    )
+    return torch.from_numpy(yout)
+
+
+def hemv_reference(uplo, n, alpha, A, lda, x, incx, beta, y, incy):
+    if TO_CPU:
+        return cpu_hemv_reference(uplo, n, alpha, A, lda, x, incx, beta, y, incy)
+
+    ref_y = y.clone()
+    cublas_hemv_reference(uplo, n, alpha, A, lda, x, incx, beta, ref_y, incy)
+    return ref_y
+
+
 HEMV_SIZES = [
     1,
     63,
@@ -124,13 +163,10 @@ def test_accuracy_chemv(n, uplo, beta):
     A = create_hemv_data(n, lda, dtype, flag_blas.device)
     x = torch.randn(n, dtype=dtype, device=flag_blas.device)
     y = torch.randn(n, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_hemv_reference(uplo, n, alpha, A, lda, x, 1, beta, ref_y, 1)
+    ref_y = hemv_reference(uplo, n, alpha, A, lda, x, 1, beta, y, 1)
     flag_blas.ops.chemv(uplo, n, alpha, A, lda, x, 1, beta, y, 1)
 
-    tol = _hemv_tol(dtype, n)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(y, ref_y, dtype, reduce_dim=n)
 
 
 @pytest.mark.chemv
@@ -144,13 +180,10 @@ def test_accuracy_chemv_stride(n, uplo, incx, incy):
     A = create_hemv_data(n, lda, dtype, flag_blas.device)
     x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_hemv_reference(uplo, n, alpha, A, lda, x, incx, beta, ref_y, incy)
+    ref_y = hemv_reference(uplo, n, alpha, A, lda, x, incx, beta, y, incy)
     flag_blas.ops.chemv(uplo, n, alpha, A, lda, x, incx, beta, y, incy)
 
-    tol = _hemv_tol(dtype, n)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(y, ref_y, dtype, reduce_dim=n)
 
 
 @pytest.mark.chemv
@@ -160,14 +193,13 @@ def test_chemv_alpha_zero():
     A = create_hemv_data(n, lda, dtype, flag_blas.device)
     x = torch.randn(n, dtype=dtype, device=flag_blas.device)
     y = torch.randn(n, dtype=dtype, device=flag_blas.device)
-    y_orig, y_ref = y.clone(), y.clone()
-
-    cublas_hemv_reference(
-        CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0 + 1.0j, y_ref, 1
+    y_orig = y.clone()
+    y_ref = hemv_reference(
+        CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0 + 1.0j, y, 1
     )
     flag_blas.ops.chemv(CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0 + 1.0j, y, 1)
-    torch.testing.assert_close(y, y_ref)
-    torch.testing.assert_close(y, y_orig * (2.0 + 1.0j))
+    blas_assert_close(y, y_ref, dtype, reduce_dim=n)
+    blas_assert_close(y, to_reference(y_orig * (2.0 + 1.0j)), dtype)
 
 
 @pytest.mark.chemv
@@ -179,10 +211,8 @@ def test_chemv_beta_zero():
 
     y_nan = torch.full((n,), float("nan"), dtype=dtype, device=flag_blas.device)
     y_zero = torch.zeros(n, dtype=dtype, device=flag_blas.device)
-    ref_y_nan = y_nan.clone()
-
-    cublas_hemv_reference(
-        CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, ref_y_nan, 1
+    ref_y_nan = hemv_reference(
+        CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, y_nan, 1
     )
     flag_blas.ops.chemv(
         CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, y_nan, 1
@@ -190,8 +220,8 @@ def test_chemv_beta_zero():
     flag_blas.ops.chemv(
         CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, y_zero, 1
     )
-    torch.testing.assert_close(y_nan, ref_y_nan)
-    torch.testing.assert_close(y_nan, y_zero)
+    blas_assert_close(y_nan, ref_y_nan, dtype, reduce_dim=n)
+    blas_assert_close(y_nan, to_reference(y_zero), dtype, reduce_dim=n)
 
 
 @pytest.mark.zhemv
@@ -206,13 +236,10 @@ def test_accuracy_zhemv(n, uplo, beta):
     A = create_hemv_data(n, lda, dtype, flag_blas.device)
     x = torch.randn(n, dtype=dtype, device=flag_blas.device)
     y = torch.randn(n, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_hemv_reference(uplo, n, alpha, A, lda, x, 1, beta, ref_y, 1)
+    ref_y = hemv_reference(uplo, n, alpha, A, lda, x, 1, beta, y, 1)
     flag_blas.ops.zhemv(uplo, n, alpha, A, lda, x, 1, beta, y, 1)
 
-    tol = _hemv_tol(dtype, n)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(y, ref_y, dtype, reduce_dim=n)
 
 
 @pytest.mark.zhemv
@@ -227,13 +254,10 @@ def test_accuracy_zhemv_stride(n, uplo, incx, incy):
     A = create_hemv_data(n, lda, dtype, flag_blas.device)
     x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
     y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
-    ref_y = y.clone()
-
-    cublas_hemv_reference(uplo, n, alpha, A, lda, x, incx, beta, ref_y, incy)
+    ref_y = hemv_reference(uplo, n, alpha, A, lda, x, incx, beta, y, incy)
     flag_blas.ops.zhemv(uplo, n, alpha, A, lda, x, incx, beta, y, incy)
 
-    tol = _hemv_tol(dtype, n)
-    torch.testing.assert_close(y, ref_y, rtol=tol, atol=tol)
+    blas_assert_close(y, ref_y, dtype, reduce_dim=n)
 
 
 @pytest.mark.zhemv
@@ -244,14 +268,13 @@ def test_zhemv_alpha_zero():
     A = create_hemv_data(n, lda, dtype, flag_blas.device)
     x = torch.randn(n, dtype=dtype, device=flag_blas.device)
     y = torch.randn(n, dtype=dtype, device=flag_blas.device)
-    y_orig, y_ref = y.clone(), y.clone()
-
-    cublas_hemv_reference(
-        CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0 + 1.0j, y_ref, 1
+    y_orig = y.clone()
+    y_ref = hemv_reference(
+        CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0 + 1.0j, y, 1
     )
     flag_blas.ops.zhemv(CUBLAS_FILL_MODE_UPPER, n, 0.0j, A, lda, x, 1, 2.0 + 1.0j, y, 1)
-    torch.testing.assert_close(y, y_ref)
-    torch.testing.assert_close(y, y_orig * (2.0 + 1.0j))
+    blas_assert_close(y, y_ref, dtype, reduce_dim=n)
+    blas_assert_close(y, to_reference(y_orig * (2.0 + 1.0j)), dtype)
 
 
 @pytest.mark.zhemv
@@ -264,10 +287,8 @@ def test_zhemv_beta_zero():
 
     y_nan = torch.full((n,), float("nan"), dtype=dtype, device=flag_blas.device)
     y_zero = torch.zeros(n, dtype=dtype, device=flag_blas.device)
-    ref_y_nan = y_nan.clone()
-
-    cublas_hemv_reference(
-        CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, ref_y_nan, 1
+    ref_y_nan = hemv_reference(
+        CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, y_nan, 1
     )
     flag_blas.ops.zhemv(
         CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, y_nan, 1
@@ -275,8 +296,8 @@ def test_zhemv_beta_zero():
     flag_blas.ops.zhemv(
         CUBLAS_FILL_MODE_LOWER, n, 1.0 + 0.5j, A, lda, x, 1, 0.0j, y_zero, 1
     )
-    torch.testing.assert_close(y_nan, ref_y_nan)
-    torch.testing.assert_close(y_nan, y_zero)
+    blas_assert_close(y_nan, ref_y_nan, dtype, reduce_dim=n)
+    blas_assert_close(y_nan, to_reference(y_zero), dtype, reduce_dim=n)
 
 
 @pytest.mark.parametrize(

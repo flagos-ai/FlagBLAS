@@ -368,6 +368,14 @@ class Benchmark:
     def get_correctness_reduce_dim(self, args, kwargs):
         return 1
 
+    def clone_correctness_inputs(self, args, kwargs):
+        return (
+            _clone_correctness_value(args),
+            _clone_correctness_value(kwargs),
+            _clone_correctness_value(args),
+            _clone_correctness_value(kwargs),
+        )
+
     def validate_results(self, reference_result, blas_result, dtype, reduce_dim=1):
         tolerances = set()
 
@@ -435,10 +443,12 @@ class Benchmark:
             dtype_reduce_dims = set()
             for input in self.get_input_iter(cur_dtype):
                 args, kwargs = self.unpack_to_args_kwargs(input)
-                ref_args = _clone_correctness_value(args)
-                ref_kwargs = _clone_correctness_value(kwargs)
-                blas_args = _clone_correctness_value(args)
-                blas_kwargs = _clone_correctness_value(kwargs)
+                (
+                    ref_args,
+                    ref_kwargs,
+                    blas_args,
+                    blas_kwargs,
+                ) = self.clone_correctness_inputs(args, kwargs)
                 reduce_dim = self.get_correctness_reduce_dim(args, kwargs)
 
                 reference_result = self.torch_op(*ref_args, **ref_kwargs)

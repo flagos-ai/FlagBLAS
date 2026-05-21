@@ -8,17 +8,16 @@ import torch
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
+from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 from flag_blas.ops import (
-    CUBLAS_OP_N,
-    CUBLAS_OP_T,
-    CUBLAS_OP_C,
-    CUBLAS_FILL_MODE_LOWER,
-    CUBLAS_FILL_MODE_UPPER,
     CUBLAS_DIAG_NON_UNIT,
     CUBLAS_DIAG_UNIT,
+    CUBLAS_FILL_MODE_LOWER,
+    CUBLAS_FILL_MODE_UPPER,
+    CUBLAS_OP_C,
+    CUBLAS_OP_N,
+    CUBLAS_OP_T,
 )
-
-from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
 
 TBMV_SIZES = [
@@ -134,7 +133,6 @@ def _triangular_banded_nnz(n, k):
 
 
 class TbmvBenchmark(Benchmark):
-
     def __init__(
         self,
         *args,
@@ -212,6 +210,15 @@ class TbmvBenchmark(Benchmark):
         io_amount = a_bytes + 2 * shape_utils.size_in_bytes(x)
         return io_amount * 1e-9 / (latency * 1e-3)
 
+    def get_correctness_reduce_dim(self, args, kwargs):
+        return kwargs["k"] + 1
+
+    def clone_correctness_inputs(self, args, kwargs):
+        A, x = args
+        ref_args = (A, x.clone())
+        blas_args = (A, x.clone())
+        return ref_args, kwargs, blas_args, kwargs
+
 
 @pytest.mark.stbmv
 def test_perf_stbmv():
@@ -224,7 +231,7 @@ def test_perf_stbmv():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.stbmv
@@ -238,7 +245,7 @@ def test_perf_stbmv_upper():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.stbmv
@@ -252,7 +259,7 @@ def test_perf_stbmv_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dtbmv
@@ -266,7 +273,7 @@ def test_perf_stbmv_upper_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.stbmv
@@ -280,7 +287,7 @@ def test_perf_stbmv_unit():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dtbmv
@@ -296,7 +303,7 @@ def test_perf_dtbmv():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dtbmv
@@ -312,7 +319,7 @@ def test_perf_dtbmv_upper():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dtbmv
@@ -328,7 +335,7 @@ def test_perf_dtbmv_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctbmv
@@ -344,7 +351,7 @@ def test_perf_dtbmv_upper_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.dtbmv
@@ -360,7 +367,7 @@ def test_perf_dtbmv_unit():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctbmv
@@ -374,7 +381,7 @@ def test_perf_ctbmv():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctbmv
@@ -388,7 +395,7 @@ def test_perf_ctbmv_upper():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctbmv
@@ -402,7 +409,7 @@ def test_perf_ctbmv_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctbmv
@@ -416,7 +423,7 @@ def test_perf_ctbmv_conj():
         trans=CUBLAS_OP_C,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztbmv
@@ -430,7 +437,7 @@ def test_perf_ctbmv_upper_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctbmv
@@ -444,7 +451,7 @@ def test_perf_ctbmv_upper_conj():
         trans=CUBLAS_OP_C,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ctbmv
@@ -458,7 +465,7 @@ def test_perf_ctbmv_unit():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztbmv
@@ -474,7 +481,7 @@ def test_perf_ztbmv():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztbmv
@@ -490,7 +497,7 @@ def test_perf_ztbmv_upper():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztbmv
@@ -506,7 +513,7 @@ def test_perf_ztbmv_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztbmv
@@ -522,7 +529,7 @@ def test_perf_ztbmv_conj():
         trans=CUBLAS_OP_C,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztbmv
@@ -538,7 +545,7 @@ def test_perf_ztbmv_upper_trans():
         trans=CUBLAS_OP_T,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztbmv
@@ -554,7 +561,7 @@ def test_perf_ztbmv_upper_conj():
         trans=CUBLAS_OP_C,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
 
 
 @pytest.mark.ztbmv
@@ -570,4 +577,4 @@ def test_perf_ztbmv_unit():
         trans=CUBLAS_OP_N,
         diag=CUBLAS_DIAG_UNIT,
     )
-    bench.run()
+    run_correctness_then_benchmark(bench)
