@@ -14,7 +14,7 @@ export PYBUILD_NAME = flag_blas
 # on import failures. Fixed with && short-circuit.
 override_dh_auto_test:
 	@echo "=== smoke find_spec test ==="
-	@for d in .pybuild/cpython3_*/build $(CURDIR)/src $(CURDIR); do \
+	@for d in .pybuild/cpython3_*/build; do \
 	    if [ -d "$$d/flag_blas" ]; then \
 	        echo "Found build dir: $$d"; \
 	        PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$$d" python3 -c \

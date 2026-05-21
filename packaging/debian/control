@@ -17,6 +17,6 @@ Rules-Requires-Root: no
 Package: python3-flag-blas
 Architecture: all
 Depends: ${python3:Depends}, ${misc:Depends}, python3-yaml, python3-sqlalchemy, python3-packaging, python3-pybind11
-Recommends: python3-torch
+# Note: torch is resolved via ${python3:Depends} from pyproject.toml; do not list it here.
 Description: FlagBLAS — linear-algebra kernels for FlagOS
  GEMM and related BLAS-level operators implemented in Triton, targeting FlagOS multi-vendor accelerators.
