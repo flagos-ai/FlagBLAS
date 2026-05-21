@@ -1,4 +1,9 @@
 [build-system]
+# TODO: backend is currently setuptools.build_meta, but `requires` also lists
+# scikit-build-core and pybind11 (see [tool.scikit-build] below). Today these
+# are effectively unused by the build path — if/when we switch backend to
+# "scikit_build_core.build", revisit this list and the setuptools-specific
+# [tool.setuptools.*] sections to avoid double-configuration.
 requires = ["setuptools>=64.0", "scikit-build-core>=0.11", "pybind11"]
 build-backend = "setuptools.build_meta"
 
