@@ -14,9 +14,10 @@ COPY . /workspace/FlagBLAS
 
 RUN SPEC_VERSION=$(grep '^Version:' /workspace/FlagBLAS/packaging/rpm/specs/flag-blas.spec | awk '{print $2}') && \
     tar czf /root/rpmbuild/SOURCES/flag-blas-${SPEC_VERSION}.tar.gz \
-        -C /workspace \
-        --transform "s|^FlagBLAS|flag-blas-${SPEC_VERSION}|" \
-        FlagBLAS
+        -C /workspace/FlagBLAS \
+        --exclude='./.git' \
+        --transform "s|^\./|flag-blas-${SPEC_VERSION}/|" \
+        .
 
 RUN rpmbuild -ba /workspace/FlagBLAS/packaging/rpm/specs/flag-blas.spec 2>&1 || \
     { echo "=== build failed ==="; \
