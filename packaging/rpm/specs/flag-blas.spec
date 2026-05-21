@@ -1,11 +1,11 @@
 %global debug_package %{nil}
 
 # Filter out auto-generated torch dependency: Fedora does not ship
-# python3-torch, so letting %pyproject_save_files emit
+# python3-torch, so letting %%pyproject_save_files emit
 # Requires: python3dist(torch) would make the RPM uninstallable from
 # the official repos. Users install torch out of band (pip/conda).
 # Debian side handles this by moving torch to Recommends.
-%global __requires_exclude ^(python3dist\\(torch\\)|python\\(abi\\).*torch.*)$
+%global __requires_exclude ^(python3dist\(torch\)|python\(abi\).*torch.*)$
 
 Name:           python3-flag-blas
 Version:        0.1.0
