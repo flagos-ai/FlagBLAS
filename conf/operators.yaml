@@ -503,3 +503,315 @@ ops:
       - BLAS
     stages:
       - beta: '0.1'
+  - id: sgemv
+    description: |
+      Single-precision BLAS Level 2 general matrix-vector multiplication.
+      Computes y = alpha * op(A) * x + beta * y for a float32 dense matrix A.
+    for:
+      - sgemv
+    labels:
+      - gemv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dgemv
+    description: |
+      Double-precision BLAS Level 2 general matrix-vector multiplication.
+      Computes y = alpha * op(A) * x + beta * y for a float64 dense matrix A.
+    for:
+      - dgemv
+    labels:
+      - gemv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: cgemv
+    description: |
+      Single-precision complex BLAS Level 2 general matrix-vector multiplication.
+      Computes y = alpha * op(A) * x + beta * y for a complex64 dense matrix A.
+    for:
+      - cgemv
+    labels:
+      - gemv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zgemv
+    description: |
+      Double-precision complex BLAS Level 2 general matrix-vector multiplication.
+      Computes y = alpha * op(A) * x + beta * y for a complex128 dense matrix A.
+    for:
+      - zgemv
+    labels:
+      - gemv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: hgemv
+    description: |
+      Half-precision BLAS Level 2 general matrix-vector multiplication.
+      Computes y = alpha * op(A) * x + beta * y for an fp16 dense matrix A.
+    for:
+      - hgemv
+    labels:
+      - gemv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: bfgemv
+    description: |
+      BF16 BLAS Level 2 general matrix-vector multiplication.
+      Computes y = alpha * op(A) * x + beta * y for a bfloat16 dense matrix A.
+    for:
+      - bfgemv
+    labels:
+      - gemv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: fp8_gemv
+    description: |
+      FP8 BLAS Level 2 general matrix-vector multiplication.
+      Computes y = alpha * op(A) * x + beta * y for an E4M3/E5M2 fp8 dense matrix A.
+    for:
+      - fp8_gemv
+    labels:
+      - gemv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: sgbmv
+    description: |
+      Single-precision BLAS Level 2 general banded matrix-vector multiplication.
+      Computes y = alpha * op(A) * x + beta * y for a float32 banded matrix A in BLAS banded storage.
+    for:
+      - sgbmv
+    labels:
+      - gbmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dgbmv
+    description: |
+      Double-precision BLAS Level 2 general banded matrix-vector multiplication.
+      Computes y = alpha * op(A) * x + beta * y for a float64 banded matrix A in BLAS banded storage.
+    for:
+      - dgbmv
+    labels:
+      - gbmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: cgbmv
+    description: |
+      Single-precision complex BLAS Level 2 general banded matrix-vector multiplication.
+      Computes y = alpha * op(A) * x + beta * y for a complex64 banded matrix A in BLAS banded storage.
+    for:
+      - cgbmv
+    labels:
+      - gbmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zgbmv
+    description: |
+      Double-precision complex BLAS Level 2 general banded matrix-vector multiplication.
+      Computes y = alpha * op(A) * x + beta * y for a complex128 banded matrix A in BLAS banded storage.
+    for:
+      - zgbmv
+    labels:
+      - gbmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: ssymv
+    description: |
+      Single-precision BLAS Level 2 symmetric matrix-vector multiplication.
+      Computes y = alpha * A * x + beta * y for a float32 symmetric matrix A referenced by its upper or lower triangle.
+    for:
+      - ssymv
+    labels:
+      - symv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dsymv
+    description: |
+      Double-precision BLAS Level 2 symmetric matrix-vector multiplication.
+      Computes y = alpha * A * x + beta * y for a float64 symmetric matrix A referenced by its upper or lower triangle.
+    for:
+      - dsymv
+    labels:
+      - symv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: csymv
+    description: |
+      Single-precision complex BLAS Level 2 symmetric matrix-vector multiplication.
+      Computes y = alpha * A * x + beta * y for a complex64 symmetric matrix A referenced by its upper or lower triangle.
+    for:
+      - csymv
+    labels:
+      - symv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zsymv
+    description: |
+      Double-precision complex BLAS Level 2 symmetric matrix-vector multiplication.
+      Computes y = alpha * A * x + beta * y for a complex128 symmetric matrix A referenced by its upper or lower triangle.
+    for:
+      - zsymv
+    labels:
+      - symv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: chemv
+    description: |
+      Single-precision complex BLAS Level 2 Hermitian matrix-vector multiplication.
+      Computes y = alpha * A * x + beta * y for a complex64 Hermitian matrix A referenced by its upper or lower triangle.
+    for:
+      - chemv
+    labels:
+      - hemv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zhemv
+    description: |
+      Double-precision complex BLAS Level 2 Hermitian matrix-vector multiplication.
+      Computes y = alpha * A * x + beta * y for a complex128 Hermitian matrix A referenced by its upper or lower triangle.
+    for:
+      - zhemv
+    labels:
+      - hemv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: strmv
+    description: |
+      Single-precision BLAS Level 2 triangular matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a float32 triangular matrix A.
+    for:
+      - strmv
+    labels:
+      - trmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dtrmv
+    description: |
+      Double-precision BLAS Level 2 triangular matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a float64 triangular matrix A.
+    for:
+      - dtrmv
+    labels:
+      - trmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: ctrmv
+    description: |
+      Single-precision complex BLAS Level 2 triangular matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a complex64 triangular matrix A.
+    for:
+      - ctrmv
+    labels:
+      - trmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: ztrmv
+    description: |
+      Double-precision complex BLAS Level 2 triangular matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a complex128 triangular matrix A.
+    for:
+      - ztrmv
+    labels:
+      - trmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: stbmv
+    description: |
+      Single-precision BLAS Level 2 triangular banded matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a float32 triangular banded matrix A in BLAS banded storage.
+    for:
+      - stbmv
+    labels:
+      - tbmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dtbmv
+    description: |
+      Double-precision BLAS Level 2 triangular banded matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a float64 triangular banded matrix A in BLAS banded storage.
+    for:
+      - dtbmv
+    labels:
+      - tbmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: ctbmv
+    description: |
+      Single-precision complex BLAS Level 2 triangular banded matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a complex64 triangular banded matrix A in BLAS banded storage.
+    for:
+      - ctbmv
+    labels:
+      - tbmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: ztbmv
+    description: |
+      Double-precision complex BLAS Level 2 triangular banded matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a complex128 triangular banded matrix A in BLAS banded storage.
+    for:
+      - ztbmv
+    labels:
+      - tbmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: stbsv
+    description: |
+      Single-precision BLAS Level 2 triangular banded solve.
+      Solves op(A) * x = b in place for a float32 triangular banded matrix A in BLAS banded storage.
+    for:
+      - stbsv
+    labels:
+      - tbsv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
