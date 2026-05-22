@@ -5,11 +5,8 @@ from typing import Union
 import torch
 import triton
 import triton.language as tl
-from flag_blas.ops.level2._constants import (
-    CUBLAS_OP_C,
-    CUBLAS_OP_N,
-    CUBLAS_OP_T,
-)
+
+from flag_blas.ops.level2._constants import CUBLAS_OP_C, CUBLAS_OP_N, CUBLAS_OP_T
 from flag_blas.runtime import torch_device_fn
 
 logger = logging.getLogger(__name__)
@@ -71,9 +68,25 @@ _DGBMV_SPLIT_BAND_CONFIGS = [
     triton.Config({"BLOCK_SIZE_M": 64}, num_warps=4, num_stages=3),
 ]
 
-_CGBMV_N_CONFIGS = _DGBMV_N_CONFIGS
-_CGBMV_T_CONFIGS = _DGBMV_T_CONFIGS
-_CGBMV_SPLIT_BAND_CONFIGS = _DGBMV_SPLIT_BAND_CONFIGS
+_CGBMV_N_CONFIGS = [
+    triton.Config({"BLOCK_SIZE_M": 32, "BAND_TILE": 16}, num_warps=2, num_stages=1),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 16}, num_warps=4, num_stages=1),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 16}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_SIZE_M": 128, "BAND_TILE": 16}, num_warps=8, num_stages=2),
+]
+
+_CGBMV_T_CONFIGS = [
+    triton.Config({"BLOCK_SIZE_M": 32, "BAND_TILE": 16}, num_warps=2, num_stages=1),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 16}, num_warps=4, num_stages=1),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 16}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_SIZE_M": 128, "BAND_TILE": 16}, num_warps=8, num_stages=2),
+]
+
+_CGBMV_SPLIT_BAND_CONFIGS = [
+    triton.Config({"BLOCK_SIZE_M": 32, "BAND_TILE": 16}, num_warps=2, num_stages=1),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 16}, num_warps=4, num_stages=1),
+    triton.Config({"BLOCK_SIZE_M": 64, "BAND_TILE": 16}, num_warps=4, num_stages=2),
+]
 
 _ZGBMV_N_CONFIGS = [
     triton.Config({"BLOCK_SIZE_M": 16, "BAND_TILE": 16}, num_warps=2, num_stages=1),
@@ -530,6 +543,7 @@ def cgbmv_n_kernel(
     CONJ: tl.constexpr,
     BETA_IS_ZERO: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
+    BAND_TILE: tl.constexpr,
 ):
     pid = tl.program_id(0)
     rows = pid * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
@@ -537,13 +551,16 @@ def cgbmv_n_kernel(
     acc_r = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
     acc_i = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
 
-    for d_idx in tl.range(0, BAND):
+    t_off = tl.arange(0, BAND_TILE)
+    for d_base in tl.range(0, BAND, BAND_TILE):
+        d_idx = d_base + t_off
         d = d_idx - KL
-        j = rows + d
         band_row = KU - d
-        mask = row_mask & (j >= 0) & (j < n)
+        band_mask = d_idx < BAND
+        j = rows[:, None] + d[None, :]
+        mask = row_mask[:, None] & band_mask[None, :] & (j >= 0) & (j < n)
         safe_j = tl.where(mask, j, 0)
-        a_off = (band_row + safe_j * LDA) * 2
+        a_off = (band_row[None, :] + safe_j * LDA) * 2
         x_off = safe_j * INCX * 2
         ar = tl.load(a_ptr + a_off, mask=mask, other=0.0)
         ai = tl.load(a_ptr + a_off + 1, mask=mask, other=0.0)
@@ -551,8 +568,8 @@ def cgbmv_n_kernel(
         xi = tl.load(x_ptr + x_off + 1, mask=mask, other=0.0)
         if CONJ:
             ai = -ai
-        acc_r += ar * xr - ai * xi
-        acc_i += ar * xi + ai * xr
+        acc_r += tl.sum(ar * xr - ai * xi, axis=1)
+        acc_i += tl.sum(ar * xi + ai * xr, axis=1)
 
     y_off = rows * INCY * 2
     res_r = alpha_r * acc_r - alpha_i * acc_i
@@ -589,6 +606,7 @@ def cgbmv_t_kernel(
     CONJ: tl.constexpr,
     BETA_IS_ZERO: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
+    BAND_TILE: tl.constexpr,
 ):
     pid = tl.program_id(0)
     cols = pid * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
@@ -596,13 +614,16 @@ def cgbmv_t_kernel(
     acc_r = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
     acc_i = tl.zeros((BLOCK_SIZE_M,), dtype=tl.float32)
 
-    for e_idx in tl.range(0, BAND):
+    t_off = tl.arange(0, BAND_TILE)
+    for e_base in tl.range(0, BAND, BAND_TILE):
+        e_idx = e_base + t_off
         e = e_idx - KU
-        i = cols + e
-        band_row = KU + e
-        mask = col_mask & (i >= 0) & (i < m)
+        band_row = e_idx
+        band_mask = e_idx < BAND
+        i = cols[:, None] + e[None, :]
+        mask = col_mask[:, None] & band_mask[None, :] & (i >= 0) & (i < m)
         safe_i = tl.where(mask, i, 0)
-        a_off = (band_row + cols * LDA) * 2
+        a_off = (band_row[None, :] + cols[:, None] * LDA) * 2
         x_off = safe_i * INCX * 2
         ar = tl.load(a_ptr + a_off, mask=mask, other=0.0)
         ai = tl.load(a_ptr + a_off + 1, mask=mask, other=0.0)
@@ -610,8 +631,8 @@ def cgbmv_t_kernel(
         xi = tl.load(x_ptr + x_off + 1, mask=mask, other=0.0)
         if CONJ:
             ai = -ai
-        acc_r += ar * xr - ai * xi
-        acc_i += ar * xi + ai * xr
+        acc_r += tl.sum(ar * xr - ai * xi, axis=1)
+        acc_i += tl.sum(ar * xi + ai * xr, axis=1)
 
     y_off = cols * INCY * 2
     res_r = alpha_r * acc_r - alpha_i * acc_i
@@ -648,6 +669,7 @@ def cgbmv_n_split_band_kernel(
     band_bucket,
     CONJ: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
+    BAND_TILE: tl.constexpr,
 ):
     pid_m = tl.program_id(0)
     pid_band = tl.program_id(1)
@@ -660,13 +682,16 @@ def cgbmv_n_split_band_kernel(
     band_begin = pid_band * chunk
     band_end = tl.minimum(band_begin + chunk, BAND)
 
-    for d_idx in tl.range(band_begin, band_end):
+    t_off = tl.arange(0, BAND_TILE)
+    for d_base in tl.range(band_begin, band_end, BAND_TILE):
+        d_idx = d_base + t_off
         d = d_idx - KL
-        j = rows + d
         band_row = KU - d
-        mask = row_mask & (j >= 0) & (j < n)
+        band_mask = d_idx < band_end
+        j = rows[:, None] + d[None, :]
+        mask = row_mask[:, None] & band_mask[None, :] & (j >= 0) & (j < n)
         safe_j = tl.where(mask, j, 0)
-        a_off = (band_row + safe_j * LDA) * 2
+        a_off = (band_row[None, :] + safe_j * LDA) * 2
         x_off = safe_j * INCX * 2
         ar = tl.load(a_ptr + a_off, mask=mask, other=0.0)
         ai = tl.load(a_ptr + a_off + 1, mask=mask, other=0.0)
@@ -674,8 +699,8 @@ def cgbmv_n_split_band_kernel(
         xi = tl.load(x_ptr + x_off + 1, mask=mask, other=0.0)
         if CONJ:
             ai = -ai
-        acc_r += ar * xr - ai * xi
-        acc_i += ar * xi + ai * xr
+        acc_r += tl.sum(ar * xr - ai * xi, axis=1)
+        acc_i += tl.sum(ar * xi + ai * xr, axis=1)
 
     y_off = rows * INCY * 2
     res_r = alpha_r * acc_r - alpha_i * acc_i
@@ -707,6 +732,7 @@ def cgbmv_t_split_band_kernel(
     band_bucket,
     CONJ: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
+    BAND_TILE: tl.constexpr,
 ):
     pid_m = tl.program_id(0)
     pid_band = tl.program_id(1)
@@ -719,13 +745,16 @@ def cgbmv_t_split_band_kernel(
     band_begin = pid_band * chunk
     band_end = tl.minimum(band_begin + chunk, BAND)
 
-    for e_idx in tl.range(band_begin, band_end):
+    t_off = tl.arange(0, BAND_TILE)
+    for e_base in tl.range(band_begin, band_end, BAND_TILE):
+        e_idx = e_base + t_off
         e = e_idx - KU
-        i = cols + e
-        band_row = KU + e
-        mask = col_mask & (i >= 0) & (i < m)
+        band_row = e_idx
+        band_mask = e_idx < band_end
+        i = cols[:, None] + e[None, :]
+        mask = col_mask[:, None] & band_mask[None, :] & (i >= 0) & (i < m)
         safe_i = tl.where(mask, i, 0)
-        a_off = (band_row + cols * LDA) * 2
+        a_off = (band_row[None, :] + cols[:, None] * LDA) * 2
         x_off = safe_i * INCX * 2
         ar = tl.load(a_ptr + a_off, mask=mask, other=0.0)
         ai = tl.load(a_ptr + a_off + 1, mask=mask, other=0.0)
@@ -733,8 +762,8 @@ def cgbmv_t_split_band_kernel(
         xi = tl.load(x_ptr + x_off + 1, mask=mask, other=0.0)
         if CONJ:
             ai = -ai
-        acc_r += ar * xr - ai * xi
-        acc_i += ar * xi + ai * xr
+        acc_r += tl.sum(ar * xr - ai * xi, axis=1)
+        acc_i += tl.sum(ar * xi + ai * xr, axis=1)
 
     y_off = cols * INCY * 2
     res_r = alpha_r * acc_r - alpha_i * acc_i
@@ -1299,6 +1328,7 @@ def cgbmv(
     split_band = _pick_split_band(out_len, band)
     if split_band == 1 and band >= 512 and out_len >= 4 * inner_len:
         split_band = 2
+
     A_real = torch.view_as_real(A)
     x_real = torch.view_as_real(x)
     y_real = torch.view_as_real(y)
