@@ -1,11 +1,11 @@
 %global debug_package %{nil}
 
-# Filter out auto-generated torch dependency: Fedora does not ship
-# python3-torch, so letting %%pyproject_save_files emit
-# Requires: python3dist(torch) would make the RPM uninstallable from
-# the official repos. Users install torch out of band (pip/conda).
-# Debian side handles this by moving torch to Recommends.
-%global __requires_exclude ^(python3dist\(torch\)|python\(abi\).*torch.*)$
+# Filter out auto-generated Requires for ML/non-distro runtime deps
+# (torch GPU build, triton, hydra-core...): the distro has no GPU-capable
+# python3-torch, no current triton, no hydra-core; users install matching
+# versions via pip per packaging/INSTALL.md. Match python3dist and
+# python3.X.Ydist forms (Fedora >= 39 uses the latter).
+%global __requires_exclude ^python3.*dist.*(torch)
 
 Name:           python3-flag-blas
 Version:        0.1.0
