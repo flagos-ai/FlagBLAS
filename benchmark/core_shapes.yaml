@@ -84,6 +84,21 @@ GemmBenchmark:
     - [4096, 128, 1024]     # short and wide
     - [8192, 256, 2048]     # short and wide
     - [16384, 512, 4096]    # short and wide
+    - [511, 511, 511]       # odd dimensions
+    - [1023, 1023, 1023]    # odd dimensions
+    - [2048, 12288, 4096]   # odd dimensions
+    - [2048, 11008, 4096]   # odd dimensions
+    - [2048, 4096, 11008]   # odd dimensions
+    - [4096, 24576, 8192]   # odd dimensions
+    - [4096, 8192, 28672]   # odd dimensions
+    - [8192, 28672, 8192]   # odd dimensions
+    - [16384, 2048, 2048]   # odd dimensions
+    - [2048, 16384, 2048]   # odd dimensions
+    - [2048, 2048, 16384]   # odd dimensions
+    - [32768, 1024, 1024]   # odd dimensions
+    - [4095, 4095, 4095]   # odd dimensions
+    - [8191, 8191, 8191]   # odd dimensions
+    - [4097, 8191, 4095]   # odd dimensions
   shape_desc: "M, N, K"
 
 # the default shapes info
