@@ -295,6 +295,90 @@ def _sgemm_tt_kernel2(
         c_desc.store([pid_m * BLOCK_M, pid_n * BLOCK_N], result)
 
 
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("sgemm_nn_thin"),
+    key=_SGEMM_KEY,
+    restore_value=["c_ptr"],
+)
+@triton.jit
+def _sgemm_nn_thin_kernel(
+    a_ptr,
+    b_ptr,
+    c_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    k,
+    lda,
+    ldb,
+    ldc,
+    BETA_IS_ZERO: tl.constexpr,
+    SPLIT_K: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    a_ptr = a_ptr.to(tl.pointer_type(tl.float32))
+    b_ptr = b_ptr.to(tl.pointer_type(tl.float32))
+    c_ptr = c_ptr.to(tl.pointer_type(tl.float32))
+
+    pid = tl.program_id(0)
+    pid_k = tl.program_id(1)
+
+    grid_m = tl.cdiv(m, BLOCK_M)
+    grid_n = tl.cdiv(n, BLOCK_N)
+    width = GROUP_M * grid_n
+    group_id = pid // width
+    group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
+    pid_m = group_id * GROUP_M + (pid % group_size)
+    pid_n = (pid % width) // group_size
+
+    chunk_k = tl.cdiv(k, SPLIT_K)
+    k_begin = pid_k * chunk_k
+    k_end = tl.minimum(k_begin + chunk_k, k)
+
+    offs_am = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_bn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+
+    a_ptrs = a_ptr + (offs_am[:, None] * lda + (k_begin + offs_k)[None, :])
+    b_ptrs = b_ptr + ((k_begin + offs_k)[:, None] * ldb + offs_bn[None, :])
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+
+    mask_m = offs_am < m
+    mask_n = offs_bn < n
+
+    k_remain = k_end - k_begin
+    full_iters = k_remain // BLOCK_K
+    remainder = k_remain % BLOCK_K
+
+    for i in range(0, full_iters):
+        a = tl.load(a_ptrs, mask=mask_m[:, None], other=0.0)
+        b = tl.load(b_ptrs, mask=mask_n[None, :], other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32, allow_tf32=False)
+        a_ptrs += BLOCK_K
+        b_ptrs += BLOCK_K * ldb
+
+    if remainder > 0:
+        mask_k = offs_k < remainder
+        a_mask = mask_m[:, None] & mask_k[None, :]
+        b_mask = mask_k[:, None] & mask_n[None, :]
+        a = tl.load(a_ptrs, mask=a_mask, other=0.0)
+        b = tl.load(b_ptrs, mask=b_mask, other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32, allow_tf32=False)
+
+    offs_cm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_cn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    c_ptrs = c_ptr + (offs_cm[:, None] * ldc + offs_cn[None, :])
+
+    c_mask = mask_m[:, None] & mask_n[None, :]
+    tl.atomic_add(c_ptrs, alpha * acc, mask=c_mask, sem="relaxed")
+
+
 def sgemm(
     transa: int,
     transb: int,
@@ -370,7 +454,38 @@ def sgemm(
 
     with torch_device_fn.device(A.device):
         if transa == CUBLAS_OP_N and transb == CUBLAS_OP_N:
-            if aligned:
+            if (
+                min(m, n) <= 64
+                and k >= 256
+                and triton.cdiv(m, 128) * triton.cdiv(n, 32) < 32
+            ):
+                num_k_splits = min(triton.cdiv(k, 128), 16)
+                if beta == 0.0:
+                    C.zero_()
+                elif beta != 1.0:
+                    C.mul_(beta)
+
+                grid_thin = lambda meta: (
+                    triton.cdiv(m, meta["BLOCK_M"])
+                    * triton.cdiv(n, meta["BLOCK_N"]),
+                    num_k_splits,
+                )
+                _sgemm_nn_thin_kernel[grid_thin](
+                    A,
+                    B,
+                    C,
+                    alpha,
+                    beta,
+                    m,
+                    n,
+                    k,
+                    lda,
+                    ldb,
+                    ldc,
+                    BETA_IS_ZERO=beta_is_zero,
+                    SPLIT_K=num_k_splits,
+                )
+            elif aligned:
                 _sgemm_nn_kernel2[grid](
                     A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
                 )
