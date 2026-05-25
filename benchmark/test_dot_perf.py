@@ -12,32 +12,32 @@ from tests.accuracy_utils import DEFAULT_SHAPES
 PAIR_STRIDES = [(2, 2), (2, 3), (3, 2), (3, 3)]
 
 
-def cublas_dotc(x, y, result, n=None, incx=1, incy=1, handle=None):
+def cublas_dot(x, y, result, n=None, incx=1, incy=1, handle=None):
     if n is None:
         n = min(x.numel() // incx, y.numel() // incy)
     if n <= 0:
         result.zero_()
         return result
-    if x.dtype == torch.complex64:
-        cublas.cdotc(handle, n, x.data_ptr(), incx, y.data_ptr(), incy, result.data_ptr())
-    elif x.dtype == torch.complex128:
-        cublas.zdotc(handle, n, x.data_ptr(), incx, y.data_ptr(), incy, result.data_ptr())
+    if x.dtype == torch.float32:
+        cublas.sdot(handle, n, x.data_ptr(), incx, y.data_ptr(), incy, result.data_ptr())
+    elif x.dtype == torch.float64:
+        cublas.ddot(handle, n, x.data_ptr(), incx, y.data_ptr(), incy, result.data_ptr())
     else:
-        raise TypeError(f"Unsupported dtype for dotc: {x.dtype}")
+        raise TypeError(f"Unsupported dtype for dot: {x.dtype}")
     return result
 
 
-def gems_dotc_wrapper(x, y, result, n=None, incx=1, incy=1, handle=None):
-    if x.dtype == torch.complex64:
-        flag_blas.ops.cdotc(n, x, incx, y, incy, result)
-    elif x.dtype == torch.complex128:
-        flag_blas.ops.zdotc(n, x, incx, y, incy, result)
-    else:
-        raise TypeError(f"Unsupported dtype for dotc: {x.dtype}")
+def gems_sdot_wrapper(x, y, result, n=None, incx=1, incy=1, handle=None):
+    flag_blas.ops.sdot(n, x, incx, y, incy, result)
     return result
 
 
-class DotcBenchmark(Benchmark):
+def gems_ddot_wrapper(x, y, result, n=None, incx=1, incy=1, handle=None):
+    flag_blas.ops.ddot(n, x, incx, y, incy, result)
+    return result
+
+
+class DotBenchmark(Benchmark):
     def __init__(self, *args, incx=1, incy=1, **kwargs):
         super().__init__(*args, **kwargs)
         self.incx = incx
@@ -75,7 +75,7 @@ class DotcBenchmark(Benchmark):
         return kwargs["n"]
 
     def validate_results(self, reference_result, blas_result, dtype, reduce_dim=1):
-        if dtype == torch.complex64:
+        if dtype == torch.float32:
             rtol = 1e-5
             atol = max(1e-5, 1e-5 * (max(reduce_dim, 1) ** 0.5))
             tolerance_desc = "rtol=1e-5,atol=max(1e-5,sqrt(n)*1e-5)"
@@ -103,54 +103,54 @@ class DotcBenchmark(Benchmark):
         return {(str(dtype), tolerance_desc)}
 
 
-@pytest.mark.dotc
-def test_perf_cdotc():
-    bench = DotcBenchmark(
-        op_name="cdotc",
-        torch_op=cublas_dotc,
-        gems_op=gems_dotc_wrapper,
-        dtypes=[torch.complex64],
+@pytest.mark.dot
+def test_perf_sdot():
+    bench = DotBenchmark(
+        op_name="sdot",
+        torch_op=cublas_dot,
+        gems_op=gems_sdot_wrapper,
+        dtypes=[torch.float32],
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.dotc
-def test_perf_zdotc():
+@pytest.mark.dot
+def test_perf_ddot():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
-    bench = DotcBenchmark(
-        op_name="zdotc",
-        torch_op=cublas_dotc,
-        gems_op=gems_dotc_wrapper,
-        dtypes=[torch.complex128],
+    bench = DotBenchmark(
+        op_name="ddot",
+        torch_op=cublas_dot,
+        gems_op=gems_ddot_wrapper,
+        dtypes=[torch.float64],
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.dotc
+@pytest.mark.dot
 @pytest.mark.parametrize("incx,incy", PAIR_STRIDES)
-def test_perf_cdotc_stride(incx, incy):
-    bench = DotcBenchmark(
-        op_name=f"cdotc_stride_incx{incx}_incy{incy}",
-        torch_op=cublas_dotc,
-        gems_op=gems_dotc_wrapper,
-        dtypes=[torch.complex64],
+def test_perf_sdot_stride(incx, incy):
+    bench = DotBenchmark(
+        op_name=f"sdot_stride_incx{incx}_incy{incy}",
+        torch_op=cublas_dot,
+        gems_op=gems_sdot_wrapper,
+        dtypes=[torch.float32],
         incx=incx,
         incy=incy,
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.dotc
+@pytest.mark.dot
 @pytest.mark.parametrize("incx,incy", PAIR_STRIDES)
-def test_perf_zdotc_stride(incx, incy):
+def test_perf_ddot_stride(incx, incy):
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
-    bench = DotcBenchmark(
-        op_name=f"zdotc_stride_incx{incx}_incy{incy}",
-        torch_op=cublas_dotc,
-        gems_op=gems_dotc_wrapper,
-        dtypes=[torch.complex128],
+    bench = DotBenchmark(
+        op_name=f"ddot_stride_incx{incx}_incy{incy}",
+        torch_op=cublas_dot,
+        gems_op=gems_ddot_wrapper,
+        dtypes=[torch.float64],
         incx=incx,
         incy=incy,
     )
