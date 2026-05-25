@@ -1,3 +1,6 @@
+import ctypes
+import ctypes.util
+
 import cupy as cp
 import pytest
 import torch
@@ -8,15 +11,57 @@ from .accuracy_utils import L1_PAIR_STRIDES, SWAP_SHAPES
 from .conftest import TO_CPU
 
 
+def load_cublas():
+    lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
+    found_path = ctypes.util.find_library("cublas")
+    if found_path:
+        lib_names.insert(0, found_path)
+
+    for name in lib_names:
+        try:
+            return ctypes.cdll.LoadLibrary(name)
+        except OSError:
+            continue
+    raise RuntimeError("Cannot find libcublas.so in the system")
+
+
+_cublas = load_cublas()
+
+
+def _get_cublas_func(*names):
+    for name in names:
+        if hasattr(_cublas, name):
+            return getattr(_cublas, name)
+    raise RuntimeError(f"Cannot find any cuBLAS symbol from: {', '.join(names)}")
+
+
 def cublas_swap_reference(n, x, incx, y, incy):
-    """CuPy reference swap, in-place."""
+    """cuBLAS reference swap, in-place."""
     if n <= 0:
         return
-    x_view = cp.from_dlpack(x.detach())[0:n * incx:incx]
-    y_view = cp.from_dlpack(y.detach())[0:n * incy:incy]
-    tmp = x_view.copy()
-    x_view[...] = y_view
-    y_view[...] = tmp
+
+    if x.dtype == torch.float32:
+        func = _get_cublas_func("cublasSswap_v2", "cublasSswap")
+    elif x.dtype == torch.float64:
+        func = _get_cublas_func("cublasDswap_v2", "cublasDswap")
+    elif x.dtype == torch.complex64:
+        func = _get_cublas_func("cublasCswap_v2", "cublasCswap")
+    elif x.dtype == torch.complex128:
+        func = _get_cublas_func("cublasZswap_v2", "cublasZswap")
+    else:
+        raise ValueError(f"Unsupported dtype for cuBLAS swap: {x.dtype}")
+
+    handle = cp.cuda.device.get_cublas_handle()
+    status = func(
+        ctypes.c_void_p(handle),
+        ctypes.c_int(n),
+        ctypes.c_void_p(x.data_ptr()),
+        ctypes.c_int(incx),
+        ctypes.c_void_p(y.data_ptr()),
+        ctypes.c_int(incy),
+    )
+    if status != 0:
+        raise RuntimeError(f"cuBLAS swap execution failed, error code: {status}")
 
 
 def cpu_swap_reference(n, x, incx, y, incy):

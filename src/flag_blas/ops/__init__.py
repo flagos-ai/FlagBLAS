@@ -8,10 +8,14 @@ from flag_blas.ops.level1.amin import camin, damin, samin, zamin
 from flag_blas.ops.level1.asum import dasum, dzasum, sasum, scasum
 from flag_blas.ops.level1.axpy import caxpy, daxpy, saxpy, zaxpy
 from flag_blas.ops.level1.copy import ccopy, dcopy, scopy, zcopy
+from flag_blas.ops.level1.dot import ddot, sdot
 from flag_blas.ops.level1.dotc import cdotc, zdotc
 from flag_blas.ops.level1.dotu import cdotu, zdotu
 from flag_blas.ops.level1.nrm2 import dnrm2, dznrm2, scnrm2, snrm2
 from flag_blas.ops.level1.rot import crot, drot, srot, zrot
+from flag_blas.ops.level1.rotg import crotg, drotg, srotg, zrotg
+from flag_blas.ops.level1.rotm import drotm, srotm
+from flag_blas.ops.level1.rotmg import drotmg, srotmg
 from flag_blas.ops.level1.scal import cscal, csscal, dscal, sscal, zdscal, zscal
 from flag_blas.ops.level1.swap import cswap, dswap, sswap, zswap
 from flag_blas.ops.level2._constants import (
@@ -57,6 +61,9 @@ __all__ = [
     "dzasum",
     "sasum",
     "scasum",
+    # dot
+    "sdot",
+    "ddot",
     # dotc
     "cdotc",
     "zdotc",
@@ -85,6 +92,17 @@ __all__ = [
     "drot",
     "crot",
     "zrot",
+    # rotg
+    "srotg",
+    "drotg",
+    "crotg",
+    "zrotg",
+    # rotm
+    "srotm",
+    "drotm",
+    # rotmg
+    "srotmg",
+    "drotmg",
     # gemv
     "sgemv",
     "dgemv",
