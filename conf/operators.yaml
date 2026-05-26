@@ -803,6 +803,54 @@ ops:
       - BLAS
     stages:
       - beta: '0.1'
+  - id: stpmv
+    description: |
+      Single-precision BLAS Level 2 triangular packed matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a float32 triangular matrix A in BLAS packed storage.
+    for:
+      - stpmv
+    labels:
+      - tpmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: dtpmv
+    description: |
+      Double-precision BLAS Level 2 triangular packed matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a float64 triangular matrix A in BLAS packed storage.
+    for:
+      - dtpmv
+    labels:
+      - tpmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: ctpmv
+    description: |
+      Single-precision complex BLAS Level 2 triangular packed matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a complex64 triangular matrix A in BLAS packed storage.
+    for:
+      - ctpmv
+    labels:
+      - tpmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: ztpmv
+    description: |
+      Double-precision complex BLAS Level 2 triangular packed matrix-vector multiplication.
+      Updates x in place with x = op(A) * x for a complex128 triangular matrix A in BLAS packed storage.
+    for:
+      - ztpmv
+    labels:
+      - tpmv
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
   - id: stbsv
     description: |
       Single-precision BLAS Level 2 triangular banded solve.

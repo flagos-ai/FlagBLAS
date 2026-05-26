@@ -1,3 +1,4 @@
-from .gemm import sgemm, hgemm, bfgemm, fp8gemm
+from .gemm import bfgemm, fp8gemm, hgemm, sgemm
+from .tpmv import ctpmv
 
-__all__ = ["sgemm", "hgemm", "bfgemm", "fp8gemm"]
+__all__ = ["sgemm", "hgemm", "bfgemm", "fp8gemm", "ctpmv"]
