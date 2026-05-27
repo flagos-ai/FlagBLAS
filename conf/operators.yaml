@@ -16,7 +16,7 @@ ops:
       half-precision GEMM, based on FP16 format.
       This is a simple wrapper of the existing BLAS float16 `gemm` operator.
     for:
-      - sgemm
+      - hgemm
     labels:
       - gemm
     kind:
@@ -28,7 +28,7 @@ ops:
       Refers to GEMM with BF16 data type.
       This is a simple wrapper of the existing BLAS bfloat16`gemm` operator.
     for:
-      - sgemm
+      - bfgemm
     labels:
       - gemm
     kind:
@@ -40,7 +40,7 @@ ops:
       8-bit floating point GEMM with E4M3/E5M2 common formats
       This is a simple wrapper of the existing torch `abs` operator.
     for:
-      - sgemm
+      - fp8gemm
     labels:
       - gemm
     kind:
