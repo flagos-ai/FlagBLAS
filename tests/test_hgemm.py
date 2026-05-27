@@ -1,14 +1,16 @@
-import pytest
-import torch
 import cupy as cp
 import numpy as np
+import pytest
+import scipy
+import torch
 from cupy_backends.cuda.libs import cublas
+from scipy.linalg import blas
+
 import flag_blas
 from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
-import scipy
-from scipy.linalg import blas
-from .conftest import TO_CPU
+
 from . import accuracy_utils as utils
+from .conftest import TO_CPU
 
 CUDA_R_32F = 0
 CUDA_R_16F = 2
@@ -89,13 +91,13 @@ def test_accuracy_hgemm(m, n, k, transa, transb):
         B_ref = B_row.to("cpu").to(torch.float64)
         C_ref = C_row.to("cpu").to(torch.float64)
         C_ref = blas.dgemm(
-            alpha, 
-            A_ref.numpy(), 
-            B_ref.numpy(), 
-            beta, 
-            c=C_ref.numpy(), 
-            trans_b=transb, 
-            trans_a=transa
+            alpha,
+            A_ref.numpy(),
+            B_ref.numpy(),
+            beta,
+            c=C_ref.numpy(),
+            trans_b=transb,
+            trans_a=transa,
         )
     else:
         cublas_hgemm_reference(
@@ -129,7 +131,7 @@ def test_accuracy_hgemm(m, n, k, transa, transb):
         ldc_flag,
     )
     if TO_CPU:
-        utils.blas_assert_close(C_row, torch.tensor(C_ref), dtype, reduce_dim=k)  
+        utils.blas_assert_close(C_row, torch.tensor(C_ref), dtype, reduce_dim=k)
     else:
         utils.blas_assert_close(C_row, C_col.contiguous(), dtype, reduce_dim=k)
 
@@ -145,7 +147,7 @@ def test_hgemm_alpha_zero():
 
     flag_blas.hgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 0.0, A, k, B, n, 2.0, C, n)
 
-    #torch.testing.assert_close(C, C_orig * 2.0)
+    # torch.testing.assert_close(C, C_orig * 2.0)
     if TO_CPU:
         utils.blas_assert_close(C, C_orig.to("cpu") * 2.0, torch.float16, reduce_dim=k)
     else:
@@ -227,7 +229,8 @@ def test_hgemm_alpha_beta(alpha, beta):
         CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_row, k, B_row, n, beta, C_row, n
     )
     if TO_CPU:
-        utils.blas_assert_close(C_row, C_col.contiguous().to("cpu"), torch.float16, reduce_dim=k)
+        utils.blas_assert_close(
+            C_row, C_col.contiguous().to("cpu"), torch.float16, reduce_dim=k
+        )
     else:
         utils.blas_assert_close(C_row, C_col.contiguous(), torch.float16, reduce_dim=k)
-
