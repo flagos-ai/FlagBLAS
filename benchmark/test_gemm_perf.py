@@ -8,9 +8,8 @@ import torch
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
-from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
-
 from benchmark.performance_utils import Benchmark
+from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 from flag_blas.utils import shape_utils
 
 CUDA_R_32F = 0
@@ -536,17 +535,25 @@ class GemmBenchmark(Benchmark):
 
         try:
             flag_blas.testing.assert_close(
-                gems_cpu, torch_cpu, torch_cpu.dtype, equal_nan=False, reduce_dim=reduce_dim, atol=tolerance
+                gems_cpu,
+                torch_cpu,
+                torch_cpu.dtype,
+                equal_nan=False,
+                reduce_dim=reduce_dim,
+                atol=tolerance,
             )
         except AssertionError as e:
             max_abs_diff = torch.max(torch.abs(torch_cpu - gems_cpu))
-            max_rel_diff = torch.max(torch.abs((torch_cpu - gems_cpu) / (torch.abs(torch_cpu) + 1e-9)))
+            max_rel_diff = torch.max(
+                torch.abs((torch_cpu - gems_cpu) / (torch.abs(torch_cpu) + 1e-9))
+            )
             raise AssertionError(
                 f"Results differ beyond tolerance {tolerance}:\n"
                 f"Max absolute difference: {max_abs_diff}\n"
                 f"Max relative difference: {max_rel_diff}\n"
                 f"Shape: {torch_cpu.shape}"
             )
+
 
 @pytest.mark.sgemm
 def test_perf_sgemm_nn():
@@ -636,7 +643,7 @@ def test_perf_hgemm_nn():
         gems_op=gems_hgemm_wrapper,
         dtypes=[torch.float16],
         transa=CUBLAS_OP_N,
-                                                                                     transb=CUBLAS_OP_N,
+        transb=CUBLAS_OP_N,
     )
     bench.init_user_config()
     for cur_dtype in bench.dtypes:
@@ -790,7 +797,6 @@ def test_perf_bfgemm_tt():
 
 
 class Fp8GemmBenchmark(GemmBenchmark):
-
     def __init__(
         self, *args, fp8_dtype=torch.float8_e4m3fn, out_dtype=torch.float16, **kwargs
     ):
@@ -801,7 +807,8 @@ class Fp8GemmBenchmark(GemmBenchmark):
     def set_more_shapes(self):
         # FP8 requires all dimensions divisible by 16
         filtered_model_shapes = [
-            (bs, n, k) for bs, n, k in model_shapes() 
+            (bs, n, k)
+            for bs, n, k in model_shapes()
             if all(d % 16 == 0 for d in (bs, n, k))
         ]
         return FP8_GEMM_SHAPES + filtered_model_shapes

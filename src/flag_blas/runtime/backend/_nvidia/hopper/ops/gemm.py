@@ -6,31 +6,31 @@ import triton.language as tl
 from triton.tools.tensor_descriptor import TensorDescriptor  # noqa: F401
 
 from flag_blas import runtime
-from flag_blas.runtime import torch_device_fn
-from flag_blas.utils import libentry, libtuner
 from flag_blas.ops.level3.gemm import (
+    _BFGEMM_KEY,
+    _HGEMM_KEY,
+    CUBLAS_OP_N,
+    CUBLAS_OP_T,
+    FP8_DTYPES,
+    ScalarType,
+    _bfgemm_nn_kernel,
+    _bfgemm_nt_kernel,
+    _bfgemm_tn_kernel,
+    _bfgemm_tt_kernel,
+    _fp8gemm_nn_kernel,
+    _fp8gemm_nt_kernel,
+    _fp8gemm_tn_kernel,
+    _fp8gemm_tt_kernel,
+    _hgemm_nn_kernel,
+    _hgemm_nt_kernel,
+    _hgemm_tn_kernel,
+    _hgemm_tt_kernel,
     _sgemm_nn_kernel,
     _sgemm_tn_kernel,
     _sgemm_tt_kernel,
-    _hgemm_nn_kernel,
-    _hgemm_tn_kernel,
-    _hgemm_nt_kernel,
-    _hgemm_tt_kernel,
-    _bfgemm_nn_kernel,
-    _bfgemm_tn_kernel,
-    _bfgemm_nt_kernel,
-    _bfgemm_tt_kernel,
-    _fp8gemm_nn_kernel,
-    _fp8gemm_tn_kernel,
-    _fp8gemm_nt_kernel,
-    _fp8gemm_tt_kernel,
-    _HGEMM_KEY,
-    _BFGEMM_KEY,
-    FP8_DTYPES,
-    CUBLAS_OP_N,
-    CUBLAS_OP_T,
-    ScalarType,
 )
+from flag_blas.runtime import torch_device_fn
+from flag_blas.utils import libentry, libtuner
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +154,9 @@ def _sgemm_tn_kernel2(
         a_t = a_desc.load([i * BLOCK_K, pid_m * BLOCK_M])
         b_t = b_desc.load([i * BLOCK_K, pid_n * BLOCK_N])
 
-        acc = tl.dot(tl.trans(a_t), b_t, acc, out_dtype=tl.float32, input_precision="tf32x3")
+        acc = tl.dot(
+            tl.trans(a_t), b_t, acc, out_dtype=tl.float32, input_precision="tf32x3"
+        )
 
     if BETA_IS_ZERO:
         result = (alpha * acc).to(tl.float32)
@@ -218,7 +220,9 @@ def _sgemm_nt_kernel2(
         a_t = a_desc.load([pid_m * BLOCK_M, i * BLOCK_K])
         b_t = b_desc.load([pid_n * BLOCK_N, i * BLOCK_K])
 
-        acc = tl.dot(a_t, tl.trans(b_t), acc, out_dtype=tl.float32, input_precision="tf32x3")
+        acc = tl.dot(
+            a_t, tl.trans(b_t), acc, out_dtype=tl.float32, input_precision="tf32x3"
+        )
 
     if BETA_IS_ZERO:
         result = (alpha * acc).to(tl.float32)
@@ -466,8 +470,7 @@ def sgemm(
                     C.mul_(beta)
 
                 grid_thin = lambda meta: (
-                    triton.cdiv(m, meta["BLOCK_M"])
-                    * triton.cdiv(n, meta["BLOCK_N"]),
+                    triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
                     num_k_splits,
                 )
                 _sgemm_nn_thin_kernel[grid_thin](
@@ -774,7 +777,6 @@ def _hgemm_nn_kernel2(
     BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
 ):
-
     a_ptr = a_ptr.to(tl.pointer_type(tl.float16))
     b_ptr = b_ptr.to(tl.pointer_type(tl.float16))
     c_ptr = c_ptr.to(tl.pointer_type(tl.float16))
@@ -1574,7 +1576,6 @@ def _bfgemm_nn_kernel2(
     BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
 ):
-
     a_ptr = a_ptr.to(tl.pointer_type(tl.bfloat16))
     b_ptr = b_ptr.to(tl.pointer_type(tl.bfloat16))
     c_ptr = c_ptr.to(tl.pointer_type(tl.bfloat16))
