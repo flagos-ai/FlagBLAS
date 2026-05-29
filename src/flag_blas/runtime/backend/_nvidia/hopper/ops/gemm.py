@@ -29,6 +29,7 @@ from flag_blas.ops.level3.gemm import (
     _sgemm_tn_kernel,
     _sgemm_tt_kernel,
 )
+from flag_blas.ops.level3.gemm_shape_classifier import GEMM_CLASSIFIER
 from flag_blas.runtime import torch_device_fn
 from flag_blas.utils import libentry, libtuner
 
@@ -443,6 +444,7 @@ def sgemm(
     assert C.numel() >= m * ldc
 
     beta_is_zero = beta == 0.0
+    shape_class = GEMM_CLASSIFIER.classify(m=m, n=n, k=k)
 
     grid = lambda meta: (
         triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
@@ -458,11 +460,7 @@ def sgemm(
 
     with torch_device_fn.device(A.device):
         if transa == CUBLAS_OP_N and transb == CUBLAS_OP_N:
-            if (
-                min(m, n) <= 64
-                and k >= 256
-                and triton.cdiv(m, 128) * triton.cdiv(n, 32) < 32
-            ):
+            if shape_class == "thin_mn_large_k":
                 num_k_splits = min(triton.cdiv(k, 128), 16)
                 if beta == 0.0:
                     C.zero_()
@@ -474,133 +472,34 @@ def sgemm(
                     num_k_splits,
                 )
                 _sgemm_nn_thin_kernel[grid_thin](
-                    A,
-                    B,
-                    C,
-                    alpha,
-                    beta,
-                    m,
-                    n,
-                    k,
-                    lda,
-                    ldb,
-                    ldc,
-                    BETA_IS_ZERO=beta_is_zero,
-                    SPLIT_K=num_k_splits,
+                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc,
+                    BETA_IS_ZERO=beta_is_zero, SPLIT_K=num_k_splits,
+                )
+            elif shape_class == "large_mn":
+                _pad_and_run_sgemm_nn_hopper(
+                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
                 )
             elif aligned:
                 _sgemm_nn_kernel2[grid](
                     A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
                 )
             else:
-                if m > 1024 and n > 1024 and k > 1024:
-                    pad_m = (16 - (m % 16)) % 16
-                    pad_n = (16 - (n % 16)) % 16
-                    pad_k = (16 - (k % 16)) % 16
-
-                    A_2d = A.view(-1, lda)
-                    B_2d = B.view(-1, ldb)
-                    C_2d = C.view(-1, ldc)
-
-                    A_padded = torch.nn.functional.pad(
-                        A_2d[:m, :k], (0, pad_k, 0, pad_m)
-                    )
-                    B_padded = torch.nn.functional.pad(
-                        B_2d[:k, :n], (0, pad_n, 0, pad_k)
-                    )
-                    C_padded = torch.nn.functional.pad(
-                        C_2d[:m, :n], (0, pad_n, 0, pad_m)
-                    )
-
-                    m_pad = m + pad_m
-                    n_pad = n + pad_n
-                    k_pad = k + pad_k
-                    lda_pad = k_pad
-                    ldb_pad = n_pad
-                    ldc_pad = n_pad
-
-                    grid_pad = lambda meta: (
-                        triton.cdiv(m_pad, meta["BLOCK_M"])
-                        * triton.cdiv(n_pad, meta["BLOCK_N"]),
-                    )
-
-                    _sgemm_nn_kernel2[grid_pad](
-                        A_padded,
-                        B_padded,
-                        C_padded,
-                        alpha,
-                        beta,
-                        m_pad,
-                        n_pad,
-                        k_pad,
-                        lda_pad,
-                        ldb_pad,
-                        ldc_pad,
-                        beta_is_zero,
-                    )
-
-                    C_2d[:m, :n] = C_padded[:m, :n]
-                else:
-                    _sgemm_nn_kernel[grid](
-                        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                    )
+                _sgemm_nn_kernel[grid](
+                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+                )
         elif transa == CUBLAS_OP_T and transb == CUBLAS_OP_N:
-            if aligned:
+            if shape_class == "large_mn":
+                _pad_and_run_sgemm_tn_hopper(
+                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+                )
+            elif aligned:
                 _sgemm_tn_kernel2[grid](
                     A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
                 )
             else:
-                if m > 1024 and n > 1024 and k > 1024:
-                    pad_m = (16 - (m % 16)) % 16
-                    pad_n = (16 - (n % 16)) % 16
-                    pad_k = (16 - (k % 16)) % 16
-
-                    A_2d = A.view(-1, lda)
-                    B_2d = B.view(-1, ldb)
-                    C_2d = C.view(-1, ldc)
-
-                    A_padded = torch.nn.functional.pad(
-                        A_2d[:k, :m], (0, pad_m, 0, pad_k)
-                    )
-                    B_padded = torch.nn.functional.pad(
-                        B_2d[:k, :n], (0, pad_n, 0, pad_k)
-                    )
-                    C_padded = torch.nn.functional.pad(
-                        C_2d[:m, :n], (0, pad_n, 0, pad_m)
-                    )
-
-                    m_pad = m + pad_m
-                    n_pad = n + pad_n
-                    k_pad = k + pad_k
-                    lda_pad = m_pad
-                    ldb_pad = n_pad
-                    ldc_pad = n_pad
-
-                    grid_pad = lambda meta: (
-                        triton.cdiv(m_pad, meta["BLOCK_M"])
-                        * triton.cdiv(n_pad, meta["BLOCK_N"]),
-                    )
-
-                    _sgemm_tn_kernel2[grid_pad](
-                        A_padded,
-                        B_padded,
-                        C_padded,
-                        alpha,
-                        beta,
-                        m_pad,
-                        n_pad,
-                        k_pad,
-                        lda_pad,
-                        ldb_pad,
-                        ldc_pad,
-                        beta_is_zero,
-                    )
-
-                    C_2d[:m, :n] = C_padded[:m, :n]
-                else:
-                    _sgemm_tn_kernel[grid](
-                        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                    )
+                _sgemm_tn_kernel[grid](
+                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+                )
         elif transa == CUBLAS_OP_N and transb == CUBLAS_OP_T:
             B_transposed = B.t().contiguous()
             ldb_new = n
@@ -615,141 +514,186 @@ def sgemm(
             )
             aligned_new = strides_aligned_new and ptrs_aligned_new
 
-            if aligned_new:
+            if shape_class == "large_mn":
+                _pad_and_run_sgemm_nt_hopper(
+                    A, B_transposed, C, alpha, beta, m, n, k,
+                    lda, ldb_new, ldc, beta_is_zero
+                )
+            elif aligned_new:
                 _sgemm_nn_kernel2[grid](
-                    A,
-                    B_transposed,
-                    C,
-                    alpha,
-                    beta,
-                    m,
-                    n,
-                    k,
-                    lda,
-                    ldb_new,
-                    ldc,
-                    beta_is_zero,
+                    A, B_transposed, C, alpha, beta, m, n, k,
+                    lda, ldb_new, ldc, beta_is_zero
                 )
             else:
-                if m > 1024 and n > 1024 and k > 1024:
-                    pad_m = (16 - (m % 16)) % 16
-                    pad_n = (16 - (n % 16)) % 16
-                    pad_k = (16 - (k % 16)) % 16
-
-                    A_2d = A.view(-1, lda)
-                    B_2d = B_transposed.view(-1, ldb_new)
-                    C_2d = C.view(-1, ldc)
-
-                    A_padded = torch.nn.functional.pad(
-                        A_2d[:m, :k], (0, pad_k, 0, pad_m)
-                    )
-                    B_padded = torch.nn.functional.pad(
-                        B_2d[:k, :n], (0, pad_n, 0, pad_k)
-                    )
-                    C_padded = torch.nn.functional.pad(
-                        C_2d[:m, :n], (0, pad_n, 0, pad_m)
-                    )
-
-                    m_pad = m + pad_m
-                    n_pad = n + pad_n
-                    k_pad = k + pad_k
-                    lda_pad = k_pad
-                    ldb_pad = n_pad
-                    ldc_pad = n_pad
-
-                    grid_pad = lambda meta: (
-                        triton.cdiv(m_pad, meta["BLOCK_M"])
-                        * triton.cdiv(n_pad, meta["BLOCK_N"]),
-                    )
-
-                    _sgemm_nn_kernel2[grid_pad](
-                        A_padded,
-                        B_padded,
-                        C_padded,
-                        alpha,
-                        beta,
-                        m_pad,
-                        n_pad,
-                        k_pad,
-                        lda_pad,
-                        ldb_pad,
-                        ldc_pad,
-                        beta_is_zero,
-                    )
-
-                    C_2d[:m, :n] = C_padded[:m, :n]
-                else:
-                    _sgemm_nn_kernel[grid](
-                        A,
-                        B_transposed,
-                        C,
-                        alpha,
-                        beta,
-                        m,
-                        n,
-                        k,
-                        lda,
-                        ldb_new,
-                        ldc,
-                        beta_is_zero,
-                    )
+                _sgemm_nn_kernel[grid](
+                    A, B_transposed, C, alpha, beta, m, n, k,
+                    lda, ldb_new, ldc, beta_is_zero
+                )
         else:
-            if aligned:
+            if shape_class == "large_mn":
+                _pad_and_run_sgemm_tt_hopper(
+                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+                )
+            elif aligned:
                 _sgemm_tt_kernel2[grid](
                     A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
                 )
             else:
-                if m > 1024 and n > 1024 and k > 1024:
-                    pad_m = (16 - (m % 16)) % 16
-                    pad_n = (16 - (n % 16)) % 16
-                    pad_k = (16 - (k % 16)) % 16
+                _sgemm_tt_kernel[grid](
+                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+                )
 
-                    A_2d = A.view(-1, lda)
-                    B_2d = B.view(-1, ldb)
-                    C_2d = C.view(-1, ldc)
 
-                    A_padded = torch.nn.functional.pad(
-                        A_2d[:k, :m], (0, pad_m, 0, pad_k)
-                    )
-                    B_padded = torch.nn.functional.pad(
-                        B_2d[:n, :k], (0, pad_k, 0, pad_n)
-                    )
-                    C_padded = torch.nn.functional.pad(
-                        C_2d[:m, :n], (0, pad_n, 0, pad_m)
-                    )
+def _pad_and_run_sgemm_nn_hopper(A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero):
+    pad_m = (16 - (m % 16)) % 16
+    pad_n = (16 - (n % 16)) % 16
+    pad_k = (16 - (k % 16)) % 16
 
-                    m_pad = m + pad_m
-                    n_pad = n + pad_n
-                    k_pad = k + pad_k
-                    lda_pad = m_pad
-                    ldb_pad = k_pad
-                    ldc_pad = n_pad
+    if pad_m == 0 and pad_n == 0 and pad_k == 0:
+        grid = lambda meta: (
+            triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+        )
+        _sgemm_nn_kernel2[grid](
+            A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+        )
+        return
 
-                    grid_pad = lambda meta: (
-                        triton.cdiv(m_pad, meta["BLOCK_M"])
-                        * triton.cdiv(n_pad, meta["BLOCK_N"]),
-                    )
+    A_2d = A.view(-1, lda)
+    B_2d = B.view(-1, ldb)
+    C_2d = C.view(-1, ldc)
 
-                    _sgemm_tt_kernel2[grid_pad](
-                        A_padded,
-                        B_padded,
-                        C_padded,
-                        alpha,
-                        beta,
-                        m_pad,
-                        n_pad,
-                        k_pad,
-                        lda_pad,
-                        ldb_pad,
-                        ldc_pad,
-                        beta_is_zero,
-                    )
+    A_padded = torch.nn.functional.pad(A_2d[:m, :k], (0, pad_k, 0, pad_m))
+    B_padded = torch.nn.functional.pad(B_2d[:k, :n], (0, pad_n, 0, pad_k))
+    C_padded = torch.nn.functional.pad(C_2d[:m, :n], (0, pad_n, 0, pad_m))
 
-                    C_2d[:m, :n] = C_padded[:m, :n]
-                else:
-                    _sgemm_tt_kernel[grid](
-                        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                    )
+    m_pad = m + pad_m
+    n_pad = n + pad_n
+    k_pad = k + pad_k
+
+    grid_pad = lambda meta: (
+        triton.cdiv(m_pad, meta["BLOCK_M"]) * triton.cdiv(n_pad, meta["BLOCK_N"]),
+    )
+
+    _sgemm_nn_kernel2[grid_pad](
+        A_padded, B_padded, C_padded,
+        alpha, beta, m_pad, n_pad, k_pad, k_pad, n_pad, n_pad, beta_is_zero
+    )
+
+    C_2d[:m, :n] = C_padded[:m, :n]
+
+
+def _pad_and_run_sgemm_tn_hopper(A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero):
+    pad_m = (16 - (m % 16)) % 16
+    pad_n = (16 - (n % 16)) % 16
+    pad_k = (16 - (k % 16)) % 16
+
+    if pad_m == 0 and pad_n == 0 and pad_k == 0:
+        grid = lambda meta: (
+            triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+        )
+        _sgemm_tn_kernel2[grid](
+            A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+        )
+        return
+
+    A_2d = A.view(-1, lda)
+    B_2d = B.view(-1, ldb)
+    C_2d = C.view(-1, ldc)
+
+    A_padded = torch.nn.functional.pad(A_2d[:k, :m], (0, pad_m, 0, pad_k))
+    B_padded = torch.nn.functional.pad(B_2d[:k, :n], (0, pad_n, 0, pad_k))
+    C_padded = torch.nn.functional.pad(C_2d[:m, :n], (0, pad_n, 0, pad_m))
+
+    m_pad = m + pad_m
+    n_pad = n + pad_n
+    k_pad = k + pad_k
+
+    grid_pad = lambda meta: (
+        triton.cdiv(m_pad, meta["BLOCK_M"]) * triton.cdiv(n_pad, meta["BLOCK_N"]),
+    )
+
+    _sgemm_tn_kernel2[grid_pad](
+        A_padded, B_padded, C_padded,
+        alpha, beta, m_pad, n_pad, k_pad, m_pad, n_pad, n_pad, beta_is_zero
+    )
+
+    C_2d[:m, :n] = C_padded[:m, :n]
+
+
+def _pad_and_run_sgemm_nt_hopper(A, B_transposed, C, alpha, beta, m, n, k, lda, ldb_new, ldc, beta_is_zero):
+    pad_m = (16 - (m % 16)) % 16
+    pad_n = (16 - (n % 16)) % 16
+    pad_k = (16 - (k % 16)) % 16
+
+    if pad_m == 0 and pad_n == 0 and pad_k == 0:
+        grid = lambda meta: (
+            triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+        )
+        _sgemm_nn_kernel2[grid](
+            A, B_transposed, C, alpha, beta, m, n, k, lda, ldb_new, ldc, beta_is_zero
+        )
+        return
+
+    A_2d = A.view(-1, lda)
+    B_2d = B_transposed.view(-1, ldb_new)
+    C_2d = C.view(-1, ldc)
+
+    A_padded = torch.nn.functional.pad(A_2d[:m, :k], (0, pad_k, 0, pad_m))
+    B_padded = torch.nn.functional.pad(B_2d[:k, :n], (0, pad_n, 0, pad_k))
+    C_padded = torch.nn.functional.pad(C_2d[:m, :n], (0, pad_n, 0, pad_m))
+
+    m_pad = m + pad_m
+    n_pad = n + pad_n
+    k_pad = k + pad_k
+
+    grid_pad = lambda meta: (
+        triton.cdiv(m_pad, meta["BLOCK_M"]) * triton.cdiv(n_pad, meta["BLOCK_N"]),
+    )
+
+    _sgemm_nn_kernel2[grid_pad](
+        A_padded, B_padded, C_padded,
+        alpha, beta, m_pad, n_pad, k_pad, k_pad, n_pad, n_pad, beta_is_zero
+    )
+
+    C_2d[:m, :n] = C_padded[:m, :n]
+
+
+def _pad_and_run_sgemm_tt_hopper(A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero):
+    pad_m = (16 - (m % 16)) % 16
+    pad_n = (16 - (n % 16)) % 16
+    pad_k = (16 - (k % 16)) % 16
+
+    if pad_m == 0 and pad_n == 0 and pad_k == 0:
+        grid = lambda meta: (
+            triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+        )
+        _sgemm_tt_kernel2[grid](
+            A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+        )
+        return
+
+    A_2d = A.view(-1, lda)
+    B_2d = B.view(-1, ldb)
+    C_2d = C.view(-1, ldc)
+
+    A_padded = torch.nn.functional.pad(A_2d[:k, :m], (0, pad_m, 0, pad_k))
+    B_padded = torch.nn.functional.pad(B_2d[:n, :k], (0, pad_k, 0, pad_n))
+    C_padded = torch.nn.functional.pad(C_2d[:m, :n], (0, pad_n, 0, pad_m))
+
+    m_pad = m + pad_m
+    n_pad = n + pad_n
+    k_pad = k + pad_k
+
+    grid_pad = lambda meta: (
+        triton.cdiv(m_pad, meta["BLOCK_M"]) * triton.cdiv(n_pad, meta["BLOCK_N"]),
+    )
+
+    _sgemm_tt_kernel2[grid_pad](
+        A_padded, B_padded, C_padded,
+        alpha, beta, m_pad, n_pad, k_pad, m_pad, k_pad, n_pad, beta_is_zero
+    )
+
+    C_2d[:m, :n] = C_padded[:m, :n]
 
 
 @libentry()

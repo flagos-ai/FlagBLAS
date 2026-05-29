@@ -6,6 +6,7 @@ import triton
 import triton.language as tl
 
 from flag_blas import runtime
+from flag_blas.ops.level3.gemm_shape_classifier import GEMM_CLASSIFIER
 from flag_blas.runtime import torch_device_fn
 from flag_blas.utils import libentry, libtuner
 from flag_blas.utils import triton_lang_extension as tle
@@ -401,6 +402,86 @@ def _sgemm_tt_kernel(
             tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.float32), mask=c_mask)
 
 
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("sgemm_nn_thin"),
+    key=_SGEMM_KEY,
+    restore_value=["c_ptr"],
+)
+@triton.jit
+def _sgemm_nn_splitk_kernel(
+    a_ptr,
+    b_ptr,
+    c_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    k,
+    lda,
+    ldb,
+    ldc,
+    BETA_IS_ZERO: tl.constexpr,
+    SPLIT_K: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    pid_k = tl.program_id(1)
+
+    grid_m = tl.cdiv(m, BLOCK_M)
+    grid_n = tl.cdiv(n, BLOCK_N)
+    width = GROUP_M * grid_n
+    group_id = pid // width
+    group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
+    pid_m = group_id * GROUP_M + (pid % group_size)
+    pid_n = (pid % width) // group_size
+
+    chunk_k = tl.cdiv(k, SPLIT_K)
+    k_begin = pid_k * chunk_k
+    k_end = tl.minimum(k_begin + chunk_k, k)
+
+    offs_am = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_bn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+
+    a_ptrs = a_ptr + (offs_am[:, None] * lda + (k_begin + offs_k)[None, :])
+    b_ptrs = b_ptr + ((k_begin + offs_k)[:, None] * ldb + offs_bn[None, :])
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+
+    mask_m = offs_am < m
+    mask_n = offs_bn < n
+
+    k_remain = k_end - k_begin
+    full_iters = k_remain // BLOCK_K
+    remainder = k_remain % BLOCK_K
+
+    for i in range(0, full_iters):
+        a = tl.load(a_ptrs, mask=mask_m[:, None], other=0.0)
+        b = tl.load(b_ptrs, mask=mask_n[None, :], other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32, allow_tf32=False)
+        a_ptrs += BLOCK_K
+        b_ptrs += BLOCK_K * ldb
+
+    if remainder > 0:
+        mask_k = offs_k < remainder
+        a_mask = mask_m[:, None] & mask_k[None, :]
+        b_mask = mask_k[:, None] & mask_n[None, :]
+        a = tl.load(a_ptrs, mask=a_mask, other=0.0)
+        b = tl.load(b_ptrs, mask=b_mask, other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32, allow_tf32=False)
+
+    offs_cm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_cn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    c_ptrs = c_ptr + (offs_cm[:, None] * ldc + offs_cn[None, :])
+
+    c_mask = mask_m[:, None] & mask_n[None, :]
+    tl.atomic_add(c_ptrs, alpha * acc, mask=c_mask, sem="relaxed")
+
+
 def sgemm(
     transa: int,
     transb: int,
@@ -437,15 +518,37 @@ def sgemm(
         return
 
     beta_is_zero = beta == 0.0
+    shape_class = GEMM_CLASSIFIER.classify(m=m, n=n, k=k)
+
     grid = lambda meta: (
         triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
     )
 
     with torch_device_fn.device(A.device):
         if transa == CUBLAS_OP_N and transb == CUBLAS_OP_N:
-            _sgemm_nn_kernel[grid](
-                A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-            )
+            if shape_class == "thin_mn_large_k":
+                num_k_splits = min(triton.cdiv(k, 128), 16)
+                if beta == 0.0:
+                    C.zero_()
+                elif beta != 1.0:
+                    C.mul_(beta)
+
+                grid_2d = lambda meta: (
+                    triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+                    num_k_splits,
+                )
+                _sgemm_nn_splitk_kernel[grid_2d](
+                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc,
+                    BETA_IS_ZERO=beta_is_zero, SPLIT_K=num_k_splits,
+                )
+            elif shape_class == "large_mn":
+                _pad_and_run_sgemm_nn(
+                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+                )
+            else:
+                _sgemm_nn_kernel[grid](
+                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+                )
         elif transa == CUBLAS_OP_T and transb == CUBLAS_OP_N:
             _sgemm_tn_kernel[grid](
                 A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
@@ -458,6 +561,44 @@ def sgemm(
             _sgemm_tt_kernel[grid](
                 A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
             )
+
+
+def _pad_and_run_sgemm_nn(A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero):
+    pad_m = (16 - (m % 16)) % 16
+    pad_n = (16 - (n % 16)) % 16
+    pad_k = (16 - (k % 16)) % 16
+
+    if pad_m == 0 and pad_n == 0 and pad_k == 0:
+        grid = lambda meta: (
+            triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+        )
+        _sgemm_nn_kernel[grid](
+            A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+        )
+        return
+
+    A_2d = A.view(-1, lda)
+    B_2d = B.view(-1, ldb)
+    C_2d = C.view(-1, ldc)
+
+    A_padded = torch.nn.functional.pad(A_2d[:m, :k], (0, pad_k, 0, pad_m))
+    B_padded = torch.nn.functional.pad(B_2d[:k, :n], (0, pad_n, 0, pad_k))
+    C_padded = torch.nn.functional.pad(C_2d[:m, :n], (0, pad_n, 0, pad_m))
+
+    m_pad = m + pad_m
+    n_pad = n + pad_n
+    k_pad = k + pad_k
+
+    grid_pad = lambda meta: (
+        triton.cdiv(m_pad, meta["BLOCK_M"]) * triton.cdiv(n_pad, meta["BLOCK_N"]),
+    )
+
+    _sgemm_nn_kernel[grid_pad](
+        A_padded, B_padded, C_padded,
+        alpha, beta, m_pad, n_pad, k_pad, k_pad, n_pad, n_pad, beta_is_zero
+    )
+
+    C_2d[:m, :n].copy_(C_padded[:m, :n])
 
 
 _HGEMM_KEY = ["m", "n", "k", "BETA_IS_ZERO"]
