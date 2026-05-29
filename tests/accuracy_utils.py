@@ -1,5 +1,6 @@
 import importlib
 import itertools
+import logging
 import random
 
 import numpy as np
@@ -11,6 +12,8 @@ from .conftest import QUICK_MODE, TO_CPU, L1_n_end, L1_n_start, L1_n_step
 
 GEN_SHAPE = False
 
+logger = logging.getLogger(__name__)
+
 fp64_is_supported = flag_blas.runtime.device.support_fp64
 bf16_is_supported = flag_blas.runtime.device.support_bf16
 int64_is_supported = flag_blas.runtime.device.support_int64
@@ -18,18 +21,21 @@ int64_is_supported = flag_blas.runtime.device.support_int64
 L1_n_start_val = int(L1_n_start)
 L1_n_end_val = int(L1_n_end)
 L1_n_step_val = int(L1_n_step)
-print(L1_n_start_val)
-print(L1_n_end_val)
-print(L1_n_step_val)
+logger.debug(
+    "L1 generated-shape config: start=%s end=%s step=%s",
+    L1_n_start_val,
+    L1_n_end_val,
+    L1_n_step_val,
+)
 
 
 def gen_shape_N(n_start, n_end, n_inc):
     shape_list = [(num,) for num in range(n_start, n_end + 1, n_inc)]
-    print(shape_list)
+    logger.debug("Generated L1 shapes: %s", shape_list)
     return shape_list
 
 
-DEFAULT_SHAPES = [
+L1_BASE_SHAPES = [
     (1024,),
     (5333,),
     (65536,),
@@ -45,34 +51,60 @@ DEFAULT_SHAPES = [
     (134217728,),
 ]
 
-# axpy shape
-AXPY_SHAPES = DEFAULT_SHAPES
-if GEN_SHAPE:
-    AXPY_SHAPES.clear()
-    AXPY_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
+L1_STRIDE_SHAPES = [
+    (1024,),
+    (5333,),
+    (65536,),
+    (100000,),
+    (1048576,),
+    (3000000,),
+    (4194304,),
+]
 
-# amax shape
-AMAX_SHAPES = DEFAULT_SHAPES
-if GEN_SHAPE:
-    AMAX_SHAPES.clear()
-    AMAX_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
+L1_AMAX_STRIDE_SHAPES = [
+    (256,),
+    (512,),
+    (768,),
+    (1280,),
+    (1536,),
+    (1792,),
+    (2048,),
+    (2304,),
+    (2560,),
+    (3072,),
+    (3584,),
+    (4096,),
+    (1024,),
+    (5333,),
+    (65536,),
+    (100000,),
+    (1048576,),
+    (3000000,),
+    (4194304,),
+]
 
-# asum shape
-ASUM_SHAPES = DEFAULT_SHAPES
-if GEN_SHAPE:
-    ASUM_SHAPES.clear()
-    ASUM_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
-
-# scal shape
-SCAL_SHAPES = DEFAULT_SHAPES
-if GEN_SHAPE:
-    SCAL_SHAPES.clear()
-    SCAL_SHAPES = gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
-
-###
-L1_VECTOR_SHAPES = DEFAULT_SHAPES
 L1_STRIDES = [1, 2, 3, 5]
+L1_SCALAR_STRIDES = [2, 3, 5]
+L1_AMAX_STRIDES = [2, 5]
 L1_PAIR_STRIDES = [(1, 1), (2, 2), (2, 3), (3, 2), (3, 3)]
+L1_NONUNIT_PAIR_STRIDES = [(2, 2), (2, 3), (3, 2), (3, 3)]
+
+L1_VECTOR_SHAPES = (
+    gen_shape_N(L1_n_start_val, L1_n_end_val, L1_n_step_val)
+    if GEN_SHAPE
+    else L1_BASE_SHAPES
+)
+DEFAULT_SHAPES = L1_VECTOR_SHAPES
+
+ABS_SHAPES = L1_VECTOR_SHAPES
+AMAX_SHAPES = L1_VECTOR_SHAPES
+ASUM_SHAPES = L1_VECTOR_SHAPES
+AXPY_SHAPES = L1_VECTOR_SHAPES
+COPY_SHAPES = L1_VECTOR_SHAPES
+NRM2_SHAPES = L1_VECTOR_SHAPES
+ROT_SHAPES = L1_VECTOR_SHAPES
+SCAL_SHAPES = L1_VECTOR_SHAPES
+
 AMIN_SHAPES = L1_VECTOR_SHAPES
 DOTC_SHAPES = L1_VECTOR_SHAPES
 DOTU_SHAPES = L1_VECTOR_SHAPES

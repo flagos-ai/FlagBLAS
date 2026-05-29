@@ -8,22 +8,13 @@ import flag_blas
 
 from .accuracy_utils import (
     ASUM_SHAPES,
+    L1_SCALAR_STRIDES,
+    L1_STRIDE_SHAPES,
     blas_assert_close,
     to_cpu_blas_tensor,
     to_reference,
 )
 from .conftest import TO_CPU
-
-STRIDES = [1, 2, 3, 5]
-STRIDE_SHAPES = [
-    (1024,),
-    (5333,),
-    (65536,),
-    (100000,),
-    (1048576,),
-    (3000000,),
-    (4194304,),
-]
 
 
 def cublas_asum_reference(n, x, incx, result):
@@ -227,8 +218,8 @@ def test_accuracy_asum_different_n_complex(dtype, n, vec_size):
 
 @pytest.mark.asum
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("shape", STRIDE_SHAPES)
-@pytest.mark.parametrize("incx", [2, 3, 5])
+@pytest.mark.parametrize("shape", L1_STRIDE_SHAPES)
+@pytest.mark.parametrize("incx", L1_SCALAR_STRIDES)
 def test_accuracy_asum_different_n_with_stride_real(dtype, shape, incx):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -251,8 +242,8 @@ def test_accuracy_asum_different_n_with_stride_real(dtype, shape, incx):
 
 @pytest.mark.asum
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-@pytest.mark.parametrize("shape", STRIDE_SHAPES)
-@pytest.mark.parametrize("incx", [2, 3, 5])
+@pytest.mark.parametrize("shape", L1_STRIDE_SHAPES)
+@pytest.mark.parametrize("incx", L1_SCALAR_STRIDES)
 def test_accuracy_asum_different_n_with_stride_complex(dtype, shape, incx):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")

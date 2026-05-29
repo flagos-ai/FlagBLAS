@@ -58,6 +58,67 @@ UnaryPointwiseBenchmark:
     - [1024, 1024, 1024]
   shape_desc: "(B), M, N"
 
+
+# BLAS Level 1 vector operation core shapes
+l1_vector_shapes: &l1_vector_shapes
+  shapes:
+    - [64]
+    - [1024]
+    - [2048]
+    - [4096]
+    - [65536]
+  shape_desc: "N"
+
+l1_stride_shapes: &l1_stride_shapes
+  shapes:
+    - [1024]
+    - [5333]
+    - [65536]
+    - [100000]
+    - [1048576]
+  shape_desc: "N"
+
+l1_amax_stride_shapes: &l1_amax_stride_shapes
+  shapes:
+    - [256]
+    - [512]
+    - [1024]
+    - [4096]
+    - [65536]
+  shape_desc: "N"
+
+AbsBenchmark:
+  <<: *l1_vector_shapes
+AmaxBenchmark:
+  <<: *l1_vector_shapes
+AsumBenchmark:
+  <<: *l1_vector_shapes
+AxpyBenchmark:
+  <<: *l1_vector_shapes
+CopyBenchmark:
+  <<: *l1_vector_shapes
+Nrm2Benchmark:
+  <<: *l1_vector_shapes
+RotBenchmark:
+  <<: *l1_vector_shapes
+ScalBenchmark:
+  <<: *l1_vector_shapes
+
+AmaxStrideBenchmark:
+  <<: *l1_amax_stride_shapes
+AsumStrideBenchmark:
+  <<: *l1_stride_shapes
+AxpyStrideBenchmark:
+  <<: *l1_stride_shapes
+CopyStrideBenchmark:
+  <<: *l1_stride_shapes
+Nrm2StrideBenchmark:
+  <<: *l1_stride_shapes
+RotStrideBenchmark:
+  <<: *l1_stride_shapes
+ScalStrideBenchmark:
+  <<: *l1_stride_shapes
+
 # GEMM operations base shapes (M, N, K)
 # These shapes are used for sgemm, hgemm, bfgemm and fp8gemm benchmarks
 GemmBenchmark:

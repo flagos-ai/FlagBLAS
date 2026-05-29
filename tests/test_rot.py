@@ -12,7 +12,9 @@ from scipy.linalg import blas as cpu_blas
 import flag_blas
 
 from .accuracy_utils import (
-    DEFAULT_SHAPES,
+    L1_NONUNIT_PAIR_STRIDES,
+    L1_STRIDE_SHAPES,
+    ROT_SHAPES,
     blas_assert_close,
     to_cpu_blas_tensor,
     to_reference,
@@ -169,19 +171,6 @@ def rot_reference(n, x, incx, y, incy, c, s):
     return ref_x, ref_y
 
 
-STRIDES = [(1, 1), (2, 1), (1, 3), (2, 2), (3, 5)]
-STRIDE_PAIRS = [(2, 2), (2, 3), (3, 2), (3, 3)]
-STRIDE_SHAPES = [
-    (1024,),
-    (5333,),
-    (65536,),
-    (100000,),
-    (1048576,),
-    (3000000,),
-    (4194304,),
-]
-
-
 def get_c_s(dtype, device):
     if dtype == torch.float32:
         c = torch.tensor([0.8], dtype=torch.float32, device=device)
@@ -202,7 +191,7 @@ def get_c_s(dtype, device):
 
 @pytest.mark.rot
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("shape", DEFAULT_SHAPES)
+@pytest.mark.parametrize("shape", ROT_SHAPES)
 def test_accuracy_rot_real(dtype, shape):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -228,7 +217,7 @@ def test_accuracy_rot_real(dtype, shape):
 
 @pytest.mark.rot
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-@pytest.mark.parametrize("shape", DEFAULT_SHAPES)
+@pytest.mark.parametrize("shape", ROT_SHAPES)
 def test_accuracy_rot_complex(dtype, shape):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -337,8 +326,8 @@ def test_accuracy_rot_different_n_complex(dtype, n, vec_size):
 
 @pytest.mark.rot
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("shape", STRIDE_SHAPES)
-@pytest.mark.parametrize("incx,incy", STRIDE_PAIRS)
+@pytest.mark.parametrize("shape", L1_STRIDE_SHAPES)
+@pytest.mark.parametrize("incx,incy", L1_NONUNIT_PAIR_STRIDES)
 def test_accuracy_rot_different_n_with_stride_real(dtype, shape, incx, incy):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -362,8 +351,8 @@ def test_accuracy_rot_different_n_with_stride_real(dtype, shape, incx, incy):
 
 @pytest.mark.rot
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-@pytest.mark.parametrize("shape", STRIDE_SHAPES)
-@pytest.mark.parametrize("incx,incy", STRIDE_PAIRS)
+@pytest.mark.parametrize("shape", L1_STRIDE_SHAPES)
+@pytest.mark.parametrize("incx,incy", L1_NONUNIT_PAIR_STRIDES)
 def test_accuracy_rot_different_n_with_stride_complex(dtype, shape, incx, incy):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
