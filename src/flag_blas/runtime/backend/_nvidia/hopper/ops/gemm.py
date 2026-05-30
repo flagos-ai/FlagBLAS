@@ -458,22 +458,16 @@ def _sgemm_pad_tensors(
     )
 
 
-class _SGemmSize:
-    THIN = "thin"
-    LARGE = "large"
-    MEDIUM = "medium"
-
-
-def _classify_sgemm_nn_size(m: int, n: int, k: int) -> str:
-    if (
+def _is_sgemm_thin(m: int, n: int, k: int, **_kw) -> bool:
+    return (
         min(m, n) <= 64
         and k >= 256
         and triton.cdiv(m, 128) * triton.cdiv(n, 32) < 32
-    ):
-        return _SGemmSize.THIN
-    if m > 1024 and n > 1024 and k > 1024:
-        return _SGemmSize.LARGE
-    return _SGemmSize.MEDIUM
+    )
+
+
+def _is_sgemm_large(m: int, n: int, k: int, **_kw) -> bool:
+    return m > 1024 and n > 1024 and k > 1024
 
 
 def _make_sgemm_nn_thin_runner(
@@ -547,38 +541,31 @@ def _build_sgemm_nn_dispatch_table(
 ) -> SizeAutoDispatch:
     dispatch = SizeAutoDispatch(
         table_name="sgemm_nn_variant",
-        classify_size=_classify_sgemm_nn_size,
         build_key=lambda m, n, k, aligned, **extra: (m, n, k, int(aligned)),
         model=model,
     )
     dispatch.add(
-        _SGemmSize.THIN,
-        _make_sgemm_nn_thin_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
-        name="thin",
-    )
-    dispatch.add(
-        _SGemmSize.LARGE,
-        _make_sgemm_nn_aligned_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        lambda: _make_sgemm_nn_aligned_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
         aligned=True,
         name="aligned_k2",
     )
     dispatch.add(
-        _SGemmSize.LARGE,
-        _make_sgemm_nn_padded_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        lambda: _make_sgemm_nn_padded_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
         aligned=False,
         name="padded_k2",
+        filter=_is_sgemm_large,
     )
     dispatch.add(
-        _SGemmSize.MEDIUM,
-        _make_sgemm_nn_aligned_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
-        aligned=True,
-        name="aligned_k2",
+        lambda: _make_sgemm_nn_thin_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        aligned=False,
+        name="thin",
+        filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k),
     )
     dispatch.add(
-        _SGemmSize.MEDIUM,
-        _make_sgemm_nn_fallback_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        lambda: _make_sgemm_nn_fallback_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
         aligned=False,
         name="fallback",
+        filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k),
     )
     return dispatch
 
@@ -656,7 +643,7 @@ def sgemm(
                 A, lda, B, ldb, C, ldc,
                 m, n, k, alpha, beta, beta_is_zero, grid,
             )
-            runner = dispatch.lookup(m, n, k, aligned)
+            runner = dispatch.lookup_and_build(m, n, k, aligned, snapshot_tensor=C)
             runner()
         elif transa == CUBLAS_OP_T and transb == CUBLAS_OP_N:
             if aligned:

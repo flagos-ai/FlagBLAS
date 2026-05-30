@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import OrderedDict
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 import triton
@@ -13,7 +13,7 @@ from flag_blas.utils.models import PersistantModel
 logger = logging.getLogger(__name__)
 
 
-_CandidateKernel = Callable[[], None]
+_SizeFilter = Callable[..., bool]
 
 
 class SizeDispatchTable:
@@ -36,13 +36,13 @@ class SizeDispatchTable:
     """
 
     def __init__(self):
-        self._exact: Dict[Tuple[str, bool], _CandidateKernel] = OrderedDict()
-        self._wildcard: Dict[str, _CandidateKernel] = OrderedDict()
+        self._exact: Dict[Tuple[str, bool], Callable[[], None]] = OrderedDict()
+        self._wildcard: Dict[str, Callable[[], None]] = OrderedDict()
 
     def add(
         self,
         size_category: str,
-        kernel: _CandidateKernel,
+        kernel: Callable[[], None],
         *,
         aligned: Optional[bool] = None,
     ):
@@ -51,7 +51,7 @@ class SizeDispatchTable:
         else:
             self._exact[(size_category, aligned)] = kernel
 
-    def lookup(self, size_category: str, aligned: bool) -> _CandidateKernel:
+    def lookup(self, size_category: str, aligned: bool) -> Callable[[], None]:
         key = (size_category, aligned)
         if key in self._exact:
             return self._exact[key]
@@ -71,38 +71,43 @@ class SizeDispatchTable:
 
 class SizeAutoDispatch:
     """
-    Auto-tuning size dispatch table with database persistence.
+    Auto-tuning kernel variant dispatch with database persistence.
 
-    For each problem size (identified by a cache key), benchmarks all applicable
-    kernel candidates, selects the fastest, and stores the choice in the database.
-    On subsequent calls with the same size, uses the cached best candidate.
+    For each problem size (identified by a cache key), benchmarks all
+    applicable kernel candidates, selects the fastest, and stores the
+    choice in the database. On subsequent calls with the same size,
+    returns the cached best candidate instantly.
 
-    Like ``libtuner``, but at the kernel-variant level:
-    instead of tuning a single kernel's block/thread configuration,
-    it tunes **which kernel variant** to use for a given problem size.
+    Uses lazy runner construction: ``add()`` accepts a **factory**
+    (zero-arg callable that returns a runner), and only the selected
+    candidate's factory is called — eliminating unnecessary closure
+    creation overhead.
 
     Usage::
 
+        import functools
+
         dispatch = SizeAutoDispatch(
             table_name="sgemm_nn_variant",
-            classify_size=my_classify_fn,
-            build_key=my_key_fn,
+            build_key=lambda m, n, k, aligned, **kw: (m, n, k, int(aligned)),
         )
 
-        dispatch.add("thin", thin_runner)
-        dispatch.add("large", aligned_k2, aligned=True)
-        dispatch.add("large", padded_k2, aligned=False)
+        dispatch.add(
+            lambda: make_thin_runner(A, lda, ...),
+            name="thin", filter=is_thin,
+        )
+        dispatch.add(
+            lambda: make_k2_runner(A, lda, ...),
+            aligned=True, name="aligned_k2", filter=not_thin,
+        )
 
-        runner = dispatch.lookup(m, n, k, aligned)
+        runner = dispatch.lookup_and_build(m, n, k, aligned)
         runner()
 
     Parameters
     ----------
     table_name:
         Database table name for persisting the (key -> best_candidate) mapping.
-    classify_size:
-        Function that maps problem dimensions to a size_category string.
-        Signature: (m, n, k, **extra) -> str
     build_key:
         Function that builds a unique cache key from problem dimensions.
         Signature: (m, n, k, aligned, **extra) -> tuple
@@ -111,42 +116,67 @@ class SizeAutoDispatch:
         If None, no persistence is used and autotuning runs on every call.
     """
 
+    _RunnerFactory = Callable[[], Callable[[], None]]
+
     def __init__(
         self,
         table_name: str,
-        classify_size: Callable[..., str],
         build_key: Callable[..., tuple],
         model: Optional[PersistantModel] = None,
     ):
         self._table_name = table_name
-        self._classify_size = classify_size
         self._build_key = build_key
         self._model = model
-        self._exact: Dict[Tuple[str, bool], List[Tuple[str, _CandidateKernel]]] = OrderedDict()
-        self._wildcard: Dict[str, List[Tuple[str, _CandidateKernel]]] = OrderedDict()
+        self._entries: List[_Entry] = []
         self._candidate_index: int = 0
+
+    class _Entry:
+        __slots__ = ("name", "factory", "align", "size_filter")
+
+        def __init__(
+            self,
+            name: str,
+            factory: Callable[[], Callable[[], None]],
+            align: Optional[bool] = None,
+            size_filter: Optional[_SizeFilter] = None,
+        ):
+            self.name = name
+            self.factory = factory
+            self.align = align
+            self.size_filter = size_filter
 
     def add(
         self,
-        size_category: str,
-        kernel: _CandidateKernel,
+        factory: Callable[[], Callable[[], None]],
         *,
         aligned: Optional[bool] = None,
         name: Optional[str] = None,
+        filter: Optional[_SizeFilter] = None,
     ):
         candidate_name = name or f"variant_{self._candidate_index}"
         self._candidate_index += 1
-        entry = (candidate_name, kernel)
-        if aligned is None:
-            self._wildcard.setdefault(size_category, []).append(entry)
-        else:
-            self._exact.setdefault((size_category, aligned), []).append(entry)
+        self._entries.append(
+            self._Entry(
+                name=candidate_name,
+                factory=factory,
+                align=aligned,
+                size_filter=filter,
+            )
+        )
 
-    def _get_candidates(self, size_category: str, aligned: bool) -> List[Tuple[str, _CandidateKernel]]:
-        key = (size_category, aligned)
-        candidates = list(self._exact.get(key, []))
-        candidates.extend(self._wildcard.get(size_category, []))
-        return candidates
+    def _get_entries(
+        self, m: int, n: int, k: int, aligned: bool, **extra
+    ) -> List[_Entry]:
+        result: List[SizeAutoDispatch._Entry] = []
+        for entry in self._entries:
+            if entry.align is not None and entry.align != aligned:
+                continue
+            if entry.size_filter is not None and not entry.size_filter(
+                m=m, n=n, k=k, aligned=aligned, **extra
+            ):
+                continue
+            result.append(entry)
+        return result
 
     def _lookup_db(self, cache_key: tuple) -> Optional[str]:
         if self._model is None:
@@ -169,58 +199,63 @@ class SizeAutoDispatch:
         except Exception as e:
             logger.warning("SizeAutoDispatch DB save error: %s", e)
 
-    def lookup(
+    def lookup_and_build(
         self,
         m: int,
         n: int,
         k: int,
         aligned: bool,
+        *,
+        snapshot_tensor=None,
         **extra,
-    ) -> _CandidateKernel:
-        size_category = self._classify_size(m, n, k, **extra)
+    ) -> Callable[[], None]:
         cache_key = self._build_key(m, n, k, aligned, **extra)
-        candidates = self._get_candidates(size_category, aligned)
+        entries = self._get_entries(m, n, k, aligned, **extra)
 
-        if not candidates:
+        if not entries:
             raise ValueError(
-                f"No kernel candidates for size_category={size_category!r}, "
-                f"aligned={aligned}"
+                f"No kernel candidates for m={m}, n={n}, k={k}, aligned={aligned}"
             )
 
-        if len(candidates) == 1:
-            runner = candidates[0][1]
-            self._save_db(cache_key, candidates[0][0])
-            return runner
+        if len(entries) == 1:
+            return entries[0].factory()
 
         cached_name = self._lookup_db(cache_key)
         if cached_name is not None:
-            for name, runner in candidates:
-                if name == cached_name:
-                    return runner
+            for entry in entries:
+                if entry.name == cached_name:
+                    return entry.factory()
 
-        best_name, best_runner = self._autotune(cache_key, candidates)
-        self._save_db(cache_key, best_name)
-        return best_runner
+        best_entry = self._autotune(cache_key, entries, snapshot_tensor)
+        self._save_db(cache_key, best_entry.name)
+        return best_entry.factory()
 
     def _autotune(
         self,
         cache_key: tuple,
-        candidates: List[Tuple[str, _CandidateKernel]],
-    ) -> Tuple[str, _CandidateKernel]:
+        entries: List[_Entry],
+        snapshot_tensor=None,
+    ) -> _Entry:
         timings: Dict[str, float] = {}
+        snapshot = None
+        if snapshot_tensor is not None:
+            snapshot = snapshot_tensor.clone()
 
-        for name, runner in candidates:
+        for entry in entries:
             try:
+                if snapshot is not None:
+                    snapshot_tensor.copy_(snapshot)
+                runner = entry.factory()
                 torch.cuda.synchronize()
                 t0 = time.perf_counter()
                 runner()
                 torch.cuda.synchronize()
                 elapsed = time.perf_counter() - t0
-                timings[name] = elapsed
+                timings[entry.name] = elapsed
             except Exception as e:
                 logger.warning(
                     "SizeAutoDispatch: candidate %r failed for key %s: %s",
-                    name, cache_key, e,
+                    entry.name, cache_key, e,
                 )
 
         if not timings:
@@ -228,14 +263,21 @@ class SizeAutoDispatch:
                 "SizeAutoDispatch: all candidates failed for key %s, using first",
                 cache_key,
             )
-            return candidates[0]
+            if snapshot is not None:
+                snapshot_tensor.copy_(snapshot)
+            return entries[0]
 
         best_name = min(timings, key=timings.get)
         logger.debug(
             "SizeAutoDispatch: key=%s best=%s timings=%s",
             cache_key, best_name, timings,
         )
-        return best_name, dict(candidates)[best_name]
+        if snapshot is not None:
+            snapshot_tensor.copy_(snapshot)
+        for entry in entries:
+            if entry.name == best_name:
+                return entry
+        return entries[0]
 
 
 class KernelRunner:
