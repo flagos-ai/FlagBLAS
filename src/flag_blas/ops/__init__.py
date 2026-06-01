@@ -34,7 +34,10 @@ from flag_blas.ops.level2.gemv import (
     sgemv,
     zgemv,
 )
+from flag_blas.ops.level2.hbmv import chbmv, zhbmv
 from flag_blas.ops.level2.hemv import chemv, zhemv
+from flag_blas.ops.level2.sbmv import dsbmv, ssbmv
+from flag_blas.ops.level2.spmv import dspmv, sspmv
 from flag_blas.ops.level2.symv import csymv, dsymv, ssymv, zsymv
 from flag_blas.ops.level2.tbmv import ctbmv, dtbmv, stbmv, ztbmv
 from flag_blas.ops.level2.tbsv import stbsv
@@ -103,6 +106,15 @@ __all__ = [
     "dgbmv",
     "cgbmv",
     "zgbmv",
+    # sbmv
+    "ssbmv",
+    "dsbmv",
+    # spmv
+    "sspmv",
+    "dspmv",
+    # hbmv
+    "chbmv",
+    "zhbmv",
     # symv
     "ssymv",
     "dsymv",
