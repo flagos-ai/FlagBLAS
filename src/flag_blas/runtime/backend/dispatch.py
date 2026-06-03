@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -118,6 +117,14 @@ class SizeAutoDispatch:
 
     _RunnerFactory = Callable[[], Callable[[], None]]
 
+    # Number of warmup kernel launches before timing each candidate.
+    _WARMUP_ITERS: int = 1
+    # Number of timed kernel launches per candidate.
+    _TIMING_ITERS: int = 5
+    # Size (bytes) of a dummy buffer used to evict L2 cache between
+    # candidates.  Set to 0 to disable.
+    _CACHE_FLUSH_BYTES: int = 16 * 1024 * 1024  # 16 MiB
+
     def __init__(
         self,
         table_name: str,
@@ -129,6 +136,7 @@ class SizeAutoDispatch:
         self._model = model
         self._entries: List[_Entry] = []
         self._candidate_index: int = 0
+        self._flush_buf: Optional[torch.Tensor] = None
 
     class _Entry:
         __slots__ = ("name", "factory", "align", "size_filter")
@@ -226,32 +234,61 @@ class SizeAutoDispatch:
                 if entry.name == cached_name:
                     return entry.factory()
 
-        best_entry = self._autotune(cache_key, entries, snapshot_tensor)
-        self._save_db(cache_key, best_entry.name)
-        return best_entry.factory()
+        result = self._autotune(cache_key, entries, snapshot_tensor)
+        if result is not None:
+            best_entry, best_runner = result
+            self._save_db(cache_key, best_entry.name)
+            return best_runner
+        # All candidates failed during tuning; fall back to the first
+        # entry WITHOUT persisting to DB, so future calls will retry
+        # autotune instead of blindly reusing a broken candidate.
+        logger.warning(
+            "SizeAutoDispatch: all candidates failed for key %s, "
+            "falling back to %r without persisting",
+            cache_key, entries[0].name,
+        )
+        return entries[0].factory()
 
     def _autotune(
         self,
         cache_key: tuple,
         entries: List[_Entry],
         snapshot_tensor=None,
-    ) -> _Entry:
+    ) -> Optional[Tuple[_Entry, Callable[[], None]]]:
         timings: Dict[str, float] = {}
+        runners: Dict[str, Tuple[_Entry, Callable[[], None]]] = {}
         snapshot = None
         if snapshot_tensor is not None:
             snapshot = snapshot_tensor.clone()
+
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
 
         for entry in entries:
             try:
                 if snapshot is not None:
                     snapshot_tensor.copy_(snapshot)
                 runner = entry.factory()
-                torch.cuda.synchronize()
-                t0 = time.perf_counter()
+                runners[entry.name] = (entry, runner)
+
                 runner()
                 torch.cuda.synchronize()
-                elapsed = time.perf_counter() - t0
-                timings[entry.name] = elapsed
+
+                if snapshot is not None:
+                    snapshot_tensor.copy_(snapshot)
+
+                best_elapsed = float("inf")
+                for _ in range(5):
+                    if snapshot is not None:
+                        snapshot_tensor.copy_(snapshot)
+                    start.record()
+                    runner()
+                    end.record()
+                    torch.cuda.synchronize()
+                    elapsed = start.elapsed_time(end)
+                    if elapsed < best_elapsed:
+                        best_elapsed = elapsed
+                timings[entry.name] = best_elapsed
             except Exception as e:
                 logger.warning(
                     "SizeAutoDispatch: candidate %r failed for key %s: %s",
@@ -265,7 +302,7 @@ class SizeAutoDispatch:
             )
             if snapshot is not None:
                 snapshot_tensor.copy_(snapshot)
-            return entries[0]
+            return None
 
         best_name = min(timings, key=timings.get)
         logger.debug(
@@ -274,10 +311,7 @@ class SizeAutoDispatch:
         )
         if snapshot is not None:
             snapshot_tensor.copy_(snapshot)
-        for entry in entries:
-            if entry.name == best_name:
-                return entry
-        return entries[0]
+        return runners.get(best_name)
 
 
 class KernelRunner:

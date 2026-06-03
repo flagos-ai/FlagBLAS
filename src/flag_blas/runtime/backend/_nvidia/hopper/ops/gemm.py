@@ -1454,7 +1454,6 @@ def hgemm(
                     strides=[ldc, 1],
                     block_shape=[BLOCK_M, BLOCK_N],
                 )
-                print("debug kerne3=====")
                 grid = (triton.cdiv(m, BLOCK_M) * triton.cdiv(n, BLOCK_N),)
                 _hgemm_tn_kernel3[grid](
                     desc_a,
