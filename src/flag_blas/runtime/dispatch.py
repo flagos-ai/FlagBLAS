@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections import OrderedDict
 from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
@@ -32,59 +31,6 @@ _autotune_result_lock = threading.Lock()
 
 
 _SizeFilter = Callable[..., bool]
-
-
-class SizeDispatchTable:
-    """
-    A generic size-based kernel dispatch table.
-
-    Maps (size_category, aligned) pairs to kernel implementations.
-    Supports wildcard alignment (aligned=None) that matches any alignment.
-
-    Usage::
-
-        table = SizeDispatchTable()
-        table.add("thin", thin_kernel)              # wildcard: any alignment
-        table.add("large", k2, aligned=True)        # aligned only
-        table.add("large", padded_k2, aligned=False) # misaligned only
-
-        kernel = table.lookup("large", aligned=True)  # -> k2
-        kernel = table.lookup("large", aligned=False) # -> padded_k2
-        kernel = table.lookup("thin", aligned=False)  # -> thin_kernel (wildcard)
-    """
-
-    def __init__(self):
-        self._exact: Dict[Tuple[str, bool], Callable[[], None]] = OrderedDict()
-        self._wildcard: Dict[str, Callable[[], None]] = OrderedDict()
-
-    def add(
-        self,
-        size_category: str,
-        kernel: Callable[[], None],
-        *,
-        aligned: Optional[bool] = None,
-    ):
-        if aligned is None:
-            self._wildcard[size_category] = kernel
-        else:
-            self._exact[(size_category, aligned)] = kernel
-
-    def lookup(self, size_category: str, aligned: bool) -> Callable[[], None]:
-        key = (size_category, aligned)
-        if key in self._exact:
-            return self._exact[key]
-        if size_category in self._wildcard:
-            return self._wildcard[size_category]
-        raise ValueError(
-            f"No kernel registered for size_category={size_category!r}, "
-            f"aligned={aligned}"
-        )
-
-    @property
-    def rules(self):
-        return list(self._exact.keys()) + [
-            (k, None) for k in self._wildcard.keys()
-        ]
 
 
 class SizeAutoDispatch:
