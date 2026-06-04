@@ -30,7 +30,7 @@ from flag_blas.ops.level3.gemm import (
     _sgemm_tt_kernel,
 )
 from flag_blas.runtime import torch_device_fn
-from flag_blas.runtime.backend.dispatch import SizeAutoDispatch
+from flag_blas.runtime.dispatch import SizeAutoDispatch
 from flag_blas.utils import libentry, libtuner
 from flag_blas.utils.libentry import libcache
 
