@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections import OrderedDict
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
 import triton
@@ -10,6 +11,24 @@ import triton
 from flag_blas.utils.models import PersistantModel
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Module-level in-memory cache for autotune results.
+#
+# Keys are (table_name, cache_key) tuples; values are the winning candidate
+# name string.  This cache survives across SizeAutoDispatch instances so that
+# once autotune has selected a winner for a given problem size, every
+# subsequent call — even from a freshly constructed dispatch — skips both the
+# DB query and re-autotune entirely.
+#
+# The cache is process-local.  If the filter functions or candidate set
+# change between runs the user must restart the process (or delete the
+# corresponding SQLite DB row) — exactly the same invalidation contract as
+# the persistent DB cache.
+# ---------------------------------------------------------------------------
+_autotune_result_cache: Dict[Tuple[str, tuple], str] = {}
+_autotune_result_lock = threading.Lock()
 
 
 _SizeFilter = Callable[..., bool]
@@ -194,8 +213,11 @@ class SizeAutoDispatch:
             if config is not None and isinstance(config, triton.Config):
                 return config.kwargs.get("_candidate_name", None)
             return None
-        except Exception as e:
-            logger.warning("SizeAutoDispatch DB lookup error: %s", e)
+        except Exception:
+            logger.error(
+                "SizeAutoDispatch DB lookup error for table=%s key=%s",
+                self._table_name, cache_key, exc_info=True,
+            )
             return None
 
     def _save_db(self, cache_key: tuple, candidate_name: str) -> None:
@@ -204,8 +226,11 @@ class SizeAutoDispatch:
         try:
             c = triton.Config({}, kwargs={"_candidate_name": candidate_name})
             self._model.put_config(self._table_name, cache_key, c)
-        except Exception as e:
-            logger.warning("SizeAutoDispatch DB save error: %s", e)
+        except Exception:
+            logger.error(
+                "SizeAutoDispatch DB save error for table=%s key=%s candidate=%s",
+                self._table_name, cache_key, candidate_name, exc_info=True,
+            )
 
     def lookup_and_build(
         self,
@@ -228,20 +253,42 @@ class SizeAutoDispatch:
         if len(entries) == 1:
             return entries[0].factory()
 
-        cached_name = self._lookup_db(cache_key)
+        # --- fast path: in-memory cache (survives across dispatch instances) ---
+        mem_key = (self._table_name, cache_key)
+        with _autotune_result_lock:
+            cached_name = _autotune_result_cache.get(mem_key)
         if cached_name is not None:
             for entry in entries:
                 if entry.name == cached_name:
                     return entry.factory()
+            # The cached name no longer matches any registered entry
+            # (filter functions may have changed).  Clear the stale
+            # entry and fall through to DB/autotune.
+            with _autotune_result_lock:
+                _autotune_result_cache.pop(mem_key, None)
 
+        # --- DB-backed path (persists across process restarts) ---
+        cached_name = self._lookup_db(cache_key)
+        if cached_name is not None:
+            for entry in entries:
+                if entry.name == cached_name:
+                    # Promote to memory cache so the next instance skips DB I/O.
+                    with _autotune_result_lock:
+                        _autotune_result_cache[mem_key] = cached_name
+                    return entry.factory()
+
+        # --- autotune (first time this problem size is ever seen) ---
         result = self._autotune(cache_key, entries, snapshot_tensor)
         if result is not None:
             best_entry, best_runner = result
+            # Persist to both memory and DB.
+            with _autotune_result_lock:
+                _autotune_result_cache[mem_key] = best_entry.name
             self._save_db(cache_key, best_entry.name)
             return best_runner
         # All candidates failed during tuning; fall back to the first
-        # entry WITHOUT persisting to DB, so future calls will retry
-        # autotune instead of blindly reusing a broken candidate.
+        # entry WITHOUT persisting to DB or memory, so future calls will
+        # retry autotune instead of blindly reusing a broken candidate.
         logger.warning(
             "SizeAutoDispatch: all candidates failed for key %s, "
             "falling back to %r without persisting",
