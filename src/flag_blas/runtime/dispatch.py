@@ -157,7 +157,16 @@ class SizeAutoDispatch:
         try:
             config = self._model.get_config(self._table_name, cache_key)
             if config is not None and isinstance(config, triton.Config):
-                return config.kwargs.get("_candidate_name", None)
+                name = config.kwargs.get("_candidate_name", None)
+                logger.debug(
+                    "SizeAutoDispatch DB lookup hit: table=%s key=%s -> %s",
+                    self._table_name, cache_key, name,
+                )
+                return name
+            logger.debug(
+                "SizeAutoDispatch DB lookup miss: table=%s key=%s",
+                self._table_name, cache_key,
+            )
             return None
         except Exception:
             logger.error(
@@ -168,10 +177,18 @@ class SizeAutoDispatch:
 
     def _save_db(self, cache_key: tuple, candidate_name: str) -> None:
         if self._model is None:
+            logger.debug(
+                "SizeAutoDispatch DB save skipped (no model): table=%s key=%s candidate=%s",
+                self._table_name, cache_key, candidate_name,
+            )
             return
         try:
-            c = triton.Config({}, kwargs={"_candidate_name": candidate_name})
+            c = triton.Config(kwargs={"_candidate_name": candidate_name})
             self._model.put_config(self._table_name, cache_key, c)
+            logger.info(
+                "SizeAutoDispatch DB save success: table=%s key=%s -> %s",
+                self._table_name, cache_key, candidate_name,
+            )
         except Exception:
             logger.error(
                 "SizeAutoDispatch DB save error for table=%s key=%s candidate=%s",
