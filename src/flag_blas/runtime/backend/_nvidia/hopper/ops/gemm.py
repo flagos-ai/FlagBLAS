@@ -570,6 +570,78 @@ def _build_sgemm_nn_dispatch_table(
     return dispatch
 
 
+def _make_sgemm_tn_aligned_runner(
+    A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+):
+    def run():
+        _sgemm_tn_kernel2[grid](
+            A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+        )
+    return run
+
+
+def _make_sgemm_tn_padded_runner(
+    A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero
+):
+    def run():
+        (
+            A_padded, B_padded, C_padded, C_2d,
+            lda_pad, ldb_pad, ldc_pad, m_pad, n_pad, k_pad,
+        ) = _sgemm_pad_tensors(A, lda, CUBLAS_OP_T, B, ldb, CUBLAS_OP_N, C, ldc, m, n, k)
+
+        grid_pad = lambda meta: (
+            triton.cdiv(m_pad, meta["BLOCK_M"]) * triton.cdiv(n_pad, meta["BLOCK_N"]),
+        )
+
+        _sgemm_tn_kernel2[grid_pad](
+            A_padded, B_padded, C_padded, alpha, beta,
+            m_pad, n_pad, k_pad,
+            lda_pad, ldb_pad, ldc_pad, beta_is_zero,
+        )
+
+        C_2d[:m, :n] = C_padded[:m, :n]
+    return run
+
+
+def _make_sgemm_tn_fallback_runner(
+    A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+):
+    def run():
+        _sgemm_tn_kernel[grid](
+            A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+        )
+    return run
+
+
+def _build_sgemm_tn_dispatch_table(
+    A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid,
+    model=libcache.model,
+) -> SizeAutoDispatch:
+    dispatch = SizeAutoDispatch(
+        table_name="sgemm_tn_variant",
+        build_key=lambda m, n, k, aligned, **extra: (m, n, k, int(aligned)),
+        model=model,
+    )
+    dispatch.add(
+        lambda: _make_sgemm_tn_aligned_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        aligned=True,
+        name="aligned_k2",
+    )
+    dispatch.add(
+        lambda: _make_sgemm_tn_padded_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        aligned=False,
+        name="padded_k2",
+        filter=_is_sgemm_large,
+    )
+    dispatch.add(
+        lambda: _make_sgemm_tn_fallback_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        aligned=False,
+        name="fallback",
+        filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k),
+    )
+    return dispatch
+
+
 def sgemm(
     transa: int,
     transb: int,
@@ -646,32 +718,12 @@ def sgemm(
             runner = dispatch.lookup_and_build(m, n, k, aligned, snapshot_tensor=C)
             runner()
         elif transa == CUBLAS_OP_T and transb == CUBLAS_OP_N:
-            if aligned:
-                _sgemm_tn_kernel2[grid](
-                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                )
-            else:
-                if m > 1024 and n > 1024 and k > 1024:
-                    (
-                        A_padded, B_padded, C_padded, C_2d,
-                        lda_pad, ldb_pad, ldc_pad, m_pad, n_pad, k_pad,
-                    ) = _sgemm_pad_tensors(A, lda, CUBLAS_OP_T, B, ldb, CUBLAS_OP_N, C, ldc, m, n, k)
-
-                    grid_pad = lambda meta: (
-                        triton.cdiv(m_pad, meta["BLOCK_M"]) * triton.cdiv(n_pad, meta["BLOCK_N"]),
-                    )
-
-                    _sgemm_tn_kernel2[grid_pad](
-                        A_padded, B_padded, C_padded, alpha, beta,
-                        m_pad, n_pad, k_pad,
-                        lda_pad, ldb_pad, ldc_pad, beta_is_zero,
-                    )
-
-                    C_2d[:m, :n] = C_padded[:m, :n]
-                else:
-                    _sgemm_tn_kernel[grid](
-                        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                    )
+            dispatch = _build_sgemm_tn_dispatch_table(
+                A, lda, B, ldb, C, ldc,
+                m, n, k, alpha, beta, beta_is_zero, grid,
+            )
+            runner = dispatch.lookup_and_build(m, n, k, aligned, snapshot_tensor=C)
+            runner()
         elif transa == CUBLAS_OP_N and transb == CUBLAS_OP_T:
             B_transposed = B.t().contiguous()
             ldb_new = n
