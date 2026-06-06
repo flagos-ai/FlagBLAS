@@ -83,6 +83,47 @@ FP8_GEMV_SHAPES = [
 
 STRIDES = [(1, 1), (2, 1), (1, 2), (2, 2)]
 
+_HUGE_NONCONTIG_COPY_BYTES = 2 * 1024 * 1024 * 1024
+_CHUNKED_COPY_BYTES = 256 * 1024 * 1024
+
+
+def _needs_iluvatar_sgemv_chunked_noncontig_copy(tensor):
+    # Iluvatar currently corrupts very large non-contiguous float32 copies
+    # (for example transposed GEMV matrices above 2 GiB) when using one
+    # monolithic contiguous/to-CPU conversion. Keep this workaround scoped to
+    # sgemv-sized float32 matrices so other GEMV tests keep the original path.
+    return (
+        flag_blas.vendor_name == "iluvatar"
+        and tensor.dtype == torch.float32
+        and tensor.ndim == 2
+        and not tensor.is_contiguous()
+        and tensor.numel() * tensor.element_size() >= _HUGE_NONCONTIG_COPY_BYTES
+    )
+
+
+def _chunked_2d_copy(tensor, *, device, dtype):
+    out = torch.empty(tensor.shape, dtype=dtype, device=device)
+    row_bytes = tensor.shape[1] * torch.empty((), dtype=dtype).element_size()
+    rows_per_chunk = max(1, _CHUNKED_COPY_BYTES // max(1, row_bytes))
+    for row_start in range(0, tensor.shape[0], rows_per_chunk):
+        row_end = min(row_start + rows_per_chunk, tensor.shape[0])
+        out[row_start:row_end].copy_(
+            tensor[row_start:row_end].to(device=device, dtype=dtype)
+        )
+    return out
+
+
+def _sgemv_contiguous_matrix(tensor):
+    if _needs_iluvatar_sgemv_chunked_noncontig_copy(tensor):
+        return _chunked_2d_copy(tensor, device=tensor.device, dtype=tensor.dtype)
+    return tensor.contiguous()
+
+
+def _sgemv_cpu_blas_tensor(tensor):
+    if _needs_iluvatar_sgemv_chunked_noncontig_copy(tensor):
+        return _chunked_2d_copy(tensor.detach(), device="cpu", dtype=torch.float64)
+    return to_cpu_blas_tensor(tensor)
+
 
 def prepare_fp8_gemv_data(m, n, incx, incy, fp8_dtype, y_dtype, device):
     A_f32 = torch.randn(m, n, dtype=torch.float32, device=device)
@@ -143,7 +184,7 @@ def cpu_gemv_reference(trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
     if m == 0 or n == 0:
         return to_cpu_blas_tensor(y)
 
-    ref_A = to_cpu_blas_tensor(A)
+    ref_A = _sgemv_cpu_blas_tensor(A)
     ref_x = to_cpu_blas_tensor(x)
     if beta == 0 and incy == 1:
         ref_dtype = torch.complex128 if y.is_complex() else torch.float64
@@ -261,7 +302,7 @@ def test_accuracy_sgemv(m, n, trans, beta):
     dtype, alpha = torch.float32, 1.5
 
     A_col = torch.randn(n, m, dtype=dtype, device=flag_blas.device).t()
-    A_row = A_col.contiguous()
+    A_row = _sgemv_contiguous_matrix(A_col)
 
     x_len, y_len = (n, m) if trans == CUBLAS_OP_N else (m, n)
     x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
