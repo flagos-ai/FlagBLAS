@@ -1,32 +1,32 @@
-# FlagBLAS Dispatch 模块
+# FlagBLAS Dispatch Module
 
-## 概述
+## Overview
 
-`dispatch` 模块 (`src/flag_blas/runtime/dispatch.py`) 提供了**基于问题尺寸的自动调优 kernel 变体选择**框架。它解决了这样一个核心问题：对于同一个数学运算（例如 GEMM），存在多个不同实现的 kernel 变体，每种变体在不同的矩阵形状、对齐条件下性能各异。`SizeAutoDispatch` 在首次遇到新形状时通过实际 GPU benchmark 选出最优变体，并将结果缓存到进程内内存和持久化数据库中，后续调用零开销命中。
+The `dispatch` module (`src/flag_blas/runtime/dispatch.py`) provides a **size-based auto-tuning kernel variant selection** framework. It addresses a core problem: for a single mathematical operation (e.g., GEMM), multiple kernel implementation variants exist, each performing optimally under different matrix shapes and alignment conditions. `SizeAutoDispatch` benchmarks all applicable variants on actual GPU hardware when a new shape is first encountered, selects the fastest one, and caches the result in both an in-process memory cache and a persistent database, enabling zero-overhead lookups on subsequent calls.
 
-## 适用场景
+## Use Cases
 
-- 同一个算子有**多种 kernel 实现变体**（如对齐优化版、padding 版、Split-K 版、通用 fallback 版）
-- 不同变体在**不同形状和对齐条件**下各有优势
-- 希望**首次运行自动 benchmark，后续零开销**直接选择最优实现
-- 需要**跨进程重启持久化**自动调优结果
+- An operator has **multiple kernel implementation variants** (e.g., alignment-optimized, padded, Split-K, generic fallback)
+- Different variants perform best under **different shape and alignment conditions**
+- The goal is to **auto-benchmark on first run, then select the optimal implementation with zero overhead** on subsequent runs
+- Auto-tuning results should **persist across process restarts**
 
-## 架构设计
+## Architecture
 
-### 模块组成
+### Module Layout
 
 ```
 dispatch.py
-├── _autotune_result_cache    # 模块级进程内内存缓存
-├── _autotune_result_lock     # 线程安全锁
-├── _SizeFilter               # 尺寸过滤函数类型别名
-├── SizeAutoDispatch          # 自动调优 dispatch 核心类
-└── KernelRunner              # 预绑定参数的 kernel 调用包装器
+├── _autotune_result_cache    # Module-level in-process memory cache
+├── _autotune_result_lock     # Thread-safety lock
+├── _SizeFilter               # Type alias for size filter functions
+├── SizeAutoDispatch          # Core auto-tuning dispatch class
+└── KernelRunner              # Pre-bound kernel invocation wrapper
 ```
 
-### 缓存架构
+### Cache Hierarchy
 
-`SizeAutoDispatch.lookup_and_build()` 使用**四级查询**的方式查找最优 kernel 变体：
+`SizeAutoDispatch.lookup_and_build()` uses a **four-tier look-up** mechanism to find the optimal kernel variant:
 
 ```
                          ┌─────────────────────┐
@@ -35,51 +35,53 @@ dispatch.py
                                     │
                          ┌──────────▼──────────┐
                          │  len(entries) == 1  │
-                         │  直接返回唯一候选     │  ← O(1), 零开销
+                         │  Return immediately  │  ← O(1), zero overhead
                          └──────────┬──────────┘
-                                    │ 候选数 ≥ 2
+                                    │ ≥ 2 candidates
                          ┌──────────▼──────────┐
-                         │  内存缓存查询         │  ← dict lookup, O(1)
-                         │  (进程内, 跨实例)     │
-                         └──────────┬──────────┘
-                                    │ miss
-                         ┌──────────▼──────────┐
-                         │  DB 缓存查询          │  ← SQLite I/O
-                         │  (跨进程重启持久化)    │
+                         │  In-memory cache     │  ← dict lookup, O(1)
+                         │  (process-scoped,    │
+                         │   cross-instance)    │
                          └──────────┬──────────┘
                                     │ miss
                          ┌──────────▼──────────┐
-                         │  自动调优 (benchmark) │  ← GPU benchmark
-                         │  写入 内存 + DB 缓存   │
+                         │  DB cache            │  ← SQLite I/O
+                         │  (persists across    │
+                         │   process restarts)  │
+                         └──────────┬──────────┘
+                                    │ miss
+                         ┌──────────▼──────────┐
+                         │  Auto-tune (bench)   │  ← GPU benchmark
+                         │  Write to memory + DB│
                          └─────────────────────┘
 ```
 
-#### 缓存层级详解
+#### Cache Tier Details
 
-| 层级 | 存储介质 | 生命周期 | 查询开销 | 用途 |
-|------|---------|---------|---------|------|
-| `len(entries)==1` | 无 | 每次调用 | O(1) | 唯一候选直接返回 |
-| 内存缓存 | Python dict | 进程存活期间 | O(1) | 解决"每次 new instance"问题 |
-| DB 缓存 | SQLite 文件 | 永久 | ~0.1ms | 跨进程重启持久化 |
-| Autotune | GPU | 首次遇到 | seconds | 实际 benchmark 选出最优 |
+| Tier | Storage | Lifetime | Lookup Cost | Purpose |
+|------|---------|----------|-------------|---------|
+| `len(entries)==1` | None | Per call | O(1) | Single candidate, return directly |
+| In-memory cache | Python dict | Process lifetime | O(1) | Solves "new instance on every call" problem |
+| DB cache | SQLite file | Permanent | ~0.1 ms | Persistence across process restarts |
+| Auto-tune | GPU | First encounter | Seconds | Actual GPU benchmarking to pick the winner |
 
-**内存缓存** (第 29-30 行):
+**In-memory cache** (lines 29–30):
 
 ```python
 _autotune_result_cache: Dict[Tuple[str, tuple], str] = {}
 _autotune_result_lock = threading.Lock()
 ```
 
-- Key: `(table_name, cache_key)` — table_name 区分不同 dispatch（如 `"sgemm_nn_variant"` vs `"hgemm_nn_variant"`），cache_key 编码问题形状
-- Value: 最优候选变体的名称字符串
-- 模块级全局变量，所有 `SizeAutoDispatch` 实例共享
-- 无持久化开销，进程重启自动清空
+- Key: `(table_name, cache_key)` — `table_name` distinguishes different dispatches (e.g., `"sgemm_nn_variant"` vs `"hgemm_nn_variant"`), while `cache_key` encodes the problem shape
+- Value: Name string of the winning candidate variant
+- Module-level global variable, shared across all `SizeAutoDispatch` instances
+- No persistence overhead; automatically cleared on process restart
 
 ---
 
-## 核心类: SizeAutoDispatch
+## Core Class: SizeAutoDispatch
 
-### 构造参数
+### Constructor Parameters
 
 ```python
 SizeAutoDispatch(
@@ -89,13 +91,13 @@ SizeAutoDispatch(
 )
 ```
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `table_name` | `str` | DB 表名，用于持久化 `(key → best_candidate)` 映射。不同 dispatch 使用不同表名避免冲突 |
-| `build_key` | `(m, n, k, aligned, **extra) -> tuple` | 从问题维度构建唯一缓存 key 的函数 |
-| `model` | `PersistantModel \| None` | 数据库访问实例。`None` 则仅使用内存缓存，不持久化 |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `table_name` | `str` | DB table name for persisting the `(key → best_candidate)` mapping. Use unique names for different dispatches to avoid collisions |
+| `build_key` | `(m, n, k, aligned, **extra) -> tuple` | Function that builds a unique cache key from problem dimensions |
+| `model` | `PersistantModel \| None` | Database access instance. If `None`, only in-memory caching is used (no persistence) |
 
-### add() — 注册候选变体
+### add() — Register a Candidate Variant
 
 ```python
 def add(
@@ -108,28 +110,28 @@ def add(
 )
 ```
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `factory` | `() -> Callable[[], None]` | **零参工厂函数**，返回一个可直接调用执行的 runner。采用惰性构造：只有被选中的候选才会调用 factory |
-| `aligned` | `bool \| None` | 候选匹配的对齐条件。`True` 仅匹配对齐场景，`False` 仅匹配未对齐场景，`None` 匹配所有 |
-| `name` | `str \| None` | 候选名称，用于 DB 存储和日志。不指定则自动生成 `"variant_0"`, `"variant_1"` ... |
-| `filter` | `_SizeFilter \| None` | 尺寸过滤函数，签名 `(m, n, k, aligned, **extra) -> bool`。返回 `True` 时该候选加入候选池 |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `factory` | `() -> Callable[[], None]` | **Zero-arg factory function** that returns a callable runner. Lazy construction: only the selected candidate's factory is invoked |
+| `aligned` | `bool \| None` | Alignment condition. `True` = matches aligned inputs only, `False` = matches unaligned only, `None` = matches all |
+| `name` | `str \| None` | Candidate name for DB storage and logging. Auto-generated as `"variant_0"`, `"variant_1"`, etc. if not specified |
+| `filter` | `_SizeFilter \| None` | Size filter function, signature `(m, n, k, aligned, **extra) -> bool`. Returns `True` to include this candidate in the pool |
 
-**关键设计: Lazy Runner Construction**
+**Key Design: Lazy Runner Construction**
 
-`add()` 接受的是**工厂函数**而非 runner 本身。这是因为：
+`add()` accepts a **factory function** rather than the runner itself because:
 
-1. 创建 runner 可能包含昂贵的内存分配（如 padding 新 tensor）
-2. autotune 阶段每个候选都需要 runner，但**最终只有胜出的候选被实际使用**
-3. 缓存命中时其他候选的 factory 根本不会被调用
+1. Creating a runner may involve expensive memory allocations (e.g., padding new tensors)
+2. During auto-tuning, every candidate needs a runner, but **only the winner is actually used** past that point
+3. On cache hits, factories for non-winning candidates are never called at all
 
-**filter 的设计约束:**
+**Filter Design Constraints:**
 
-- 同一 `aligned` 取值下的候选 filter 应**互斥**，否则多个候选同时进入池触发不必要的 autotune
-- filter 的评判应**仅基于形状维度**，不应涉及任何状态
-- 不应出现某个形状**所有候选都被 filter 排除**的真空地带
+- Filters for the same `aligned` value should be **mutually exclusive**; overlapping filters cause multiple candidates to enter the pool simultaneously, triggering unnecessary auto-tuning
+- Filter logic should depend **solely on shape dimensions**, not any external state
+- There must be no "vacuum" where **all candidates are excluded** for a given shape
 
-### lookup_and_build() — 查询并构建最优 runner
+### lookup_and_build() — Look Up and Build the Optimal Runner
 
 ```python
 def lookup_and_build(
@@ -144,27 +146,27 @@ def lookup_and_build(
 ) -> Callable[[], None]
 ```
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `m` | `int` | 矩阵 M 维度 |
-| `n` | `int` | 矩阵 N 维度 |
-| `k` | `int` | 矩阵 K 维度 |
-| `aligned` | `bool` | 当前输入是否满足对齐条件 |
-| `snapshot_tensor` | `Tensor \| None` | 用于 autotune 中恢复状态的快照 tensor。如果提供，每个候选 benchmark 前后都会恢复其原始值，确保公平比较 |
-| `**extra` | — | 透传给 `build_key` 和 `filter` 的额外参数 |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `m` | `int` | Matrix M dimension |
+| `n` | `int` | Matrix N dimension |
+| `k` | `int` | Matrix K dimension |
+| `aligned` | `bool` | Whether the current inputs satisfy alignment constraints |
+| `snapshot_tensor` | `Tensor \| None` | Snapshot tensor for state restoration during auto-tuning. When provided, its original value is restored before and after each candidate benchmark to ensure fair comparison |
+| `**extra` | — | Additional parameters forwarded to `build_key` and `filter` |
 
-**返回值**: 一个零参 callable runner，调用即执行选中的 kernel
+**Return value**: A zero-arg callable runner; calling it executes the selected kernel.
 
-**执行流程**:
+**Execution Flow**:
 
-1. 调用 `build_key(m, n, k, aligned, **extra)` 构建缓存 key
-2. 调用 `_get_entries(m, n, k, aligned, **extra)` 过滤出匹配的候选
-3. 若仅 1 个候选 → 直接返回其 factory()
-4. 查内存缓存 → 命中则返回
-5. 查 DB 缓存 → 命中则返回，同时提升到内存缓存
-6. 触发 `_autotune()` → benchmark 选出最优 → 写入内存 + DB
+1. Call `build_key(m, n, k, aligned, **extra)` to construct the cache key
+2. Call `_get_entries(m, n, k, aligned, **extra)` to filter matching candidates
+3. If only 1 candidate → return its `factory()` immediately
+4. Check in-memory cache → return on hit
+5. Check DB cache → return on hit, also promote to in-memory cache
+6. Trigger `_autotune()` → benchmark to find the winner → write to both in-memory and DB caches
 
-### _autotune() — 自动调优
+### _autotune() — Automatic Tuning
 
 ```python
 def _autotune(
@@ -175,30 +177,30 @@ def _autotune(
 ) -> Optional[Tuple[_Entry, Callable[[], None]]]
 ```
 
-对每个候选执行 **1 次 warmup + 5 次计时**:
+Performs **1 warm-up + 5 timed iterations** per candidate:
 
-1. 备份 `snapshot_tensor`（如果提供）
-2. 调用 `entry.factory()` 构造 runner（惰性构造，仅此一次）
-3. 执行 1 次 warmup + `torch.cuda.synchronize()`
-4. 恢复 snapshot
-5. 执行 5 次计时，使用 CUDA Event 精确测量 GPU 耗时
-6. 每次计时前后恢复 snapshot，消除候选间的状态干扰
-7. 记录每个候选的最小耗时
-8. 返回耗时最小的 `(entry, runner)` 对
+1. Back up `snapshot_tensor` (if provided)
+2. Call `entry.factory()` to construct the runner (lazy, one-time)
+3. Execute 1 warm-up + `torch.cuda.synchronize()`
+4. Restore snapshot
+5. Execute 5 timed iterations using CUDA Events for precise GPU time measurement
+6. Restore snapshot before and after each timed iteration to eliminate cross-candidate state interference
+7. Record the minimum elapsed time for each candidate
+8. Return the `(entry, runner)` pair with the lowest timing
 
-**容错**: 单个候选崩溃不影响其他候选，会记录 warning 日志并跳过。如果所有候选都失败，返回 `None`，caller 回退到第一个候选且**不持久化**，下次调用会重试 autotune。
+**Fault tolerance**: A single candidate crash does not affect other candidates; a warning is logged and the candidate is skipped. If all candidates fail, `None` is returned and the caller falls back to the first entry **without persisting**, so future calls will retry auto-tuning.
 
-### 可配置参数
+### Configurable Parameters
 
-| 类属性 | 默认值 | 说明 |
-|--------|--------|------|
-| `_WARMUP_ITERS` | `1` | 每个候选的 warmup 次数 |
-| `_TIMING_ITERS` | `5` | 每个候选的计时次数 |
-| `_CACHE_FLUSH_BYTES` | `16 * 1024 * 1024` | 候选间 flush L2 cache 的 dummy buffer 大小 (16 MiB) |
+| Class Attribute | Default | Description |
+|-----------------|---------|-------------|
+| `_WARMUP_ITERS` | `1` | Number of warm-up launches per candidate |
+| `_TIMING_ITERS` | `5` | Number of timed launches per candidate |
+| `_CACHE_FLUSH_BYTES` | `16 * 1024 * 1024` | Dummy buffer size (bytes) for L2 cache eviction between candidates (16 MiB) |
 
 ---
 
-## 辅助类: KernelRunner
+## Helper Class: KernelRunner
 
 ```python
 class KernelRunner:
@@ -209,31 +211,31 @@ class KernelRunner:
         return self._kernel(*self._args, **self._kwargs)
 ```
 
-一个可调用包装器，将 kernel 函数与其参数绑定在一起。当不需要 autotune、只需固定实现的场景下使用。例如：
+A callable wrapper that binds a kernel function with its arguments. Useful when no auto-tuning is needed and a fixed implementation suffices. Example:
 
 ```python
 runner = KernelRunner(my_kernel_fn, A, B, C, alpha=1.0)
-runner()  # 等价于 my_kernel_fn(A, B, C, alpha=1.0)
+runner()  # Equivalent to my_kernel_fn(A, B, C, alpha=1.0)
 ```
 
 ---
 
-## 使用方法
+## Usage
 
-### 基本用法
+### Basic Pattern
 
 ```python
 from flag_blas.runtime.dispatch import SizeAutoDispatch
 from flag_blas.utils.libentry import libcache
 
-# Step 1: 定义尺寸过滤函数
+# Step 1: Define size filter functions
 def is_large(m, n, k, **extra):
     return m > 1024 and n > 1024 and k > 1024
 
 def is_thin(m, n, k, **extra):
     return min(m, n) <= 64 and k >= 256
 
-# Step 2: 定义 runner 工厂函数（每个返回一个零参 callable）
+# Step 2: Define runner factory functions (each returns a zero-arg callable)
 def make_aligned_runner(A, B, C, m, n, k, ...):
     def run():
         aligned_kernel(A, B, C, ...)
@@ -244,15 +246,15 @@ def make_fallback_runner(A, B, C, m, n, k, ...):
         fallback_kernel(A, B, C, ...)
     return run
 
-# Step 3: 构造 dispatch table
+# Step 3: Build the dispatch table
 def build_dispatch(A, B, C, m, n, k, ...):
     dispatch = SizeAutoDispatch(
-        table_name="my_gemm_variant",                 # 唯一表名
+        table_name="my_gemm_variant",                   # Unique table name
         build_key=lambda m, n, k, aligned, **kw: (m, n, k, int(aligned)),
-        model=libcache.model,                         # 复用 FlagBLAS 全局 DB
+        model=libcache.model,                           # Reuse FlagBLAS global DB
     )
 
-    # Step 4: 注册候选变体
+    # Step 4: Register candidate variants
     dispatch.add(
         lambda: make_aligned_runner(A, B, C, m, n, k, ...),
         aligned=True,
@@ -266,7 +268,7 @@ def build_dispatch(A, B, C, m, n, k, ...):
 
     return dispatch
 
-# Step 5: 在算子入口使用
+# Step 5: Use in the operator entry point
 def my_gemm(A, B, C, m, n, k, ...):
     aligned = check_alignment(A, B, C)
     dispatch = build_dispatch(A, B, C, m, n, k, ...)
@@ -274,9 +276,9 @@ def my_gemm(A, B, C, m, n, k, ...):
     runner()
 ```
 
-### 完整示例: Hopper sgemm NN 分支
+### Full Example: Hopper sgemm NN Branch
 
-FlagBLAS 中 Hopper 架构下 `sgemm` 的 NN 转置分支是典型应用场景（[hopper/ops/gemm.py:538-570](src/flag_blas/runtime/backend/_nvidia/hopper/ops/gemm.py)）：
+The `sgemm` NN transpose branch on Hopper architecture is the canonical usage ([hopper/ops/gemm.py:538-570](src/flag_blas/runtime/backend/_nvidia/hopper/ops/gemm.py)):
 
 ```python
 def _build_sgemm_nn_dispatch_table(
@@ -289,7 +291,7 @@ def _build_sgemm_nn_dispatch_table(
         model=model,
     )
 
-    # 对齐路径: TensorDescriptor + TF32 加速
+    # Aligned path: TensorDescriptor + TF32 acceleration
     dispatch.add(
         lambda: _make_sgemm_nn_aligned_runner(A, lda, B, ldb, C, ldc,
                                                m, n, k, alpha, beta,
@@ -298,7 +300,7 @@ def _build_sgemm_nn_dispatch_table(
         name="aligned_k2",
     )
 
-    # 不对齐 + 大矩阵: padding 到 16 对齐
+    # Unaligned + large: pad to 16-alignment
     dispatch.add(
         lambda: _make_sgemm_nn_padded_runner(A, lda, B, ldb, C, ldc,
                                               m, n, k, alpha, beta,
@@ -308,7 +310,7 @@ def _build_sgemm_nn_dispatch_table(
         filter=_is_sgemm_large,   # m>1024 and n>1024 and k>1024
     )
 
-    # 不对齐 + 瘦矩阵: Split-K 策略
+    # Unaligned + thin: Split-K strategy
     dispatch.add(
         lambda: _make_sgemm_nn_thin_runner(A, lda, B, ldb, C, ldc,
                                             m, n, k, alpha, beta,
@@ -318,7 +320,7 @@ def _build_sgemm_nn_dispatch_table(
         filter=_is_sgemm_thin,   # min(m,n)<=64 and k>=256
     )
 
-    # 不对齐 + 中等尺寸: 通用 fallback
+    # Unaligned + medium: generic fallback
     dispatch.add(
         lambda: _make_sgemm_nn_fallback_runner(A, lda, B, ldb, C, ldc,
                                                 m, n, k, alpha, beta,
@@ -331,7 +333,7 @@ def _build_sgemm_nn_dispatch_table(
     return dispatch
 
 
-# 在 sgemm() 中的调用
+# Usage inside sgemm()
 def sgemm(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc):
     ...
     aligned = _is_gemm_aligned(A, lda, B, ldb, C, ldc)
@@ -346,116 +348,183 @@ def sgemm(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc):
         elif ...
 ```
 
-### 候选变体间的 filter 互斥关系
+### Filter Mutual Exclusivity
 
-对于 `aligned=False`（不对齐场景），四个候选的 filter 覆盖关系：
+For `aligned=False` (unaligned scenarios), the coverage of the four candidates:
 
-| 候选 | filter | 目标场景 |
-|------|--------|---------|
-| `padded_k2` | `m>1024 and n>1024 and k>1024` | 大矩阵 → pad + TensorDescriptor |
-| `thin` | `min(m,n)≤64 and k≥256 and grid<32` | 瘦矩阵 → Split-K + atomic_add |
-| `fallback` | `not (m>1024 and n>1024 and k>1024)` | 中等尺寸 → 通用指针 kernel |
-| `aligned_k2` | `aligned=True` (不同 aligned 取值) | 对齐矩阵 → TensorDescriptor + TF32 |
+| Candidate | Filter | Target Scenario |
+|-----------|--------|-----------------|
+| `padded_k2` | `m>1024 and n>1024 and k>1024` | Large matrices → pad + TensorDescriptor |
+| `thin` | `min(m,n)≤64 and k≥256 and grid<32` | Thin matrices → Split-K + atomic_add |
+| `fallback` | `not (m>1024 and n>1024 and k>1024)` | Medium sized → generic pointer kernel |
+| `aligned_k2` | `aligned=True` (different aligned value) | Aligned matrices → TensorDescriptor + TF32 |
 
-`thin` 和 `padded_k2` / `fallback` 的 filter 互斥（一个要求 min(m,n)≤64，另一个要求 m,n>1024），确保任意给定形状 `aligned=False` 时最多只有 2 个候选（且多数时候仅 1 个），避免不必要的 autotune。
+The filters for `thin` and `padded_k2` / `fallback` are mutually exclusive (one requires `min(m,n)≤64`, the other requires `m,n>1024`), ensuring that for any given shape with `aligned=False`, at most 2 candidates enter the pool (and in most cases only 1), avoiding unnecessary auto-tuning.
 
 ---
 
-## 运行时行为
+## Runtime Behavior
 
-### 首次调用新形状
+### First Call with a New Shape
 
 ```
 lookup_and_build(m=4095, n=4095, k=4095, aligned=False)
-  → entries = [padded_k2]  (仅 padded_k2 满足 filter)
-  → len(entries)==1 → 直接返回 padded_k2 runner
-  → 无 autotune, 无 DB I/O
+  → entries = [padded_k2]  (only padded_k2 matches filter)
+  → len(entries)==1 → return padded_k2 runner immediately
+  → No auto-tuning, no DB I/O
 ```
 
 ```
 lookup_and_build(m=1023, n=1023, k=1023, aligned=False)
-  → entries = [fallback]  (仅 fallback 满足 filter)
-  → len(entries)==1 → 直接返回 fallback runner
+  → entries = [fallback]   (only fallback matches filter)
+  → len(entries)==1 → return fallback runner immediately
 ```
 
-### 再次调用 (缓存命中)
+### Subsequent Calls (Cache Hit)
 
 ```
 lookup_and_build(m=4095, n=4095, k=4095, aligned=False)
-  → 新的 SizeAutoDispatch 实例
+  → New SizeAutoDispatch instance
   → entries = [padded_k2]
-  → len(entries)==1 → 直接返回  ← 每次都是 O(1)
+  → len(entries)==1 → return immediately   ← O(1) every time
 ```
 
-### 多个候选时的缓存命中
+### Cache Hit with Multiple Candidates
 
-假设 filter 设计导致 `len(entries) >= 2`:
+When filter design results in `len(entries) >= 2`:
 
 ```
-# 第一次
+# First call
 lookup_and_build(m=X, n=X, k=X, aligned=False)
   → entries = [candidate_a, candidate_b]
-  → 内存缓存 miss → DB miss → autotune → candidate_a 胜出
-  → 写入内存缓存 + DB
+  → In-memory cache miss → DB miss → auto-tune → candidate_a wins
+  → Written to in-memory cache + DB
 
-# 后续调用（同一进程）
+# Subsequent calls (same process)
 lookup_and_build(m=X, n=X, k=X, aligned=False)
   → entries = [candidate_a, candidate_b]
-  → 内存缓存命中 "candidate_a" → 直接返回  ← O(1) dict lookup
+  → In-memory cache hit "candidate_a" → return immediately  ← O(1) dict lookup
 ```
 
 ---
 
-## 测试与验证
+## Testing and Verification
 
-在 benchmark 环境中验证 dispatch 行为:
+Verify dispatch behavior in a benchmark environment:
 
 ```bash
-# 查看 autotune 日志
+# Enable auto-tuning logs
 TRITON_PRINT_AUTOTUNING=1 pytest test_gemm_perf.py::test_perf_sgemm_nn -v -s
 
-# 跳过 correctness check，仅测量 kernel 性能
+# Skip correctness check, measure kernel performance only
 pytest test_gemm_perf.py::test_perf_sgemm_nn -v -s --level core --skip_correctness
 ```
 
-### 性能验证要点
+### Key Verification Points
 
-1. **首个 shape 的 autotune 开销属于一次性成本**，不应计入 benchmark 计时
-2. Benchmark 框架应在计时前通过 correctness check 或 warmup 调用预填充所有缓存
-3. 若 benchmark 中仍观察到 autotune 日志输出，说明缓存未生效（检查 filter 互斥性、DB 文件权限）
+1. **The one-time auto-tune cost for the first shape should not be counted in benchmark timing**
+2. Benchmark frameworks should pre-populate all caches via correctness checks or warm-up calls before timing
+3. If auto-tune log output is still observed during benchmarking, the cache is not working (check filter mutual exclusivity, DB file permissions)
+
+### Verifying _save_db Success
+
+**Method 1 — Log observation** (recommended):
+
+Enable INFO-level logging for the dispatch module:
+
+```python
+import logging
+logging.basicConfig(level=logging.INFO,
+                    format='%(name)s %(levelname)s %(message)s')
+```
+
+A successful write produces:
+```
+SizeAutoDispatch DB save success: table=sgemm_nn_variant key=(1023, 1023, 1023, 0) -> fallback
+```
+
+A failure produces (with full traceback):
+```
+SizeAutoDispatch DB save error for table=sgemm_nn_variant key=(1023, 1023, 1023, 0) candidate=fallback
+Traceback (most recent call last):
+  ...
+```
+
+**Method 2 — Direct SQLite query**:
+
+```bash
+python3 -c "
+import sqlite3
+
+db = '~/.flagblas/config_cache/TunedConfig_*.db'  # adjust path
+conn = sqlite3.connect(db)
+tables = conn.execute(\"SELECT name FROM sqlite_master
+    WHERE type='table' AND name LIKE '%sgemm_nn_variant%'\").fetchall()
+for (tname,) in tables:
+    rows = conn.execute(f'SELECT * FROM \"{tname}\"').fetchall()
+    print(f'{tname}: {len(rows)} row(s)')
+    for r in rows:
+        print(f'  {r}')
+conn.close()
+"
+```
+
+**Method 3 — Programmatic verification via `_lookup_db`**:
+
+```python
+from flag_blas.runtime.dispatch import SizeAutoDispatch
+from flag_blas.utils.libentry import libcache
+
+dispatch = SizeAutoDispatch(
+    table_name='sgemm_nn_variant',
+    build_key=lambda m, n, k, aligned, **kw: (m, n, k, int(aligned)),
+    model=libcache.model,
+)
+
+result = dispatch._lookup_db((2048, 11008, 4096, 1))
+if result:
+    print(f'DB write verified: best candidate for key is {result}')
+else:
+    print('DB lookup returned None — write may have failed or key mismatch')
+```
 
 ---
 
-## 常见问题
+## FAQ
 
-### Q: 为什么每次调用都要 new 一个新实例？
+### Q: Why create a new instance on every call?
 
-`SizeAutoDispatch` 的设计假设实例是轻量的（仅持有 filter/规则列表和 DB 连接引用），而 runner factory 闭包捕获了具体的 tensor 引用（A, B, C, lda, ldb ...），这些是每次调用都不同的。因此 dispatch 实例随 `sgemm()` 调用创建是合理的。性能保障由**模块级内存缓存**提供——新实例直接走缓存，无需 DB 查询或 autotune。
+`SizeAutoDispatch` is designed to be lightweight (it only holds filter/rule lists and a DB connection reference), while the runner factory closures capture concrete tensor references (A, B, C, lda, ldb, etc.) that differ per call. Creating a dispatch instance per `sgemm()` invocation is therefore expected. Performance is guaranteed by the **module-level in-memory cache** — new instances hit the cache directly, bypassing DB queries and auto-tuning.
 
-### Q: filter 函数可以捕获外部状态吗？
+### Q: Can filter functions capture external state?
 
-不可以。filter 函数的输入参数已经足够判断（m, n, k, aligned）。不要在 filter 中引入额外状态，否则会导致无法稳定复现的问题。
+No. Filter input parameters (m, n, k, aligned) are already sufficient for the decision. Do not introduce additional state into filters, as this leads to non-reproducible behavior.
 
-### Q: 如何清除 autotune 缓存？
+### Q: How do I clear the auto-tune cache?
 
 ```bash
-# 清除进程内内存缓存（重启进程即可）
-# 清除 DB 持久化缓存
+# Clear in-process in-memory cache — restart the process
+
+# Clear persistent DB cache
 rm ~/.cache/flag_blas/TunedConfig_*.db
 ```
 
-### Q: 修改 filter 逻辑后是否需要清除缓存？
+### Q: Do I need to clear the cache after modifying filter logic?
 
-需要。旧的 autotune 结果可能与新逻辑不兼容。`lookup_and_build` 会检测到缓存中的候选名不再匹配任何 entry 并自动清除内存中的 stale entry，但 DB 中的旧记录需要手动清理或忽略（下次 autotune 会覆盖）。
+Yes. Old auto-tune results may be incompatible with the new logic. `lookup_and_build` detects that a cached candidate name no longer matches any registered entry and automatically clears the stale in-memory entry, but **old DB records must be manually removed** or left to be overwritten by subsequent auto-tune runs.
+
+### Q: Why does the DB table name have an MD5 suffix (e.g., `sgemm_nn_variant-9924b48a...`)?
+
+The actual table name in SQLite is generated by `SQLPersistantModel.get_sql_model()` by appending the MD5 hash of the key column names to the `table_name` parameter. This allows the same logical table name to coexist with different key schemas. When querying the DB directly, use `LIKE '%sgemm_nn_variant%'` instead of an exact match.
 
 ---
 
-## API 速查表
+## API Reference
 
-| 类/函数 | 用途 |
-|---------|------|
-| `SizeAutoDispatch(table_name, build_key, model)` | 构造 dispatch 实例 |
-| `dispatch.add(factory, *, aligned, name, filter)` | 注册候选 kernel 变体 |
-| `dispatch.lookup_and_build(m, n, k, aligned, **extra)` | 查询并构建最优 runner |
-| `KernelRunner(kernel, *args, **kwargs)` | 预绑定参数的 kernel 调用包装器 |
-| `_SizeFilter` | 类型别名 `Callable[..., bool]` |
+| Class / Function | Purpose |
+|------------------|---------|
+| `SizeAutoDispatch(table_name, build_key, model)` | Construct a dispatch instance |
+| `dispatch.add(factory, *, aligned, name, filter)` | Register a candidate kernel variant |
+| `dispatch.lookup_and_build(m, n, k, aligned, **extra)` | Look up and build the optimal runner |
+| `KernelRunner(kernel, *args, **kwargs)` | Pre-bound kernel invocation wrapper |
+| `_SizeFilter` | Type alias `Callable[..., bool]` |
