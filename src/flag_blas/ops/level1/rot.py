@@ -1,4 +1,5 @@
 import logging
+import struct
 from typing import Union
 
 import torch
@@ -12,6 +13,10 @@ from flag_blas.utils import triton_lang_extension as tle
 logger = logging.getLogger(__name__)
 
 ScalarType = Union[float, int, complex, torch.Tensor]
+
+
+def _f64_to_i64(value: float) -> int:
+    return struct.unpack("<q", struct.pack("<d", value))[0]
 
 
 @libentry()
@@ -258,8 +263,8 @@ def drot(
 
     c_val = float(c.item() if isinstance(c, torch.Tensor) else c)
     s_val = float(s.item() if isinstance(s, torch.Tensor) else s)
-    c_int = torch.tensor(c_val, dtype=torch.float64).view(torch.int64).item()
-    s_int = torch.tensor(s_val, dtype=torch.float64).view(torch.int64).item()
+    c_int = _f64_to_i64(c_val)
+    s_int = _f64_to_i64(s_val)
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy
@@ -348,9 +353,9 @@ def zrot(
     s_real = float(s.real) if isinstance(s, complex) else float(s)
     s_imag = float(s.imag) if isinstance(s, complex) else 0.0
 
-    c_int = torch.tensor(c_val, dtype=torch.float64).view(torch.int64).item()
-    s_real_int = torch.tensor(s_real, dtype=torch.float64).view(torch.int64).item()
-    s_imag_int = torch.tensor(s_imag, dtype=torch.float64).view(torch.int64).item()
+    c_int = _f64_to_i64(c_val)
+    s_real_int = _f64_to_i64(s_real)
+    s_imag_int = _f64_to_i64(s_imag)
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy

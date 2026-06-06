@@ -6,6 +6,7 @@ import torch
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
+from benchmark.attri_util import L1_STRIDE_SHAPES, L1_VECTOR_SHAPES
 from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 from flag_blas.utils import shape_utils
 
@@ -55,22 +56,7 @@ class AsumBenchmark(Benchmark):
         return ["gbps"]
 
     def set_more_shapes(self):
-        shapes = [
-            (1024,),
-            (5333,),
-            (65536,),
-            (100000,),
-            (1048576,),
-            (3000000,),
-            (4194304,),
-            (10000000,),
-            (16777216,),
-            (33554432,),
-            (50000000,),
-            (67108864,),
-            (134217728,),
-        ]
-        self.shapes = shapes
+        self.shapes = L1_VECTOR_SHAPES
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
@@ -111,16 +97,7 @@ class AsumStrideBenchmark(Benchmark):
         return ["gbps"]
 
     def set_more_shapes(self):
-        shapes_1d = [
-            (1024,),
-            (5333,),
-            (65536,),
-            (100000,),
-            (1048576,),
-            (3000000,),
-            (4194304,),
-        ]
-        self.shapes = shapes_1d
+        self.shapes = L1_STRIDE_SHAPES
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:

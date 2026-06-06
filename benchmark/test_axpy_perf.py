@@ -1,3 +1,4 @@
+import logging
 from typing import Generator
 
 import cupy as cp
@@ -7,10 +8,12 @@ import torch
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
-
+from benchmark.attri_util import L1_STRIDE_SHAPES, L1_VECTOR_SHAPES
 from benchmark.conftest import Config
 from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
+
+logger = logging.getLogger(__name__)
 
 
 def cublas_saxpy(x, y, alpha, incx=1, incy=1, n=None, handle=None, alpha_ptr=None):
@@ -62,7 +65,6 @@ def blas_zaxpy_wrapper(
 
 
 class AxpyBenchmark(Benchmark):
-
     def __init__(self, *args, alpha=1e-5, **kwargs):
         super().__init__(*args, **kwargs)
         self.alpha = alpha
@@ -71,22 +73,7 @@ class AxpyBenchmark(Benchmark):
         return ["gbps"]
 
     def set_more_shapes(self):
-        shapes = [
-            (1024,),
-            (5333,),
-            (65536,),
-            (100000,),
-            (1048576,),
-            (3000000,),
-            (4194304,),
-            (10000000,),
-            (16777216,),
-            (33554432,),
-            (50000000,),
-            (67108864,),
-            (134217728,),
-        ]
-        self.shapes = shapes
+        self.shapes = L1_VECTOR_SHAPES
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
@@ -154,10 +141,9 @@ class AxpyBenchmark(Benchmark):
 
         self.init_user_config()
         total_cases = 0
-        print(
-            f"[correctness] {self.op_name}: comparing FlagBLAS against cuBLAS "
-            "before benchmark...",
-            flush=True,
+        logger.info(
+            "[correctness] %s: comparing FlagBLAS against cuBLAS before benchmark...",
+            self.op_name,
         )
         for cur_dtype in self.to_bench_dtypes:
             dtype_cases = 0
@@ -169,20 +155,22 @@ class AxpyBenchmark(Benchmark):
                 self.validate_results(torch_result, blas_result, cur_dtype)
                 dtype_cases += 1
             total_cases += dtype_cases
-            print(
-                f"[correctness] {self.op_name}: PASSED dtype={cur_dtype} "
-                f"total_cases={dtype_cases} tolerance={tolerance}",
-                flush=True,
+            logger.info(
+                "[correctness] %s: PASSED dtype=%s total_cases=%s tolerance=%s",
+                self.op_name,
+                cur_dtype,
+                dtype_cases,
+                tolerance,
             )
-        print(
-            f"[correctness] {self.op_name}: all {total_cases} cuBLAS comparison "
-            "cases passed; starting performance benchmark.",
-            flush=True,
+        logger.info(
+            "[correctness] %s: all %s cuBLAS comparison cases passed; "
+            "starting performance benchmark.",
+            self.op_name,
+            total_cases,
         )
 
 
 class AxpyStrideBenchmark(AxpyBenchmark):
-
     def __init__(self, *args, incx=1, incy=1, alpha=1e-5, **kwargs):
         super().__init__(*args, **kwargs)
         self.incx = incx
@@ -193,16 +181,7 @@ class AxpyStrideBenchmark(AxpyBenchmark):
         return ["gbps"]
 
     def set_more_shapes(self):
-        shapes_1d = [
-            (1024,),
-            (5333,),
-            (65536,),
-            (100000,),
-            (1048576,),
-            (3000000,),
-            (4194304,),
-        ]
-        self.shapes = shapes_1d
+        self.shapes = L1_STRIDE_SHAPES
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
@@ -246,10 +225,10 @@ def run_correctness_then_benchmark(bench):
     if not Config.query and not Config.skip_correctness:
         bench.run_correctness_check()
     elif Config.skip_correctness:
-        print(
-            f"[correctness] {bench.op_name}: skipped by --skip_correctness; "
+        logger.info(
+            "[correctness] %s: skipped by --skip_correctness; "
             "starting performance benchmark.",
-            flush=True,
+            bench.op_name,
         )
     bench.run()
 

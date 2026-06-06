@@ -3,7 +3,12 @@ import torch
 
 import flag_blas
 
-from .accuracy_utils import ASUM_SHAPES, blas_assert_close, to_reference
+from .accuracy_utils import (
+    ABS_SHAPES,
+    blas_assert_close,
+    blas_assert_equal,
+    to_reference,
+)
 
 
 def torch_abs_reference(n, x, y):
@@ -24,7 +29,7 @@ def torch_abs_reference(n, x, y):
 
 @pytest.mark.abs
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("shape", ASUM_SHAPES)
+@pytest.mark.parametrize("shape", ABS_SHAPES)
 def test_accuracy_abs_real(dtype, shape):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -43,12 +48,12 @@ def test_accuracy_abs_real(dtype, shape):
     else:
         flag_blas.ops.dabs(n, x, y)
 
-    blas_assert_close(y[:n], ref_y[:n], dtype)
+    blas_assert_equal(y[:n], ref_y[:n])
 
 
 @pytest.mark.abs
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-@pytest.mark.parametrize("shape", ASUM_SHAPES)
+@pytest.mark.parametrize("shape", ABS_SHAPES)
 def test_accuracy_abs_complex(dtype, shape):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
@@ -124,7 +129,7 @@ def test_accuracy_abs_different_n_real(dtype, n, vec_size):
     else:
         flag_blas.ops.dabs(n, x, y)
 
-    blas_assert_close(y[:n], ref_y[:n], dtype)
+    blas_assert_equal(y[:n], ref_y[:n])
 
 
 @pytest.mark.abs
