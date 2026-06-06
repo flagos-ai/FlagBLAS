@@ -126,10 +126,6 @@ def _sgemm_tn_kernel2(
     BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
 ):
-    a_ptr = a_ptr.to(tl.pointer_type(tl.float32))
-    b_ptr = b_ptr.to(tl.pointer_type(tl.float32))
-    c_ptr = c_ptr.to(tl.pointer_type(tl.float32))
-
     pid = tl.program_id(0)
 
     grid_m = tl.cdiv(m, BLOCK_M)
@@ -140,33 +136,55 @@ def _sgemm_tn_kernel2(
     pid_m = group_id * GROUP_M + (pid % group_size)
     pid_n = (pid % width) // group_size
 
-    a_desc = tl.make_tensor_descriptor(
-        a_ptr, shape=[k, m], strides=[lda, 1], block_shape=[BLOCK_K, BLOCK_M]
+    a_block_ptr = tl.make_block_ptr(
+        base=a_ptr,
+        shape=(k, m),
+        strides=(lda, 1),
+        offsets=(0, pid_m * BLOCK_M),
+        block_shape=(BLOCK_K, BLOCK_M),
+        order=(1, 0),
     )
-    b_desc = tl.make_tensor_descriptor(
-        b_ptr, shape=[k, n], strides=[ldb, 1], block_shape=[BLOCK_K, BLOCK_N]
+
+    b_block_ptr = tl.make_block_ptr(
+        base=b_ptr,
+        shape=(k, n),
+        strides=(ldb, 1),
+        offsets=(0, pid_n * BLOCK_N),
+        block_shape=(BLOCK_K, BLOCK_N),
+        order=(1, 0),
     )
-    c_desc = tl.make_tensor_descriptor(
-        c_ptr, shape=[m, n], strides=[ldc, 1], block_shape=[BLOCK_M, BLOCK_N]
+
+    c_block_ptr = tl.make_block_ptr(
+        base=c_ptr,
+        shape=(m, n),
+        strides=(ldc, 1),
+        offsets=(pid_m * BLOCK_M, pid_n * BLOCK_N),
+        block_shape=(BLOCK_M, BLOCK_N),
+        order=(1, 0),
     )
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
-    for i in range(0, tl.cdiv(k, BLOCK_K)):
-        a_t = a_desc.load([i * BLOCK_K, pid_m * BLOCK_M])
-        b_t = b_desc.load([i * BLOCK_K, pid_n * BLOCK_N])
+    for _ in range(0, tl.cdiv(k, BLOCK_K)):
+        a_t = tl.load(a_block_ptr, boundary_check=(0, 1))
+        b = tl.load(b_block_ptr, boundary_check=(0, 1))
+
+        a = tl.trans(a_t)
 
         acc = tl.dot(
-            tl.trans(a_t), b_t, acc, out_dtype=tl.float32, input_precision="tf32x3"
+            a, b, acc, out_dtype=tl.float32, input_precision="tf32x3"
         )
+
+        a_block_ptr = tl.advance(a_block_ptr, (BLOCK_K, 0))
+        b_block_ptr = tl.advance(b_block_ptr, (BLOCK_K, 0))
 
     if BETA_IS_ZERO:
         result = (alpha * acc).to(tl.float32)
-        c_desc.store([pid_m * BLOCK_M, pid_n * BLOCK_N], result)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
     else:
-        c_vals = c_desc.load([pid_m * BLOCK_M, pid_n * BLOCK_N]).to(tl.float32)
+        c_vals = tl.load(c_block_ptr, boundary_check=(0, 1)).to(tl.float32)
         result = (alpha * acc + beta * c_vals).to(tl.float32)
-        c_desc.store([pid_m * BLOCK_M, pid_n * BLOCK_N], result)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
 
 
 @libentry()
