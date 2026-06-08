@@ -12,6 +12,6 @@ jobs:
     uses: ./.github/workflows/backend-test.yaml
     with:
       vendor: 'nvidia'
-      runner_label: 'self-hosted, Linux, nvidia'
+      runner_label: 'self-hosted,linux,x86_64,nvidia,h100'
       gpu_check_script: 'tools/check_nvidia_gpu.sh'
       test_script: 'tools/run_tests.sh'
