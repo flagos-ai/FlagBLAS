@@ -1321,6 +1321,22 @@ hgemv_n_splitk:
   - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
     num_warps: 4
     num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 4096}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 1024}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 2, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 2
 hgemv_t_splitk:
   - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_K: 2048}
     num_warps: 8
@@ -1387,6 +1403,25 @@ hgemv_t_splitk:
     num_stages: 4
   - META: {BLOCK_SIZE_M: 256, BLOCK_SIZE_K: 8}
     num_warps: 4
+    num_stages: 4
+
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 4096}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 16, BLOCK_SIZE_K: 2048}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 512}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_SIZE_M: 32, BLOCK_SIZE_K: 1024}
+    num_warps: 8
     num_stages: 4
 hgemv_n:
   - META: {BLOCK_SIZE_M: 4, BLOCK_SIZE_K: 512}

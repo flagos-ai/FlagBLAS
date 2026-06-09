@@ -1212,8 +1212,8 @@ def dgbmv(
             y.mul_(beta_val)
         return
 
-    alpha_int = torch.tensor(alpha_val, dtype=torch.float64).view(torch.int64).item()
-    beta_int = torch.tensor(beta_val, dtype=torch.float64).view(torch.int64).item()
+    alpha_int = _f64_to_i64(alpha_val)
+    beta_int = _f64_to_i64(beta_val)
     band = kl + ku + 1
     out_len = m if trans == CUBLAS_OP_N else n
     inner_len = n if trans == CUBLAS_OP_N else m

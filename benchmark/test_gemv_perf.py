@@ -11,6 +11,42 @@ from benchmark.performance_utils import Benchmark, run_correctness_then_benchmar
 from flag_blas.ops import CUBLAS_OP_C, CUBLAS_OP_N, CUBLAS_OP_T
 from flag_blas.utils import shape_utils
 
+_HUGE_NONCONTIG_COPY_BYTES = 2 * 1024 * 1024 * 1024
+_CHUNKED_COPY_BYTES = 256 * 1024 * 1024
+
+
+def _needs_iluvatar_sgemv_chunked_noncontig_copy(tensor):
+    # Iluvatar currently corrupts very large non-contiguous float32 copies
+    # when materializing them in one contiguous conversion. This appears in
+    # sgemv perf inputs and the FP8 GEMV float32 cuBLAS reference matrix.
+    # Keep the workaround narrowly scoped so normal GEMV paths still use the
+    # faster single-copy path.
+    return (
+        flag_blas.vendor_name == "iluvatar"
+        and tensor.dtype == torch.float32
+        and tensor.ndim == 2
+        and not tensor.is_contiguous()
+        and tensor.numel() * tensor.element_size() >= _HUGE_NONCONTIG_COPY_BYTES
+    )
+
+
+def _chunked_2d_copy(tensor, *, device, dtype):
+    out = torch.empty(tensor.shape, dtype=dtype, device=device)
+    row_bytes = tensor.shape[1] * torch.empty((), dtype=dtype).element_size()
+    rows_per_chunk = max(1, _CHUNKED_COPY_BYTES // max(1, row_bytes))
+    for row_start in range(0, tensor.shape[0], rows_per_chunk):
+        row_end = min(row_start + rows_per_chunk, tensor.shape[0])
+        out[row_start:row_end].copy_(
+            tensor[row_start:row_end].to(device=device, dtype=dtype)
+        )
+    return out
+
+
+def _sgemv_contiguous_matrix(tensor):
+    if _needs_iluvatar_sgemv_chunked_noncontig_copy(tensor):
+        return _chunked_2d_copy(tensor, device=tensor.device, dtype=tensor.dtype)
+    return tensor.contiguous()
+
 
 def cublas_sgemv(
     A,
@@ -428,7 +464,7 @@ class GemvBenchmark(Benchmark):
             m, n = shape
 
             A_col = torch.randn(n, m, dtype=cur_dtype, device=self.device).t()
-            A_row = A_col.contiguous()
+            A_row = _sgemv_contiguous_matrix(A_col)
 
             x_len, y_len = (n, m) if self.trans == CUBLAS_OP_N else (m, n)
             x = torch.randn(x_len, dtype=cur_dtype, device=self.device)
@@ -833,7 +869,7 @@ class Fp8GemvBenchmark(Benchmark):
 
             A_f32 = torch.randn(m, n, dtype=torch.float32, device=self.device) * 0.1
             A_fp8 = A_f32.to(self.fp8_dtype)
-            A_col_f32 = A_fp8.float().t().contiguous().t()
+            A_col_f32 = _sgemv_contiguous_matrix(A_fp8.float().t()).t()
 
             x_f32 = torch.randn(x_len, dtype=torch.float32, device=self.device) * 0.1
             x_fp8 = x_f32.to(self.fp8_dtype)

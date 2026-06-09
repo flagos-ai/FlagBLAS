@@ -1,4 +1,5 @@
 import logging
+import struct
 from typing import Union
 
 import torch
@@ -12,6 +13,10 @@ from flag_blas.utils import triton_lang_extension as tle
 logger = logging.getLogger(__name__)
 
 ScalarType = Union[float, int, complex, torch.Tensor]
+
+
+def _f64_to_i64(value: float) -> int:
+    return struct.unpack("<q", struct.pack("<d", value))[0]
 
 
 def _make_grid(n: int):
@@ -271,7 +276,7 @@ def dscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
         return
 
     alpha_val = float(alpha.item() if isinstance(alpha, torch.Tensor) else alpha)
-    alpha_int = torch.tensor(alpha_val, dtype=torch.float64).view(torch.int64).item()
+    alpha_int = _f64_to_i64(alpha_val)
 
     req_size_x = 1 + (n - 1) * incx
     assert (
@@ -325,12 +330,8 @@ def zscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
     alpha_real = float(alpha.real) if isinstance(alpha, complex) else float(alpha)
     alpha_imag = float(alpha.imag) if isinstance(alpha, complex) else 0.0
 
-    alpha_real_bits = (
-        torch.tensor(alpha_real, dtype=torch.float64).view(torch.int64).item()
-    )
-    alpha_imag_bits = (
-        torch.tensor(alpha_imag, dtype=torch.float64).view(torch.int64).item()
-    )
+    alpha_real_bits = _f64_to_i64(alpha_real)
+    alpha_imag_bits = _f64_to_i64(alpha_imag)
 
     req_size_x = 1 + (n - 1) * incx
     assert (
@@ -386,7 +387,7 @@ def zdscal(n: int, alpha: ScalarType, x: torch.Tensor, incx: int) -> None:
     assert not isinstance(alpha, complex), "alpha must be real for zdscal"
     alpha_val = float(alpha)
 
-    alpha_bits = torch.tensor(alpha_val, dtype=torch.float64).view(torch.int64).item()
+    alpha_bits = _f64_to_i64(alpha_val)
 
     req_size_x = 1 + (n - 1) * incx
     assert (
