@@ -35,6 +35,8 @@ jobs:
         ${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     steps:
+      - name: FIX HOME ENV for git
+        run: source /home/flagblas/.bashrc
       - uses: actions/checkout@v6
       - name: Check GPU availability
         if: ${{ inputs.gpu_check_script != '' }}
