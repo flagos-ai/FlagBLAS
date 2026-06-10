@@ -1,0 +1,37 @@
+name: Build Check
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and import check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip build
+
+      - name: Build wheel
+        shell: bash
+        run: |
+          python -m build --wheel
+
+      - name: Verify wheel contents
+        shell: bash
+        run: |
+          python -m zipfile --list dist/*.whl | grep "flag_blas/" | head -20
+          echo "Wheel built successfully."
