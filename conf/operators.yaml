@@ -6,7 +6,7 @@ ops:
     for:
       - sgemm
     labels:
-      - gemm
+      - sgemm
     kind:
       - BLAS
     stages:
@@ -18,7 +18,7 @@ ops:
     for:
       - hgemm
     labels:
-      - gemm
+      - hgemm
     kind:
       - BLAS
     stages:
@@ -30,7 +30,7 @@ ops:
     for:
       - bfgemm
     labels:
-      - gemm
+      - bfgemm
     kind:
       - BLAS
     stages:
