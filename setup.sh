@@ -6,8 +6,8 @@ SUPPORTED_VENDORS=(
 )
 
 declare -A PYTHON_SUPPORTED=(
-  ["nvidia"]="3.10"
-  ["iluvatar"]="3.10"
+  ["nvidia"]="3.12"
+  ["iluvatar"]="3.12"
 )
 
 RED='\033[0;31m'
