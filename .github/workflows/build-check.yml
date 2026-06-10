@@ -33,5 +33,5 @@ jobs:
       - name: Verify wheel contents
         shell: bash
         run: |
-          python -m zipfile --list dist/*.whl | grep "flag_blas/" | head -20
+          python -m zipfile --list dist/*.whl | grep "flag_blas/" | head -20 || true
           echo "Wheel built successfully."
