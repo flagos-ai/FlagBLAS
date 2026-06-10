@@ -60,7 +60,7 @@ CUDA_R_16BF = 14
     ],
 )
 def test_accuracy_sgemm(m, n, k, transa, transb):
-    dtype, alpha, beta = torch.float32, 2.5, 0.5
+    dtype, alpha, beta = torch.float32, 1.5, 0.5
 
     if transa == CUBLAS_OP_N:
         A_col = (torch.randn(k, m, dtype=dtype, device=flag_blas.device)).t()
