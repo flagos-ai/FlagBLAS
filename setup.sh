@@ -54,7 +54,7 @@ fi
 
 # Validate Python version
 printf "Checking Python version ... "
-python_version=$(python --version 2>/dev/null | awk '{print $NF}')
+python_version=$(python3.12 --version 2>/dev/null | awk '{print $NF}')
 expected_version=${PYTHON_SUPPORTED[$VENDOR]}
 if [[ "$python_version" == *"$expected_version"* ]]; then
   printf "${python_version} $GREEN[OK]$NC\n"
