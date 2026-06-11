@@ -147,14 +147,24 @@ def pytest_addoption(parser):
         ),
     )
 
-    parser.addoption(
-        "--record",
-        action="store",
-        default="none",
-        required=False,
-        choices=["none", "log", "json"],
-        help="Benchmark info recorded in log/json files or not",
-    )
+    try:
+        parser.addoption(
+            "--record",
+            action="store",
+            default="none",
+            required=False,
+            choices=["none", "log", "json"],
+            help="Benchmark info recorded in log/json files or not",
+        )
+        parser.addoption(
+            "--output",
+            default=None,
+            help="Path to the log file (used when --record log is active)",
+        )
+    except ValueError:
+        # Mixed test+benchmark pytest runs may already register --record in
+        # tests/conftest.py. Reuse the existing option in that case.
+        pass
 
 
 def pytest_configure(config):
@@ -188,12 +198,19 @@ def pytest_configure(config):
 
     Config.record_log = config.getoption("--record") == "log"
     if Config.record_log:
-        cmd_args = [
-            arg.replace(".py", "").replace("=", "_").replace("/", "_")
-            for arg in config.invocation_params.args
-        ]
-
-        log_file = "result_{}.log".format("_".join(cmd_args)).replace("_-", "-")
+        # Allow the caller to specify a deterministic log filename via
+        # --output.  This makes it easy for automation (e.g.
+        # tools/run_tests.py) to locate the result file without guessing
+        # the dynamically-computed name.
+        output_opt = config.getoption("--output", default=None)
+        if output_opt:
+            log_file = output_opt
+        else:
+            cmd_args = [
+                arg.replace(".py", "").replace("=", "_").replace("/", "_")
+                for arg in config.invocation_params.args
+            ]
+            log_file = "result_{}.log".format("_".join(cmd_args)).replace("_-", "-")
 
         for h in list(recordLogger.handlers):
             recordLogger.removeHandler(h)
