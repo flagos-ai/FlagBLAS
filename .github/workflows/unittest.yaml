@@ -74,5 +74,4 @@ jobs:
       vendor: 'nvidia'
       runner_label: 'h100'
       gpu_check_script: 'tools/check_nvidia_gpu.sh'
-      test_script: 'tools/run_tests.sh'
       pr_id: ${{ needs.preprocess.outputs.pr_id }}
