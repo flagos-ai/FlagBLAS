@@ -30,7 +30,7 @@ case $VENDOR in
     # Install PyTorch and Triton with CUDA support
     uv pip install --index ${FLAGOS_PYPI} \
         "torch==2.9.1+cu128" \
-        "torchvision==0.24.1+cu1" \
+        "torchvision==0.24.1+cu128" \
     # Install FlagBLAS in editable mode
     uv pip install -e .
     uv pip install ".[test]"
