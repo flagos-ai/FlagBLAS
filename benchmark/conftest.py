@@ -152,8 +152,8 @@ def pytest_addoption(parser):
         action="store",
         default="none",
         required=False,
-        choices=["none", "log"],
-        help="Benchmark info recorded in log files or not",
+        choices=["none", "log", "json"],
+        help="Benchmark info recorded in log/json files or not",
     )
 
 
