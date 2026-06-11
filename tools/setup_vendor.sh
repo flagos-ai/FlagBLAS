@@ -6,6 +6,7 @@ SUPPORTED_VENDORS=(
   "nvidia"
   "iluvatar"
 )
+export FLAGOS_PYPI="https://resource.flagos.net/repository/flagos-pypi-${VENDOR}/simple"
 
 valid_vendor() {
   needle=$1
@@ -30,15 +31,14 @@ case $VENDOR in
     # Install PyTorch and Triton with CUDA support
     uv pip install --index ${FLAGOS_PYPI} \
         "torch==2.9.1+cu128" \
-        "torchvision==0.24.1+cu128" \
-        "triton==3.6.0"
+        "torchvision==0.24.1+cu128" 
     # Install FlagBLAS in editable mode
     uv pip install -e .
     uv pip install ".[test]"
 
-    # uv pip uninstall triton
-    # uv pip install --index ${FLAGOS_PYPI} \
-    #     flagtree==0.5.0
+    uv pip uninstall triton
+    uv pip install --index ${FLAGOS_PYPI} \
+        flagtree==0.5.0
     ;;
 
   iluvatar)
