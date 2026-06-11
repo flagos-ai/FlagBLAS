@@ -5,13 +5,73 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   workflow_dispatch:
 
 jobs:
+  preprocess:
+    runs-on: ubuntu-latest
+    outputs:
+      labels: ${{ fromJSON(steps.get-labels.outputs.result) }}
+      pr_id: ${{ steps.get-pr-id.outputs.PR_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: wait-for-triage
+        if: github.event_name == 'pull_request'
+        uses: ArcticLampyrid/action-wait-for-workflow@v1
+        with:
+          workflow: .github/workflows/triage.yaml
+        continue-on-error: true
+
+      - id: get-pr-id
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            PR_ID=${{ github.event.pull_request.number }}
+          elif [ "${{ github.event_name }}" == "push" ]; then
+            PR_NUMBER=$(git log -1 --pretty=format:'%s' | grep -oE '#[0-9]+' | grep -oE '[0-9]+')
+            PR_ID=${PR_NUMBER}
+          fi
+          echo "PR_ID=${PR_ID}" >> "$GITHUB_OUTPUT"
+          echo "PR_ID: ${PR_ID}"
+
+      - id: get-labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Determine if the event is a pull request
+            const isPullRequest = context.eventName === 'pull_request';
+            if (!isPullRequest) {
+              return "[]";
+            }
+
+            const prNumber = context.payload.pull_request.number;
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const labelNames = labels.map(label => label.name);
+            console.log('Labels:', labelNames);
+            return JSON.stringify(labelNames);
+
   test-nvidia:
+    needs: preprocess
+    # Always run on workflow_dispatch or push to master.
+    # On PR, only run when the 'tests' or 'vendor/NVIDIA' label is present.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      contains(needs.preprocess.outputs.labels, 'tests') ||
+      contains(needs.preprocess.outputs.labels, 'ops') ||
+      contains(needs.preprocess.outputs.labels, 'core') ||
+      contains(needs.preprocess.outputs.labels, 'benchmark') ||
+      contains(needs.preprocess.outputs.labels, 'vendor/NVIDIA')
     uses: ./.github/workflows/backend-test.yaml
     with:
       vendor: 'nvidia'
-      runner_label: 'self-hosted, Linux, nvidia'
+      runner_label: 'h100'
       gpu_check_script: 'tools/check_nvidia_gpu.sh'
-      test_script: 'tools/run_tests.sh'
+      pr_id: ${{ needs.preprocess.outputs.pr_id }}

@@ -22,6 +22,8 @@ L1_n_step = DEFAULT_L1_N_STEP
 TO_CPU = False
 QUICK_MODE = False
 RECORD_LOG = False
+RECORD_JSON = False
+REPORT_FILE = "accuracy_result.json"
 
 
 def pytest_addoption(parser):
@@ -50,8 +52,12 @@ def pytest_addoption(parser):
         action="store",
         default="none",
         required=False,
-        choices=["none", "log"],
-        help="tests function param recorded in log files or not",
+        choices=["none", "log", "json"],
+        help="record test results in log/json files or not",
+    )
+    parser.addoption(
+        "--output",
+        help="path to the result file",
     )
 
     parser.addoption(
@@ -84,6 +90,15 @@ def pytest_configure(config):
 
     global RECORD_LOG
     RECORD_LOG = config.getoption("--record") == "log"
+
+    global RECORD_JSON
+    RECORD_JSON = config.getoption("--record") == "json"
+
+    global REPORT_FILE
+    if RECORD_JSON:
+        report_file = config.getoption("--output")
+        if report_file:
+            REPORT_FILE = report_file
 
     global L1_n_start
     L1_n_start = config.getoption("--L1_n_start")
@@ -197,12 +212,15 @@ def pytest_runtest_logreport(report):
 
 
 def pytest_terminal_summary(terminalreporter):
-    if os.path.exists(filename):
-        with open(filename, "r") as json_file:
+    if not RECORD_JSON:
+        return
+
+    data = test_results
+    if os.path.exists(REPORT_FILE):
+        with open(REPORT_FILE, "r") as json_file:
             existing_data = json.load(json_file)
         existing_data.update(test_results)
-    else:
-        existing_data = test_results
+        data = existing_data
 
-    with open("result.json", "w") as json_file:
-        json.dump(existing_data, json_file, indent=4, default=str)
+    with open(REPORT_FILE, "w") as json_file:
+        json.dump(data, json_file, indent=4, default=str)

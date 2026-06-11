@@ -25,6 +25,11 @@ on:
         required: false
         type: string
         default: ''
+      pr_id:
+        description: 'ID of the PR'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   test:
@@ -35,12 +40,41 @@ jobs:
         ${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v6
+      - id: checkout-attempt-1
+        uses: actions/checkout@v4
+        continue-on-error: true
+      - id: sleep-1
+        if: steps.checkout-attempt-1.outcome == 'failure'
+        shell: bash
+        run: sleep 30s
+
+      - id: checkout-attempt-2
+        if: steps.checkout-attempt-1.outcome == 'failure'
+        uses: actions/checkout@v4
+        continue-on-error: true
+      - id: sleep-2
+        if: steps.checkout-attempt-2.outcome == 'failure'
+        shell: bash
+        run: sleep 30s
+
+      - id: checkout-attempt-3
+        if: steps.checkout-attempt-2.outcome == 'failure'
+        uses: actions/checkout@v4
+
+      - name: Setup FlagBLAS
+        shell: bash
+        env:
+          RUNNER_LABEL: ${{ inputs.runner_label }}
+        run: |
+          source tools/set-env.sh ${{ inputs.vendor }}
+          ./setup.sh ${{ inputs.vendor }}
+
       - name: Check GPU availability
         if: ${{ inputs.gpu_check_script != '' }}
         shell: bash
         run: |
           bash ${{ inputs.gpu_check_script }}
+
       - name: Run backend tests
         env:
           CHANGED_FILES: ${{ inputs.changed_files }}
