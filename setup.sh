@@ -71,7 +71,7 @@ if [ -n "$uv_version" ];  then
 else
   printf "${RED}NOT FOUND${NC}\n"
   printf "Installing/upgrading pip and uv ... "
-  pip install uv || exit 1
+  pip3.12 install uv || exit 1
 fi
 
 # Start installation
