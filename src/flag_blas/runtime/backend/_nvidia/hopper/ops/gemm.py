@@ -259,6 +259,76 @@ def _sgemm_nt_kernel2(
     configs=runtime.get_tuned_config("sgemm"), key=_SGEMM_KEY, restore_value=["c_ptr"]
 )
 @triton.jit
+def _sgemm_nt_kernel3(
+    a_ptr,
+    b_ptr,
+    c_ptr,
+    alpha: tl.float32,
+    beta: tl.float32,
+    m,
+    n,
+    k,
+    lda,
+    ldb,
+    ldc,
+    BETA_IS_ZERO: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    """NT gemm using block_ptr + tf32x3 — no stride alignment requirement."""
+    pid = tl.program_id(0)
+
+    grid_m = tl.cdiv(m, BLOCK_M)
+    grid_n = tl.cdiv(n, BLOCK_N)
+    width = GROUP_M * grid_n
+    group_id = pid // width
+    group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
+    pid_m = group_id * GROUP_M + (pid % group_size)
+    pid_n = (pid % width) // group_size
+
+    a_block_ptr = tl.make_block_ptr(
+        base=a_ptr, shape=(m, k), strides=(lda, 1),
+        offsets=(pid_m * BLOCK_M, 0),
+        block_shape=(BLOCK_M, BLOCK_K), order=(1, 0),
+    )
+
+    b_block_ptr = tl.make_block_ptr(
+        base=b_ptr, shape=(n, k), strides=(ldb, 1),
+        offsets=(pid_n * BLOCK_N, 0),
+        block_shape=(BLOCK_N, BLOCK_K), order=(1, 0),
+    )
+
+    c_block_ptr = tl.make_block_ptr(
+        base=c_ptr, shape=(m, n), strides=(ldc, 1),
+        offsets=(pid_m * BLOCK_M, pid_n * BLOCK_N),
+        block_shape=(BLOCK_M, BLOCK_N), order=(1, 0),
+    )
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+
+    for i in range(0, tl.cdiv(k, BLOCK_K)):
+        a = tl.load(a_block_ptr, boundary_check=(0, 1))
+        b = tl.load(b_block_ptr, boundary_check=(0, 1))
+        acc = tl.dot(a, tl.trans(b), acc, out_dtype=tl.float32, input_precision="tf32x3")
+        a_block_ptr = tl.advance(a_block_ptr, (0, BLOCK_K))
+        b_block_ptr = tl.advance(b_block_ptr, (0, BLOCK_K))
+
+    if BETA_IS_ZERO:
+        result = (alpha * acc).to(tl.float32)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
+    else:
+        c_vals = tl.load(c_block_ptr, boundary_check=(0, 1)).to(tl.float32)
+        result = (alpha * acc + beta * c_vals).to(tl.float32)
+        tl.store(c_block_ptr, result, boundary_check=(0, 1))
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("sgemm"), key=_SGEMM_KEY, restore_value=["c_ptr"]
+)
+@triton.jit
 def _sgemm_tt_kernel2(
     a_ptr,
     b_ptr,
@@ -676,6 +746,16 @@ def _is_sgemm_large(m: int, n: int, k: int, **_kw) -> bool:
     return m > 1024 and n > 1024 and k > 1024
 
 
+def _is_sgemm_square_near_pow2(m: int, n: int, k: int, **_kw) -> bool:
+    """Shapes where m==n==k and one unit of 16-aligned padding yields
+    a size that is a multiple of 128, making tiling highly efficient.
+    Examples: 511 -> 512, 1023 -> 1024."""
+    if m == n == k:
+        m_pad = ((m + 15) // 16) * 16
+        return m_pad % 128 == 0 and m != m_pad
+    return False
+
+
 def _is_sgemm_medium(m: int, n: int, k: int, **_kw) -> bool:
     return min(m, n, k) >= 256 and not _is_sgemm_large(m, n, k)
 
@@ -917,13 +997,24 @@ def _make_sgemm_nt_fallback_runner(
     return run
 
 
+def _make_sgemm_nt_kernel3_runner(
+    A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+):
+    """Runner for NT block_ptr kernel3 with tf32x3."""
+    def run():
+        _sgemm_nt_kernel3[grid](
+            A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
+        )
+    return run
+
+
 def _build_sgemm_nt_dispatch_table(
     A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid,
     model=libcache.model,
 ) -> SizeAutoDispatch:
     dispatch = SizeAutoDispatch(
         table_name="sgemm_nt_variant",
-        build_key=lambda m, n, k, aligned, **extra: (m, n, k, int(aligned)),
+        build_key=lambda m, n, k, aligned, **extra: (m, n, k, int(aligned), 5),
         model=model,
     )
     dispatch.add(
@@ -938,16 +1029,28 @@ def _build_sgemm_nt_dispatch_table(
         filter=_is_sgemm_large,
     )
     dispatch.add(
+        lambda: _make_sgemm_nt_kernel3_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        aligned=False,
+        name="kernel3_square_near_pow2",
+        filter=_is_sgemm_square_near_pow2,
+    )
+    dispatch.add(
+        lambda: _make_sgemm_nt_padded_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        aligned=False,
+        name="padded_k2_square_near_pow2_large",
+        filter=lambda m, n, k, **kw: _is_sgemm_square_near_pow2(m, n, k) and m >= 768,
+    )
+    dispatch.add(
         lambda: _make_sgemm_nt_thin_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
         aligned=False,
         name="thin",
-        filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k),
+        filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k) and not _is_sgemm_square_near_pow2(m, n, k),
     )
     dispatch.add(
         lambda: _make_sgemm_nt_fallback_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
         aligned=False,
         name="fallback",
-        filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k),
+        filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k) and not _is_sgemm_square_near_pow2(m, n, k),
     )
     return dispatch
 
