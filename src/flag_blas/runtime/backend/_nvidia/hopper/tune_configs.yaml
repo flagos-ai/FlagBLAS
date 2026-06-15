@@ -90,6 +90,15 @@ sgemm:
   - META: {BLOCK_M: 4, BLOCK_N: 64, BLOCK_K: 128, GROUP_M: 8}
     num_warps: 4
     num_stages: 4
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 16
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 16
+    num_stages: 4
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 16
+    num_stages: 4
 sgemm_nn_thin:
   - META: {BLOCK_M: 128, BLOCK_N: 16, BLOCK_K: 128, GROUP_M: 8}
     num_warps: 4
