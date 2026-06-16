@@ -203,7 +203,7 @@ def test_sgemm_empty(m, n, k):
 
 @pytest.mark.sgemm
 @pytest.mark.parametrize(
-    "alpha,beta", [(1.0, 0.0), (2.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)]
+    "alpha,beta", [(1.0, 0.0), (2.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 2.5)]
 )
 def test_sgemm_alpha_beta(alpha, beta):
     m, n, k = 256, 256, 256
