@@ -31,7 +31,7 @@ from flag_blas.ops.level3.gemm import (
     _sgemm_tt_kernel,
 )
 from flag_blas.runtime import torch_device_fn
-from flag_blas.runtime.dispatch import SizeAutoDispatch
+from flag_blas.runtime.dispatch import SizeAutoDispatch, StaticDispatch
 from flag_blas.utils import libentry, libtuner
 from flag_blas.utils.libentry import libcache
 
@@ -1859,69 +1859,51 @@ def hgemm(
     )
 
     aligned = _is_gemm_aligned(A, lda, B, ldb, C, ldc)
-    use_nn_kernel3 = aligned and (m * n > 2048 * 2048) and min(m, n) >= 64
     with torch_device_fn.device(A.device):
         if transa == CUBLAS_OP_N and transb == CUBLAS_OP_N:
-            is_skinny = (m >= 16384 and max(n, k) <= 2048) or (
-                n >= 16384 and max(m, k) <= 2048
-            )
-            if use_nn_kernel3 and is_skinny:
-                BLOCK_M = 128
-                BLOCK_N = 256
-                BLOCK_K = 64
-                GROUP_M = 8
-                NUM_STAGES = 4
-                NUM_WARPS = 8
-                NUM_CTAS = 1
-                desc_a = TensorDescriptor(
-                    base=A,
-                    shape=[m, k],
-                    strides=[lda, 1],
-                    block_shape=[BLOCK_M, BLOCK_K],
-                )
-                desc_b = TensorDescriptor(
-                    base=B,
-                    shape=[k, n],
-                    strides=[ldb, 1],
-                    block_shape=[BLOCK_K, BLOCK_N],
-                )
-                desc_c = TensorDescriptor(
-                    base=C,
-                    shape=[m, n],
-                    strides=[ldc, 1],
-                    block_shape=[BLOCK_M, BLOCK_N],
-                )
-                grid = (triton.cdiv(m, BLOCK_M) * triton.cdiv(n, BLOCK_N),)
-                _hgemm_nn_kernel4[grid](
-                    desc_a,
-                    desc_b,
-                    desc_c,
-                    alpha,
-                    beta,
-                    m,
-                    n,
-                    k,
-                    beta_is_zero,
-                    BLOCK_M=BLOCK_M,
-                    BLOCK_N=BLOCK_N,
-                    BLOCK_K=BLOCK_K,
-                    GROUP_M=GROUP_M,
-                    num_stages=NUM_STAGES,
-                    num_warps=NUM_WARPS,
-                    num_ctas=NUM_CTAS,
-                )
-            elif use_nn_kernel3:
-                _hgemm_nn_kernel3[grid](
-                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                )
-            elif aligned and max(m, n) <= 1024:
-                _hgemm_nn_kernel2[grid](
-                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                )
-            else:
-                _hgemm_nn_kernel[grid](
-                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                )
+            dispatch = StaticDispatch([
+                # skinny + aligned large → kernel4 (TensorDescriptor, hardcoded config)
+                (
+                    lambda m, n, k, aligned, **_kw:
+                        aligned and (m * n > 2048 * 2048) and min(m, n) >= 64
+                        and ((m >= 16384 and max(n, k) <= 2048) or (n >= 16384 and max(m, k) <= 2048)),
+                    lambda: lambda: _hgemm_nn_kernel4[(
+                        triton.cdiv(m, 128) * triton.cdiv(n, 256),
+                    )](
+                        TensorDescriptor(base=A, shape=[m, k], strides=[lda, 1], block_shape=[128, 64]),
+                        TensorDescriptor(base=B, shape=[k, n], strides=[ldb, 1], block_shape=[64, 256]),
+                        TensorDescriptor(base=C, shape=[m, n], strides=[ldc, 1], block_shape=[128, 256]),
+                        alpha, beta, m, n, k, beta_is_zero,
+                        BLOCK_M=128, BLOCK_N=256, BLOCK_K=64, GROUP_M=8,
+                        num_stages=4, num_warps=8, num_ctas=1,
+                    ),
+                ),
+                # aligned large → kernel3 (TensorDescriptor, autotuned config)
+                (
+                    lambda m, n, k, aligned, **_kw:
+                        aligned and (m * n > 2048 * 2048) and min(m, n) >= 64,
+                    lambda: lambda: _hgemm_nn_kernel3[grid](
+                        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+                    ),
+                ),
+                # aligned small → kernel2 (block_ptr)
+                (
+                    lambda m, n, k, aligned, **_kw:
+                        aligned and max(m, n) <= 1024,
+                    lambda: lambda: _hgemm_nn_kernel2[grid](
+                        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+                    ),
+                ),
+                # default → kernel (original)
+                (
+                    lambda **_kw: True,
+                    lambda: lambda: _hgemm_nn_kernel[grid](
+                        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+                    ),
+                ),
+            ])
+            runner = dispatch.lookup_and_build(m, n, k, aligned)
+            runner()
         elif transa == CUBLAS_OP_T and transb == CUBLAS_OP_N:
             is_skinny = (m >= 16384 and max(n, k) <= 2048) or (
                 n >= 16384 and max(m, k) <= 2048

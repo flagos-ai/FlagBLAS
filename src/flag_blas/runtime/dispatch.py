@@ -324,6 +324,60 @@ class SizeAutoDispatch:
         return runners.get(best_name)
 
 
+class StaticDispatch:
+    """
+    Developer-maintained static dispatch table.
+
+    Maps shape conditions directly to kernel factories. No autotune,
+    no caching — the first matching entry wins immediately.
+
+    Usage::
+
+        dispatch = StaticDispatch([
+            (is_aligned,       lambda: make_aligned_runner(A, lda, ...)),
+            (is_thin_large_m,  lambda: make_thin_runner(A, lda, ...)),
+            (lambda **kw: True, lambda: make_fallback_runner(A, lda, ...)),
+        ])
+
+        runner = dispatch.lookup_and_build(m, n, k, aligned)
+        runner()
+
+    Parameters
+    ----------
+    table:
+        A list of ``(condition, factory)`` pairs evaluated **in order**.
+        Each ``condition`` is a callable with signature
+        ``(m, n, k, aligned, **extra) -> bool``.
+        Each ``factory`` is a zero-arg callable that returns a
+        ``Callable[[], None]`` runner.
+        The last entry should be a catch-all (condition always True).
+    """
+
+    _Entry = Tuple[Callable[..., bool], Callable[[], Callable[[], None]]]
+
+    def __init__(
+        self,
+        table: List[_Entry],
+    ):
+        self._table = table
+
+    def lookup_and_build(
+        self,
+        m: int,
+        n: int,
+        k: int,
+        aligned: bool,
+        **extra,
+    ) -> Callable[[], None]:
+        for condition, factory in self._table:
+            if condition(m=m, n=n, k=k, aligned=aligned, **extra):
+                return factory()
+        raise ValueError(
+            f"StaticDispatch: no matching entry for "
+            f"m={m}, n={n}, k={k}, aligned={aligned}"
+        )
+
+
 class KernelRunner:
     """
     A callable wrapper that executes a kernel with pre-bound arguments.
