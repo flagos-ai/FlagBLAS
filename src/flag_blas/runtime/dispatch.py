@@ -367,10 +367,14 @@ class StaticDispatch:
         n: int,
         k: int,
         aligned: bool,
+        *,
+        context: Optional[dict] = None,
         **extra,
     ) -> Callable[[], None]:
         for condition, factory in self._table:
             if condition(m=m, n=n, k=k, aligned=aligned, **extra):
+                if context is not None:
+                    return factory(**context)
                 return factory()
         raise ValueError(
             f"StaticDispatch: no matching entry for "
