@@ -4,6 +4,8 @@
 
 `StaticDispatch` is a developer-maintained static dispatch table that maps shape conditions directly to pre-determined kernel factories. **No autotune, no benchmarking, no caching** — conditions are evaluated in order, and the first match wins immediately.
 
+The dispatch table is designed to be created once at module level and reused across calls. Per-call varying data (tensors, scalars) is passed through a `context` dict, so factories don't need to capture variables via closures.
+
 ---
 
 ## When to Use
@@ -26,25 +28,37 @@ Signature: `(m: int, n: int, k: int, aligned: bool, **extra: Any) -> bool`
 
 A callable that determines whether the current shape matches this table entry. Conditions are evaluated **in table order**; the first that returns `True` wins.
 
-### Factory (Double-Lambda)
+### Factory
 
-Signature: `() -> Callable[[], None]`
+Signature: `(context_key1=..., context_key2=..., ...) -> Callable[[], None]`
 
-A zero-arg callable that returns a **runner**. The runner is itself a zero-arg callable that executes the kernel.
+A named function (recommended over lambdas) that accepts per-call varying arguments via keyword arguments and returns a **runner** — a zero-arg callable that executes the kernel. The arguments are passed from the `context` dict in `lookup_and_build()`.
 
-**Critical**: When used with `@libentry()`-decorated Triton kernels, the factory must use a **double-lambda** wrapper:
+When the dispatch table is created at module level, factories are pure references to named functions — no closures, no lambdas rebuilt on every call. The per-call data flows in through `context`.
+
+**Critical**: When used with `@libentry()`-decorated Triton kernels, the factory must return the kernel call wrapped in a **lambda**:
 
 ```python
-# Correct: double lambda
-lambda: lambda: kernel_fn[grid](arg1, arg2, ...)
-#         ^^^^           ^^^^^^^^^^^^^^^^^^^^^^^^
-#         factory         runner (deferred to runner())
+# Module level — defined once:
+def build_my_kernel(A, B, C, alpha, beta, m, n, k, lda, ldb, ldc):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _my_kernel[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc,
+    )
 
-# Wrong: single lambda — kernel executes immediately in factory()
-lambda: kernel_fn[grid](arg1, arg2, ...)
+# Per-call — context carries the varying data:
+runner = dispatch.lookup_and_build(
+    m, n, k, aligned,
+    context=dict(A=A, B=B, C=C, m=m, n=n, k=k,
+                 lda=lda, ldb=ldb, ldc=ldc,
+                 alpha=alpha, beta=beta),
+)
+runner()
 ```
 
-**Why**: `kernel_fn[grid](args...)` calls `LibEntry.run()`, which launches the kernel immediately and returns a `(kernel, constexprs)` tuple — not a callable runner. The extra `lambda:` defers execution to `runner()` time.
+**Why lambda**: `kernel_fn[grid](args...)` calls `LibEntry.run()`, which launches the kernel immediately and returns a `(kernel, constexprs)` tuple — not a callable runner. The `lambda:` defers execution to `runner()` time.
 
 ---
 
@@ -53,16 +67,17 @@ lambda: kernel_fn[grid](arg1, arg2, ...)
 Unlike `SizeAutoDispatch` with its multi-tier cache, `StaticDispatch` has a minimal design:
 
 ```
-lookup_and_build(m, n, k, aligned, **extra)
+lookup_and_build(m, n, k, aligned, *, context, **extra)
   │
-  ├─ Entry 1: condition(m,n,k,aligned)? ─── True → factory() → runner
-  ├─ Entry 2: condition(m,n,k,aligned)? ─── True → factory() → runner
+  ├─ Entry 1: condition(m,n,k,aligned)? ─── True → factory(**context) → runner
+  ├─ Entry 2: condition(m,n,k,aligned)? ─── True → factory(**context) → runner
   ├─ ...
   └─ No match → raise ValueError
 ```
 
 - **No filtering logic** — conditions encode all matching criteria inline (no separate `aligned`/`filter` params)
 - **No cache** — every call re-evaluates conditions (cheap, just boolean logic)
+- **`context` dict** — passes per-call varying data (tensors, scalars) to factories, so the dispatch table itself can live at module level
 - **Throw on miss** — if no entry matches, raises `ValueError` (the last entry should always be a catch-all)
 
 ---
@@ -82,7 +97,7 @@ dispatch = StaticDispatch(table)
 ### lookup_and_build()
 
 ```python
-runner = dispatch.lookup_and_build(m, n, k, aligned, **extra)
+runner = dispatch.lookup_and_build(m, n, k, aligned, *, context=None, **extra)
 runner()
 ```
 
@@ -92,6 +107,7 @@ runner()
 | `n` | `int` | N dimension |
 | `k` | `int` | K dimension |
 | `aligned` | `bool` | Whether inputs are memory-aligned |
+| `context` | `dict` or `None` | Per-call varying data (tensors, scalars, etc.) passed as keyword arguments to the matched factory. When `None`, factories are called with no arguments. |
 | `**extra` | — | Additional keyword arguments passed to each condition |
 
 **Returns**: `Callable[[], None]` — zero-arg runner; calling it executes the selected kernel.
@@ -102,82 +118,119 @@ runner()
 
 ## Real-World Example: hgemm NN
 
-This example comes from [hopper/ops/gemm.py](../src/flag_blas/runtime/backend/_nvidia/hopper/ops/gemm.py), the `hgemm` function's NN branch:
+This example comes from [hopper/ops/gemm.py](../src/flag_blas/runtime/backend/_nvidia/hopper/ops/gemm.py), the `hgemm` function's NN branch.
+
+### Module level — defined once
 
 ```python
 from flag_blas.runtime.dispatch import StaticDispatch
 from triton.tools.tensor_descriptor import TensorDescriptor
 
-dispatch = StaticDispatch([
-    # ── Priority 1 (highest) ─────────────────────────────────────
-    # Skinny matrix with aligned large dimensions.
-    # Uses kernel4 with TensorDescriptor and hardcoded optimal config
-    # (no autotune needed — config proven optimal for this shape class).
-    (
-        lambda m, n, k, aligned, **_kw:
-            aligned and (m * n > 2048 * 2048) and min(m, n) >= 64
-            and ((m >= 16384 and max(n, k) <= 2048)
-                 or (n >= 16384 and max(m, k) <= 2048)),
-        lambda: lambda: _hgemm_nn_kernel4[(
-            triton.cdiv(m, 128) * triton.cdiv(n, 256),
-        )](
-            TensorDescriptor(
-                base=A, shape=[m, k], strides=[lda, 1],
-                block_shape=[128, 64],
-            ),
-            TensorDescriptor(
-                base=B, shape=[k, n], strides=[ldb, 1],
-                block_shape=[64, 256],
-            ),
-            TensorDescriptor(
-                base=C, shape=[m, n], strides=[ldc, 1],
-                block_shape=[128, 256],
-            ),
-            alpha, beta, m, n, k, beta_is_zero,
-            BLOCK_M=128, BLOCK_N=256, BLOCK_K=64, GROUP_M=8,
-            num_stages=4, num_warps=8, num_ctas=1,
-        ),
-    ),
+# ── Condition predicates (named functions, not lambdas) ──────────
 
-    # ── Priority 2 ───────────────────────────────────────────────
-    # Aligned + large dimensions (m×n > 4M, min dim ≥ 64).
-    # Uses kernel3 with TensorDescriptor and autotuned configs
-    # (its @libtuner picks the best BLOCK_M/N/K etc. at runtime).
-    (
-        lambda m, n, k, aligned, **_kw:
-            aligned and (m * n > 2048 * 2048) and min(m, n) >= 64,
-        lambda: lambda: _hgemm_nn_kernel3[grid](
-            A, B, C, alpha, beta, m, n, k,
-            lda, ldb, ldc, beta_is_zero,
-        ),
-    ),
+def _hgemm_nn_is_skinny_aligned_large(m, n, k, aligned, **_kw):
+    return (
+        aligned
+        and (m * n > 2048 * 2048)
+        and min(m, n) >= 64
+        and (
+            (m >= 16384 and max(n, k) <= 2048)
+            or (n >= 16384 and max(m, k) <= 2048)
+        )
+    )
 
-    # ── Priority 3 ───────────────────────────────────────────────
-    # Aligned + small/moderate dimensions (max ≤ 1024).
-    # Uses kernel2 with block_ptr and autotuned configs.
-    (
-        lambda m, n, k, aligned, **_kw:
-            aligned and max(m, n) <= 1024,
-        lambda: lambda: _hgemm_nn_kernel2[grid](
-            A, B, C, alpha, beta, m, n, k,
-            lda, ldb, ldc, beta_is_zero,
-        ),
-    ),
+def _hgemm_nn_is_aligned_large(m, n, k, aligned, **_kw):
+    return aligned and (m * n > 2048 * 2048) and min(m, n) >= 64
 
-    # ── Priority 4 (catch-all) ───────────────────────────────────
-    # Everything else: unaligned or moderate/large but not covered above.
-    # Uses the original level3 kernel with pointer-based access.
-    (
-        lambda **_kw: True,
-        lambda: lambda: _hgemm_nn_kernel[grid](
-            A, B, C, alpha, beta, m, n, k,
-            lda, ldb, ldc, beta_is_zero,
+def _hgemm_nn_is_aligned_small(m, n, k, aligned, **_kw):
+    return aligned and max(m, n) <= 1024
+
+def _hgemm_nn_is_default(**_kw):
+    return True
+
+# ── Factory functions (accept context dict keys as kwargs) ───────
+
+def _hgemm_nn_build_kernel4(A, B, C, m, n, k, lda, ldb, ldc,
+                            alpha, beta, beta_is_zero):
+    return lambda: _hgemm_nn_kernel4[(
+        triton.cdiv(m, 128) * triton.cdiv(n, 256),
+    )](
+        TensorDescriptor(
+            base=A, shape=[m, k], strides=[lda, 1],
+            block_shape=[128, 64],
         ),
-    ),
+        TensorDescriptor(
+            base=B, shape=[k, n], strides=[ldb, 1],
+            block_shape=[64, 256],
+        ),
+        TensorDescriptor(
+            base=C, shape=[m, n], strides=[ldc, 1],
+            block_shape=[128, 256],
+        ),
+        alpha, beta, m, n, k, beta_is_zero,
+        BLOCK_M=128, BLOCK_N=256, BLOCK_K=64, GROUP_M=8,
+        num_stages=4, num_warps=8, num_ctas=1,
+    )
+
+def _hgemm_nn_build_kernel3(A, B, C, m, n, k, lda, ldb, ldc,
+                            alpha, beta, beta_is_zero):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_nn_kernel3[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+def _hgemm_nn_build_kernel2(A, B, C, m, n, k, lda, ldb, ldc,
+                            alpha, beta, beta_is_zero):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_nn_kernel2[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+def _hgemm_nn_build_kernel(A, B, C, m, n, k, lda, ldb, ldc,
+                           alpha, beta, beta_is_zero):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_nn_kernel[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+_HGEMM_NN_DISPATCH = StaticDispatch([
+    # skinny + aligned large → kernel4 (TensorDescriptor, hardcoded config)
+    (_hgemm_nn_is_skinny_aligned_large, _hgemm_nn_build_kernel4),
+    # aligned large → kernel3 (TensorDescriptor, autotuned config)
+    (_hgemm_nn_is_aligned_large, _hgemm_nn_build_kernel3),
+    # aligned small → kernel2 (block_ptr)
+    (_hgemm_nn_is_aligned_small, _hgemm_nn_build_kernel2),
+    # default → kernel (original)
+    (_hgemm_nn_is_default, _hgemm_nn_build_kernel),
 ])
+```
 
-runner = dispatch.lookup_and_build(m, n, k, aligned)
-runner()
+### Per-call — inside `hgemm()`
+
+```python
+def hgemm(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc):
+    # ... validation ...
+    beta_is_zero = beta == 0.0
+    aligned = _is_gemm_aligned(A, lda, B, ldb, C, ldc)
+
+    with torch_device_fn.device(A.device):
+        if transa == CUBLAS_OP_N and transb == CUBLAS_OP_N:
+            runner = _HGEMM_NN_DISPATCH.lookup_and_build(
+                m, n, k, aligned,
+                context=dict(
+                    A=A, B=B, C=C, m=m, n=n, k=k,
+                    lda=lda, ldb=ldb, ldc=ldc,
+                    alpha=alpha, beta=beta, beta_is_zero=beta_is_zero,
+                ),
+            )
+            runner()
+        # ... other transa/transb branches ...
 ```
 
 ### Dispatch Logic Summary
@@ -206,7 +259,7 @@ runner()
 2. **Ordered matching**: Conditions evaluated top-to-bottom; first `True` wins.
 3. **Catch-all required**: The last entry must match any shape (prevent `ValueError`).
 4. **Mutually exclusive conditions**: Entries should not overlap to make behavior predictable. Higher-priority entries should have more specific conditions.
-5. **Double-lambda factories**: Required when using `@libentry()`-decorated Triton kernels. The inner `lambda:` defers `LibEntry.run()` to `runner()` time.
+5. **Named functions, not lambdas in the table**: Conditions and factories should be module-level named functions referenced by name in the `StaticDispatch` table. Per-call varying data (tensors, scalars) is passed via the `context` dict to `lookup_and_build()`. This avoids recreating closures on every call.
 
 ---
 
@@ -241,37 +294,68 @@ runner()
 
 ### Common Patterns
 
-**Priority by dimension**:
+**Priority by dimension** (module-level named functions):
 ```python
-[
-    (lambda m, *_kw, **__: m > 8192,  factory_a),   # very large
-    (lambda m, *_kw, **__: m > 1024,  factory_b),   # large
-    (lambda m, *_kw, **__: m > 256,   factory_c),   # medium
-    (lambda **_kw: True,              factory_d),   # small
-]
+def is_very_large(m, **_kw):
+    return m > 8192
+
+def is_large(m, **_kw):
+    return m > 1024
+
+def is_medium(m, **_kw):
+    return m > 256
+
+def is_default(**_kw):
+    return True
+
+_DISPATCH = StaticDispatch([
+    (is_very_large, build_kernel_a),
+    (is_large,      build_kernel_b),
+    (is_medium,     build_kernel_c),
+    (is_default,    build_kernel_d),
+])
 ```
 
 **Priority by alignment**:
 ```python
-[
-    (lambda aligned, **_kw: aligned and is_large(**kw), aligned_large_factory),
-    (lambda aligned, **_kw: aligned,                    aligned_small_factory),
-    (lambda **_kw: True,                                unaligned_factory),
-]
+def is_aligned_large(aligned, m, n, k, **_kw):
+    return aligned and (m * n > 2048 * 2048)
+
+def is_aligned_only(aligned, **_kw):
+    return aligned
+
+def is_default(**_kw):
+    return True
+
+_DISPATCH = StaticDispatch([
+    (is_aligned_large, build_aligned_large),
+    (is_aligned_only,  build_aligned),
+    (is_default,       build_fallback),
+])
 ```
 
 **Combined dimensions + alignment** (as in hgemm_nn):
 ```python
-[
-    (lambda aligned, m, n, k, **_kw:
-         aligned and meets_criteria_A(m, n, k),
-     factory_a),
-    (lambda aligned, m, n, k, **_kw:
-         aligned and meets_criteria_B(m, n, k),
-     factory_b),
-    (lambda **_kw: True,
-     fallback_factory),
-]
+def is_skinny_aligned_large(m, n, k, aligned, **_kw):
+    return (aligned and (m * n > 2048 * 2048) and min(m, n) >= 64
+            and ((m >= 16384 and max(n, k) <= 2048)
+                 or (n >= 16384 and max(m, k) <= 2048)))
+
+def is_aligned_large(m, n, k, aligned, **_kw):
+    return aligned and (m * n > 2048 * 2048) and min(m, n) >= 64
+
+def is_aligned_small(m, n, k, aligned, **_kw):
+    return aligned and max(m, n) <= 1024
+
+def is_default(**_kw):
+    return True
+
+_DISPATCH = StaticDispatch([
+    (is_skinny_aligned_large, build_kernel4),
+    (is_aligned_large,        build_kernel3),
+    (is_aligned_small,        build_kernel2),
+    (is_default,              build_kernel),
+])
 ```
 
 ---
@@ -308,6 +392,6 @@ The exception propagates uncaught. Keep condition lambdas simple (boolean arithm
 
 Yes. For example, use `StaticDispatch` for well-understood shape classes and `SizeAutoDispatch` for the remainder. Just ensure you return the runner from the appropriate dispatch.
 
-### Q: Why double-lambda for @libentry kernels?
+### Q: Why return a lambda from the factory?
 
-`@libentry()` wraps a Triton `JITFunction` in a `LibEntry` object. Calling `entry[grid](args...)` triggers `LibEntry.run()`, which compiles (if needed), launches the kernel, and returns `(kernel_obj, constexprs)`. The inner `lambda:` wraps this into a callable runner without executing the kernel.
+`@libentry()` wraps a Triton `JITFunction` in a `LibEntry` object. Calling `entry[grid](args...)` triggers `LibEntry.run()`, which compiles (if needed), launches the kernel, and returns `(kernel_obj, constexprs)`. The returned `lambda:` wraps this into a callable runner without executing the kernel immediately.

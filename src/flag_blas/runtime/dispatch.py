@@ -331,15 +331,43 @@ class StaticDispatch:
     Maps shape conditions directly to kernel factories. No autotune,
     no caching — the first matching entry wins immediately.
 
-    Usage::
+    The dispatch table itself is designed to be created once at module
+    level and reused across calls.  The per-call varying arguments (e.g.
+    tensors A, B, C) are passed to ``lookup_and_build`` via the
+    ``context`` dict.  Factories receive these as keyword arguments,
+    avoiding the need to re-create closures on every call.
 
-        dispatch = StaticDispatch([
-            (is_aligned,       lambda: make_aligned_runner(A, lda, ...)),
-            (is_thin_large_m,  lambda: make_thin_runner(A, lda, ...)),
-            (lambda **kw: True, lambda: make_fallback_runner(A, lda, ...)),
+    Usage
+    -----
+    Module level (once)::
+
+        def is_aligned(m, n, k, aligned, **_kw):
+            return aligned
+
+        def is_default(**_kw):
+            return True
+
+        def build_aligned_runner(A, B, C, m, n, k, lda, ldb, ldc,
+                                 alpha, beta, beta_is_zero):
+            return lambda: _kernel2[...](A, B, C, alpha, beta, ...)
+
+        def build_fallback_runner(A, B, C, m, n, k, lda, ldb, ldc,
+                                  alpha, beta, beta_is_zero):
+            return lambda: _kernel[...](A, B, C, alpha, beta, ...)
+
+        _MY_DISPATCH = StaticDispatch([
+            (is_aligned, build_aligned_runner),
+            (is_default, build_fallback_runner),
         ])
 
-        runner = dispatch.lookup_and_build(m, n, k, aligned)
+    Per-call (inside the function)::
+
+        runner = _MY_DISPATCH.lookup_and_build(
+            m, n, k, aligned,
+            context=dict(A=A, B=B, C=C, m=m, n=n, k=k,
+                         lda=lda, ldb=ldb, ldc=ldc,
+                         alpha=alpha, beta=beta, beta_is_zero=beta_is_zero),
+        )
         runner()
 
     Parameters
@@ -348,12 +376,13 @@ class StaticDispatch:
         A list of ``(condition, factory)`` pairs evaluated **in order**.
         Each ``condition`` is a callable with signature
         ``(m, n, k, aligned, **extra) -> bool``.
-        Each ``factory`` is a zero-arg callable that returns a
-        ``Callable[[], None]`` runner.
+        Each ``factory`` is a callable that accepts keyword arguments
+        from ``context`` (or no arguments if ``context`` is None) and
+        returns a ``Callable[[], None]`` runner.
         The last entry should be a catch-all (condition always True).
     """
 
-    _Entry = Tuple[Callable[..., bool], Callable[[], Callable[[], None]]]
+    _Entry = Tuple[Callable[..., bool], Callable[..., Callable[[], None]]]
 
     def __init__(
         self,

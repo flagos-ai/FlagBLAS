@@ -4,6 +4,8 @@
 
 `StaticDispatch` 是开发者维护的静态 kernel 调度表，将 shape 条件直接映射到预定的 kernel 工厂函数。**不进行 autotune、不 benchmark、不缓存** —— 条件按顺序求值，首次命中即返回。
 
+调度表设计为模块级别创建一次，跨调用复用。每次调用的变化数据（tensor、标量等）通过 `context` 字典传入 `lookup_and_build()`，工厂函数无需通过闭包捕获变量。
+
 ---
 
 ## 适用场景
@@ -26,25 +28,37 @@
 
 判断当前 shape 是否匹配该表条目的 callable。条件**按表中顺序**求值，第一个返回 `True` 的条目胜出。
 
-### Factory（工厂函数，双层 Lambda）
+### Factory（工厂函数）
 
-签名：`() -> Callable[[], None]`
+签名：`(context_key1=..., context_key2=..., ...) -> Callable[[], None]`
 
-零参数 callable，返回一个 **runner**。runner 本身也是零参数 callable，调用时执行 kernel。
+一个命名函数（推荐使用命名函数而非 lambda），通过关键字参数接收每次调用的变化数据，返回一个 **runner** —— 执行 kernel 的零参数可调用对象。参数通过 `lookup_and_build()` 中的 `context` 字典传入。
 
-**关键要点**：当搭配 `@libentry()` 装饰的 Triton kernel 使用时，factory 必须使用**双层 lambda** 包装：
+当调度表在模块级别创建时，工厂函数只是对命名函数的纯引用 —— 没有闭包，没有每次调用重新构建的 lambda。每次调用的数据通过 `context` 流入。
+
+**关键要点**：当搭配 `@libentry()` 装饰的 Triton kernel 使用时，工厂必须返回一个被 **lambda** 包装的 kernel 调用：
 
 ```python
-# 正确：双层 lambda
-lambda: lambda: kernel_fn[grid](arg1, arg2, ...)
-#         ^^^^           ^^^^^^^^^^^^^^^^^^^^^^^^
-#         factory         runner（延迟到 runner() 时执行）
+# 模块级别 —— 定义一次：
+def build_my_kernel(A, B, C, alpha, beta, m, n, k, lda, ldb, ldc):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _my_kernel[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc,
+    )
 
-# 错误：单层 lambda —— kernel 会在 factory() 时立即执行
-lambda: kernel_fn[grid](arg1, arg2, ...)
+# 每次调用 —— context 携带变化数据：
+runner = dispatch.lookup_and_build(
+    m, n, k, aligned,
+    context=dict(A=A, B=B, C=C, m=m, n=n, k=k,
+                 lda=lda, ldb=ldb, ldc=ldc,
+                 alpha=alpha, beta=beta),
+)
+runner()
 ```
 
-**原因**：`kernel_fn[grid](args...)` 调用的是 `LibEntry.run()`，它会立即启动 kernel 并返回 `(kernel, constexprs)` 元组，而非可调用的 runner。内层 `lambda:` 将执行延迟到 `runner()` 调用时。
+**原因**：`kernel_fn[grid](args...)` 调用的是 `LibEntry.run()`，它会立即启动 kernel 并返回 `(kernel_obj, constexprs)` 元组，而非可调用的 runner。`lambda:` 将执行延迟到 `runner()` 调用时。
 
 ---
 
@@ -53,16 +67,17 @@ lambda: kernel_fn[grid](arg1, arg2, ...)
 与 `SizeAutoDispatch` 的多级缓存架构不同，`StaticDispatch` 设计极简：
 
 ```
-lookup_and_build(m, n, k, aligned, **extra)
+lookup_and_build(m, n, k, aligned, *, context, **extra)
   │
-  ├─ 条目 1: condition(m,n,k,aligned)? ─── True → factory() → runner
-  ├─ 条目 2: condition(m,n,k,aligned)? ─── True → factory() → runner
+  ├─ 条目 1: condition(m,n,k,aligned)? ─── True → factory(**context) → runner
+  ├─ 条目 2: condition(m,n,k,aligned)? ─── True → factory(**context) → runner
   ├─ ...
   └─ 无匹配 → 抛出 ValueError
 ```
 
 - **无过滤逻辑** — 条件内联编码所有匹配规则（无需单独的 `aligned`/`filter` 参数）
 - **无缓存** — 每次调用重新求值条件（极其廉价，仅布尔逻辑运算）
+- **`context` 字典** — 将每次调用的变化数据（tensor、标量等）传入工厂函数，使调度表本身可以驻留在模块级别
 - **无匹配即抛错** — 如果没有任何条目匹配，抛出 `ValueError`（最后一条应为兜底条目）
 
 ---
@@ -82,7 +97,7 @@ dispatch = StaticDispatch(table)
 ### lookup_and_build()
 
 ```python
-runner = dispatch.lookup_and_build(m, n, k, aligned, **extra)
+runner = dispatch.lookup_and_build(m, n, k, aligned, *, context=None, **extra)
 runner()
 ```
 
@@ -92,6 +107,7 @@ runner()
 | `n` | `int` | N 维度 |
 | `k` | `int` | K 维度 |
 | `aligned` | `bool` | 输入是否内存对齐 |
+| `context` | `dict` 或 `None` | 每次调用的变化数据（tensor、标量等），以关键字参数形式传入匹配的工厂函数。为 `None` 时工厂函数无参调用。 |
 | `**extra` | — | 传递给每个 condition 的额外关键字参数 |
 
 **返回值**：`Callable[[], None]` — 零参数 runner，调用即执行选中的 kernel。
@@ -102,82 +118,119 @@ runner()
 
 ## 实战示例：hgemm NN
 
-来自 [hopper/ops/gemm.py](../src/flag_blas/runtime/backend/_nvidia/hopper/ops/gemm.py) 中 `hgemm` 函数的 NN 分支：
+来自 [hopper/ops/gemm.py](../src/flag_blas/runtime/backend/_nvidia/hopper/ops/gemm.py) 中 `hgemm` 函数的 NN 分支。
+
+### 模块级别 —— 定义一次
 
 ```python
 from flag_blas.runtime.dispatch import StaticDispatch
 from triton.tools.tensor_descriptor import TensorDescriptor
 
-dispatch = StaticDispatch([
-    # ── 优先级 1（最高）──────────────────────────────────────────
-    # Skinny 矩阵 + 对齐 + 大尺寸。
-    # 使用 kernel4，搭配 TensorDescriptor 和硬编码最优 config
-    # （无需 autotune —— 此 config 已证明是该 shape 类型的最优解）。
-    (
-        lambda m, n, k, aligned, **_kw:
-            aligned and (m * n > 2048 * 2048) and min(m, n) >= 64
-            and ((m >= 16384 and max(n, k) <= 2048)
-                 or (n >= 16384 and max(m, k) <= 2048)),
-        lambda: lambda: _hgemm_nn_kernel4[(
-            triton.cdiv(m, 128) * triton.cdiv(n, 256),
-        )](
-            TensorDescriptor(
-                base=A, shape=[m, k], strides=[lda, 1],
-                block_shape=[128, 64],
-            ),
-            TensorDescriptor(
-                base=B, shape=[k, n], strides=[ldb, 1],
-                block_shape=[64, 256],
-            ),
-            TensorDescriptor(
-                base=C, shape=[m, n], strides=[ldc, 1],
-                block_shape=[128, 256],
-            ),
-            alpha, beta, m, n, k, beta_is_zero,
-            BLOCK_M=128, BLOCK_N=256, BLOCK_K=64, GROUP_M=8,
-            num_stages=4, num_warps=8, num_ctas=1,
-        ),
-    ),
+# ── 条件谓词（命名函数，非 lambda）───────────────────────────────
 
-    # ── 优先级 2 ─────────────────────────────────────────────────
-    # 对齐 + 大尺寸（m×n > 4M，min 维度 ≥ 64）。
-    # 使用 kernel3，搭配 TensorDescriptor 和 autotuned configs
-    # （其 @libtuner 装饰器在运行时选择最优 BLOCK_M/N/K 等参数）。
-    (
-        lambda m, n, k, aligned, **_kw:
-            aligned and (m * n > 2048 * 2048) and min(m, n) >= 64,
-        lambda: lambda: _hgemm_nn_kernel3[grid](
-            A, B, C, alpha, beta, m, n, k,
-            lda, ldb, ldc, beta_is_zero,
-        ),
-    ),
+def _hgemm_nn_is_skinny_aligned_large(m, n, k, aligned, **_kw):
+    return (
+        aligned
+        and (m * n > 2048 * 2048)
+        and min(m, n) >= 64
+        and (
+            (m >= 16384 and max(n, k) <= 2048)
+            or (n >= 16384 and max(m, k) <= 2048)
+        )
+    )
 
-    # ── 优先级 3 ─────────────────────────────────────────────────
-    # 对齐 + 小/中等尺寸（max ≤ 1024）。
-    # 使用 kernel2，搭配 block_ptr 和 autotuned configs。
-    (
-        lambda m, n, k, aligned, **_kw:
-            aligned and max(m, n) <= 1024,
-        lambda: lambda: _hgemm_nn_kernel2[grid](
-            A, B, C, alpha, beta, m, n, k,
-            lda, ldb, ldc, beta_is_zero,
-        ),
-    ),
+def _hgemm_nn_is_aligned_large(m, n, k, aligned, **_kw):
+    return aligned and (m * n > 2048 * 2048) and min(m, n) >= 64
 
-    # ── 优先级 4（兜底）──────────────────────────────────────────
-    # 其余所有情况：未对齐，或中等/大尺寸但未被上述条目覆盖。
-    # 使用原始 level3 kernel，基于指针访问。
-    (
-        lambda **_kw: True,
-        lambda: lambda: _hgemm_nn_kernel[grid](
-            A, B, C, alpha, beta, m, n, k,
-            lda, ldb, ldc, beta_is_zero,
+def _hgemm_nn_is_aligned_small(m, n, k, aligned, **_kw):
+    return aligned and max(m, n) <= 1024
+
+def _hgemm_nn_is_default(**_kw):
+    return True
+
+# ── 工厂函数（接收 context 字典的键作为关键字参数）────────────────
+
+def _hgemm_nn_build_kernel4(A, B, C, m, n, k, lda, ldb, ldc,
+                            alpha, beta, beta_is_zero):
+    return lambda: _hgemm_nn_kernel4[(
+        triton.cdiv(m, 128) * triton.cdiv(n, 256),
+    )](
+        TensorDescriptor(
+            base=A, shape=[m, k], strides=[lda, 1],
+            block_shape=[128, 64],
         ),
-    ),
+        TensorDescriptor(
+            base=B, shape=[k, n], strides=[ldb, 1],
+            block_shape=[64, 256],
+        ),
+        TensorDescriptor(
+            base=C, shape=[m, n], strides=[ldc, 1],
+            block_shape=[128, 256],
+        ),
+        alpha, beta, m, n, k, beta_is_zero,
+        BLOCK_M=128, BLOCK_N=256, BLOCK_K=64, GROUP_M=8,
+        num_stages=4, num_warps=8, num_ctas=1,
+    )
+
+def _hgemm_nn_build_kernel3(A, B, C, m, n, k, lda, ldb, ldc,
+                            alpha, beta, beta_is_zero):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_nn_kernel3[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+def _hgemm_nn_build_kernel2(A, B, C, m, n, k, lda, ldb, ldc,
+                            alpha, beta, beta_is_zero):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_nn_kernel2[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+def _hgemm_nn_build_kernel(A, B, C, m, n, k, lda, ldb, ldc,
+                           alpha, beta, beta_is_zero):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_nn_kernel[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+_HGEMM_NN_DISPATCH = StaticDispatch([
+    # skinny + 对齐大尺寸 → kernel4（TensorDescriptor，硬编码 config）
+    (_hgemm_nn_is_skinny_aligned_large, _hgemm_nn_build_kernel4),
+    # 对齐大尺寸 → kernel3（TensorDescriptor，autotuned config）
+    (_hgemm_nn_is_aligned_large, _hgemm_nn_build_kernel3),
+    # 对齐小尺寸 → kernel2（block_ptr）
+    (_hgemm_nn_is_aligned_small, _hgemm_nn_build_kernel2),
+    # 默认 → kernel（原始实现）
+    (_hgemm_nn_is_default, _hgemm_nn_build_kernel),
 ])
+```
 
-runner = dispatch.lookup_and_build(m, n, k, aligned)
-runner()
+### 每次调用 —— 在 `hgemm()` 内部
+
+```python
+def hgemm(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc):
+    # ... 参数校验 ...
+    beta_is_zero = beta == 0.0
+    aligned = _is_gemm_aligned(A, lda, B, ldb, C, ldc)
+
+    with torch_device_fn.device(A.device):
+        if transa == CUBLAS_OP_N and transb == CUBLAS_OP_N:
+            runner = _HGEMM_NN_DISPATCH.lookup_and_build(
+                m, n, k, aligned,
+                context=dict(
+                    A=A, B=B, C=C, m=m, n=n, k=k,
+                    lda=lda, ldb=ldb, ldc=ldc,
+                    alpha=alpha, beta=beta, beta_is_zero=beta_is_zero,
+                ),
+            )
+            runner()
+        # ... 其他 transa/transb 分支 ...
 ```
 
 ### 调度逻辑总结
@@ -206,7 +259,7 @@ runner()
 2. **顺序匹配**：条件自上而下求值；首次 `True` 即胜出。
 3. **必须兜底**：最后一条必须匹配所有 shape（防止 `ValueError`）。
 4. **条件互斥**：条目间不应重叠以保证行为可预测。高优先级条目应有更具体的条件。
-5. **双层 lambda 工厂**：搭配 `@libentry()` 装饰的 Triton kernel 时必须使用。内层 `lambda:` 将 `LibEntry.run()` 延迟到 `runner()` 时。
+5. **使用命名函数而非 lambda**：条件和工厂应为模块级别的命名函数，在 `StaticDispatch` 表中按名称引用。每次调用的变化数据（tensor、标量）通过 `context` 字典传入 `lookup_and_build()`，避免每次调用重新创建闭包。
 
 ---
 
@@ -241,37 +294,68 @@ runner()
 
 ### 常见模式
 
-**按维度分优先级**：
+**按维度分优先级**（模块级命名函数）：
 ```python
-[
-    (lambda m, *_kw, **__: m > 8192,  factory_a),   # 超大
-    (lambda m, *_kw, **__: m > 1024,  factory_b),   # 大
-    (lambda m, *_kw, **__: m > 256,   factory_c),   # 中等
-    (lambda **_kw: True,              factory_d),   # 小
-]
+def is_very_large(m, **_kw):
+    return m > 8192
+
+def is_large(m, **_kw):
+    return m > 1024
+
+def is_medium(m, **_kw):
+    return m > 256
+
+def is_default(**_kw):
+    return True
+
+_DISPATCH = StaticDispatch([
+    (is_very_large, build_kernel_a),
+    (is_large,      build_kernel_b),
+    (is_medium,     build_kernel_c),
+    (is_default,    build_kernel_d),
+])
 ```
 
 **按对齐分优先级**：
 ```python
-[
-    (lambda aligned, **_kw: aligned and is_large(**kw), aligned_large_factory),
-    (lambda aligned, **_kw: aligned,                    aligned_small_factory),
-    (lambda **_kw: True,                                unaligned_factory),
-]
+def is_aligned_large(aligned, m, n, k, **_kw):
+    return aligned and (m * n > 2048 * 2048)
+
+def is_aligned_only(aligned, **_kw):
+    return aligned
+
+def is_default(**_kw):
+    return True
+
+_DISPATCH = StaticDispatch([
+    (is_aligned_large, build_aligned_large),
+    (is_aligned_only,  build_aligned),
+    (is_default,       build_fallback),
+])
 ```
 
 **维度 + 对齐组合**（如 hgemm_nn）：
 ```python
-[
-    (lambda aligned, m, n, k, **_kw:
-         aligned and meets_criteria_A(m, n, k),
-     factory_a),
-    (lambda aligned, m, n, k, **_kw:
-         aligned and meets_criteria_B(m, n, k),
-     factory_b),
-    (lambda **_kw: True,
-     fallback_factory),
-]
+def is_skinny_aligned_large(m, n, k, aligned, **_kw):
+    return (aligned and (m * n > 2048 * 2048) and min(m, n) >= 64
+            and ((m >= 16384 and max(n, k) <= 2048)
+                 or (n >= 16384 and max(m, k) <= 2048)))
+
+def is_aligned_large(m, n, k, aligned, **_kw):
+    return aligned and (m * n > 2048 * 2048) and min(m, n) >= 64
+
+def is_aligned_small(m, n, k, aligned, **_kw):
+    return aligned and max(m, n) <= 1024
+
+def is_default(**_kw):
+    return True
+
+_DISPATCH = StaticDispatch([
+    (is_skinny_aligned_large, build_kernel4),
+    (is_aligned_large,        build_kernel3),
+    (is_aligned_small,        build_kernel2),
+    (is_default,              build_kernel),
+])
 ```
 
 ---
@@ -308,6 +392,6 @@ runner()  # 等价于 my_kernel_fn(A, B, C, alpha=1.0)
 
 可以。例如，用 `StaticDispatch` 处理已知最优的 shape 类型，用 `SizeAutoDispatch` 处理其余情况。只需确保从正确的 dispatch 返回 runner 即可。
 
-### Q: 为什么 @libentry kernel 需要双层 lambda？
+### Q: 为什么需要双层 lambda？
 
-`@libentry()` 将 Triton `JITFunction` 包装为 `LibEntry` 对象。调用 `entry[grid](args...)` 会触发 `LibEntry.run()`，该方法编译（如果需要）、启动 kernel 并返回 `(kernel_obj, constexprs)`。内层 `lambda:` 将这个过程包装为可调用的 runner 而不立即执行 kernel。
+`@libentry()` 将 Triton `JITFunction` 包装为 `LibEntry` 对象。调用 `entry[grid](args...)` 会触发 `LibEntry.run()`，该方法编译（如果需要）、启动 kernel 并返回 `(kernel_obj, constexprs)`。返回的 `lambda:` 将这个过程包装为可调用的 runner 而不立即执行 kernel。
