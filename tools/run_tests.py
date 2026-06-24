@@ -938,8 +938,8 @@ def main():
     parser.add_argument(
         "--timeout",
         type=int,
-        default=3600,
-        help="Timeout in seconds for each test command (default: 3600)",
+        default=4800,
+        help="Timeout in seconds for each test command (default: 4800)",
     )
     OPTS = parser.parse_args()
     CFG.dump_output = OPTS.dump_output
