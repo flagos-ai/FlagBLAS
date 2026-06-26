@@ -324,6 +324,93 @@ class SizeAutoDispatch:
         return runners.get(best_name)
 
 
+class StaticDispatch:
+    """
+    Developer-maintained static dispatch table.
+
+    Maps shape conditions directly to kernel factories. No autotune,
+    no caching — the first matching entry wins immediately.
+
+    The dispatch table itself is designed to be created once at module
+    level and reused across calls.  The per-call varying arguments (e.g.
+    tensors A, B, C) are passed to ``lookup_and_build`` via the
+    ``context`` dict.  Factories receive these as keyword arguments,
+    avoiding the need to re-create closures on every call.
+
+    Usage
+    -----
+    Module level (once)::
+
+        def is_aligned(m, n, k, aligned, **_kw):
+            return aligned
+
+        def is_default(**_kw):
+            return True
+
+        def build_aligned_runner(A, B, C, m, n, k, lda, ldb, ldc,
+                                 alpha, beta, beta_is_zero):
+            return lambda: _kernel2[...](A, B, C, alpha, beta, ...)
+
+        def build_fallback_runner(A, B, C, m, n, k, lda, ldb, ldc,
+                                  alpha, beta, beta_is_zero):
+            return lambda: _kernel[...](A, B, C, alpha, beta, ...)
+
+        _MY_DISPATCH = StaticDispatch([
+            (is_aligned, build_aligned_runner),
+            (is_default, build_fallback_runner),
+        ])
+
+    Per-call (inside the function)::
+
+        runner = _MY_DISPATCH.lookup_and_build(
+            m, n, k, aligned,
+            context=dict(A=A, B=B, C=C, m=m, n=n, k=k,
+                         lda=lda, ldb=ldb, ldc=ldc,
+                         alpha=alpha, beta=beta, beta_is_zero=beta_is_zero),
+        )
+        runner()
+
+    Parameters
+    ----------
+    table:
+        A list of ``(condition, factory)`` pairs evaluated **in order**.
+        Each ``condition`` is a callable with signature
+        ``(m, n, k, aligned, **extra) -> bool``.
+        Each ``factory`` is a callable that accepts keyword arguments
+        from ``context`` (or no arguments if ``context`` is None) and
+        returns a ``Callable[[], None]`` runner.
+        The last entry should be a catch-all (condition always True).
+    """
+
+    _Entry = Tuple[Callable[..., bool], Callable[..., Callable[[], None]]]
+
+    def __init__(
+        self,
+        table: List[_Entry],
+    ):
+        self._table = table
+
+    def lookup_and_build(
+        self,
+        m: int,
+        n: int,
+        k: int,
+        aligned: bool,
+        *,
+        context: Optional[dict] = None,
+        **extra,
+    ) -> Callable[[], None]:
+        for condition, factory in self._table:
+            if condition(m=m, n=n, k=k, aligned=aligned, **extra):
+                if context is not None:
+                    return factory(**context)
+                return factory()
+        raise ValueError(
+            f"StaticDispatch: no matching entry for "
+            f"m={m}, n={n}, k={k}, aligned={aligned}"
+        )
+
+
 class KernelRunner:
     """
     A callable wrapper that executes a kernel with pre-bound arguments.
