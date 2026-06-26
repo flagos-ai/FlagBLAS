@@ -10,7 +10,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: hgemm
     description: |
       half-precision GEMM, based on FP16 format.
@@ -514,7 +514,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: dgemv
     description: |
       Double-precision BLAS Level 2 general matrix-vector multiplication.
@@ -526,7 +526,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: cgemv
     description: |
       Single-precision complex BLAS Level 2 general matrix-vector multiplication.
@@ -538,7 +538,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: zgemv
     description: |
       Double-precision complex BLAS Level 2 general matrix-vector multiplication.
@@ -550,7 +550,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: hgemv
     description: |
       Half-precision BLAS Level 2 general matrix-vector multiplication.
@@ -562,7 +562,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: bfgemv
     description: |
       BF16 BLAS Level 2 general matrix-vector multiplication.
@@ -574,7 +574,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: fp8_gemv
     description: |
       FP8 BLAS Level 2 general matrix-vector multiplication.
@@ -586,7 +586,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: sgbmv
     description: |
       Single-precision BLAS Level 2 general banded matrix-vector multiplication.
@@ -598,7 +598,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: dgbmv
     description: |
       Double-precision BLAS Level 2 general banded matrix-vector multiplication.
@@ -610,7 +610,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: cgbmv
     description: |
       Single-precision complex BLAS Level 2 general banded matrix-vector multiplication.
@@ -622,7 +622,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: zgbmv
     description: |
       Double-precision complex BLAS Level 2 general banded matrix-vector multiplication.
@@ -634,7 +634,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: ssymv
     description: |
       Single-precision BLAS Level 2 symmetric matrix-vector multiplication.
@@ -646,7 +646,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: dsymv
     description: |
       Double-precision BLAS Level 2 symmetric matrix-vector multiplication.
@@ -658,7 +658,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: csymv
     description: |
       Single-precision complex BLAS Level 2 symmetric matrix-vector multiplication.
@@ -670,7 +670,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: zsymv
     description: |
       Double-precision complex BLAS Level 2 symmetric matrix-vector multiplication.
@@ -682,7 +682,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: chemv
     description: |
       Single-precision complex BLAS Level 2 Hermitian matrix-vector multiplication.
@@ -694,7 +694,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: zhemv
     description: |
       Double-precision complex BLAS Level 2 Hermitian matrix-vector multiplication.
@@ -706,7 +706,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: strmv
     description: |
       Single-precision BLAS Level 2 triangular matrix-vector multiplication.
@@ -718,7 +718,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: dtrmv
     description: |
       Double-precision BLAS Level 2 triangular matrix-vector multiplication.
@@ -730,7 +730,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: ctrmv
     description: |
       Single-precision complex BLAS Level 2 triangular matrix-vector multiplication.
@@ -742,7 +742,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: ztrmv
     description: |
       Double-precision complex BLAS Level 2 triangular matrix-vector multiplication.
@@ -754,7 +754,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: stbmv
     description: |
       Single-precision BLAS Level 2 triangular banded matrix-vector multiplication.
@@ -766,7 +766,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: dtbmv
     description: |
       Double-precision BLAS Level 2 triangular banded matrix-vector multiplication.
@@ -778,7 +778,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: ctbmv
     description: |
       Single-precision complex BLAS Level 2 triangular banded matrix-vector multiplication.
@@ -790,7 +790,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: ztbmv
     description: |
       Double-precision complex BLAS Level 2 triangular banded matrix-vector multiplication.
@@ -802,7 +802,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: stpmv
     description: |
       Single-precision BLAS Level 2 triangular packed matrix-vector multiplication.
@@ -814,7 +814,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: dtpmv
     description: |
       Double-precision BLAS Level 2 triangular packed matrix-vector multiplication.
@@ -826,7 +826,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: ctpmv
     description: |
       Single-precision complex BLAS Level 2 triangular packed matrix-vector multiplication.
@@ -838,7 +838,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: ztpmv
     description: |
       Double-precision complex BLAS Level 2 triangular packed matrix-vector multiplication.
@@ -850,7 +850,7 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
   - id: stbsv
     description: |
       Single-precision BLAS Level 2 triangular banded solve.
@@ -862,4 +862,4 @@ ops:
     kind:
       - BLAS
     stages:
-      - beta: '0.1'
+      - stable: '0.1'
