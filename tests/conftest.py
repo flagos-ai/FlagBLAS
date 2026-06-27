@@ -36,16 +36,11 @@ def pytest_addoption(parser):
         help="device to run reference tests on",
     )
     parser.addoption(
-        (
-            "--mode"
-            if not (flag_blas.vendor_name == "kunlunxin" and torch.__version__ < "2.5")
-            else "--fg_mode"
-        ),  # TODO: fix pytest-* common --mode args,
-        action="store",
-        default="normal",
+        "--quick",
+        action="store_true",
+        default=False,
         required=False,
-        choices=["normal", "quick"],
-        help="run tests on normal or quick mode",
+        help="run tests on quick mode",
     )
     parser.addoption(
         "--record",
@@ -86,7 +81,7 @@ def pytest_configure(config):
     print(f"[correctness] reference backend: {ref_backend}", flush=True)
 
     global QUICK_MODE
-    QUICK_MODE = config.getoption("--mode") == "quick"
+    QUICK_MODE = config.getoption("--quick")
 
     global RECORD_LOG
     RECORD_LOG = config.getoption("--record") == "log"
