@@ -35,7 +35,7 @@ case $VENDOR in
 
     uv pip uninstall triton
     RES="--index-url=https://resource.flagos.net/repository/flagos-pypi-hosted/simple"
-    python3.12 -m uv pip install flagtree===0.5.0 $RES
+    python3.12 -m pip install flagtree===0.5.0 $RES
     uv pip install -e .
     uv pip install ".[test]"
     ;;
