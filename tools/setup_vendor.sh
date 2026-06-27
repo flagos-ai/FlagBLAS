@@ -29,16 +29,15 @@ echo "Installing FlagBLAS for ${VENDOR} ..."
 case $VENDOR in
   nvidia)
     # Install PyTorch and Triton with CUDA support
-    uv pip install --index ${FLAGOS_PYPI} \
-        "torch==2.9.1+cu128" \
-        "torchvision==0.24.1+cu128" 
+    uv pip install torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 \
+        --index-url https://download.pytorch.org/whl/cu128
     # Install FlagBLAS in editable mode
-    uv pip install -e .
-    uv pip install ".[test]"
 
     uv pip uninstall triton
-    uv pip install --index ${FLAGOS_PYPI} \
-        flagtree==0.5.0
+    RES="--index-url=https://resource.flagos.net/repository/flagos-pypi-hosted/simple"
+    python3.12 -m pip install flagtree===0.5.0 $RES
+    uv pip install -e .
+    uv pip install ".[test]"
     ;;
 
   iluvatar)
