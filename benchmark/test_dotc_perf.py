@@ -1,8 +1,8 @@
 from typing import Generator
 
+import cupy as cp
 import pytest
 import torch
-import cupy as cp
 from cupy_backends.cuda.libs import cublas
 
 import flag_blas
@@ -19,9 +19,13 @@ def cublas_dotc(x, y, result, n=None, incx=1, incy=1, handle=None):
         result.zero_()
         return result
     if x.dtype == torch.complex64:
-        cublas.cdotc(handle, n, x.data_ptr(), incx, y.data_ptr(), incy, result.data_ptr())
+        cublas.cdotc(
+            handle, n, x.data_ptr(), incx, y.data_ptr(), incy, result.data_ptr()
+        )
     elif x.dtype == torch.complex128:
-        cublas.zdotc(handle, n, x.data_ptr(), incx, y.data_ptr(), incy, result.data_ptr())
+        cublas.zdotc(
+            handle, n, x.data_ptr(), incx, y.data_ptr(), incy, result.data_ptr()
+        )
     else:
         raise TypeError(f"Unsupported dtype for dotc: {x.dtype}")
     return result
@@ -85,7 +89,9 @@ class DotcBenchmark(Benchmark):
             tolerance_desc = "rtol=1e-12,atol=max(1e-12,sqrt(n)*1e-12)"
 
         try:
-            torch.testing.assert_close(blas_result, reference_result, rtol=rtol, atol=atol)
+            torch.testing.assert_close(
+                blas_result, reference_result, rtol=rtol, atol=atol
+            )
         except AssertionError as e:
             ref_cpu = reference_result.cpu()
             res_cpu = blas_result.cpu()

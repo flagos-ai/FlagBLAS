@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 # Triton kernels
 # -----------------------------
 
+
 @triton.autotune(
     configs=[
         triton.Config({"BLOCK_SIZE": 256}, num_warps=4),
@@ -112,6 +113,7 @@ def copy_strided_complex_kernel(
 # zcopy specialized kernels
 # -----------------------------
 
+
 @triton.autotune(
     configs=[
         triton.Config({"BLOCK_SIZE": 256}, num_warps=4),
@@ -123,9 +125,9 @@ def copy_strided_complex_kernel(
 @libentry()
 @triton.jit
 def zcopy_contig_kernel(
-    x_ptr,   # flattened float64 storage
+    x_ptr,  # flattened float64 storage
     y_ptr,
-    n_scalar,   # 2 * n
+    n_scalar,  # 2 * n
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tle.program_id(0)
@@ -148,7 +150,7 @@ def zcopy_contig_kernel(
 @libentry()
 @triton.jit
 def zcopy_src_contig_kernel(
-    x_ptr,   # flattened float64 storage
+    x_ptr,  # flattened float64 storage
     y_ptr,
     n,
     INCY,
@@ -186,7 +188,7 @@ def zcopy_src_contig_kernel(
 @libentry()
 @triton.jit
 def zcopy_dst_contig_kernel(
-    x_ptr,   # flattened float64 storage
+    x_ptr,  # flattened float64 storage
     y_ptr,
     n,
     INCX,
@@ -223,7 +225,7 @@ def zcopy_dst_contig_kernel(
 @libentry()
 @triton.jit
 def zcopy_both_strided_small_stride_kernel(
-    x_ptr,   # flattened float64 storage
+    x_ptr,  # flattened float64 storage
     y_ptr,
     n,
     INCX,
@@ -261,7 +263,7 @@ def zcopy_both_strided_small_stride_kernel(
 @libentry()
 @triton.jit
 def zcopy_both_strided_generic_kernel(
-    x_ptr,   # flattened float64 storage
+    x_ptr,  # flattened float64 storage
     y_ptr,
     n,
     INCX,
@@ -292,6 +294,7 @@ def zcopy_both_strided_generic_kernel(
 # Helper functions
 # -----------------------------
 
+
 def _validate_copy_inputs(
     n: int,
     x: torch.Tensor,
@@ -320,7 +323,6 @@ def _validate_copy_inputs(
     assert (
         y.numel() >= required_y
     ), f"y is too short: need at least {required_y} elements for n={n}, incy={incy}, got {y.numel()}"
-
 
 
 def _copy_impl_zcopy_kernel_only(
@@ -423,6 +425,7 @@ def _copy_impl(
 # -----------------------------
 # Public APIs
 # -----------------------------
+
 
 def scopy(n: int, x: torch.Tensor, incx: int, y: torch.Tensor, incy: int) -> None:
     logger.debug("FLAG_BLAS SCOPY OPT")

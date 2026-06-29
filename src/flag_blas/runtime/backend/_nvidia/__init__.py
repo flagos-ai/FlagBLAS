@@ -1,6 +1,5 @@
 import torch
 import triton
-
 from backend_utils import VendorInfoBase  # noqa: E402
 
 vendor_info = VendorInfoBase(

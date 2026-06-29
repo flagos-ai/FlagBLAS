@@ -62,8 +62,12 @@ def _abs_impl(
     assert x.device == y.device, "x and y must be on the same device"
     assert x.is_contiguous(), "x must be contiguous"
     assert y.is_contiguous(), "y must be contiguous"
-    assert x.numel() >= n, f"x is too short: need at least {n} elements, got {x.numel()}"
-    assert y.numel() >= n, f"y is too short: need at least {n} elements, got {y.numel()}"
+    assert (
+        x.numel() >= n
+    ), f"x is too short: need at least {n} elements, got {x.numel()}"
+    assert (
+        y.numel() >= n
+    ), f"y is too short: need at least {n} elements, got {y.numel()}"
 
     block_size = 1024
     grid = (triton.cdiv(n, block_size), 1, 1)

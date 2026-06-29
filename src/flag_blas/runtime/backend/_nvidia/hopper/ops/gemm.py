@@ -172,9 +172,7 @@ def _sgemm_tn_kernel2(
 
         a = tl.trans(a_t)
 
-        acc = tl.dot(
-            a, b, acc, out_dtype=tl.float32, input_precision="tf32x3"
-        )
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32, input_precision="tf32x3")
 
         a_block_ptr = tl.advance(a_block_ptr, (BLOCK_K, 0))
         b_block_ptr = tl.advance(b_block_ptr, (BLOCK_K, 0))
@@ -289,21 +287,30 @@ def _sgemm_nt_kernel3(
     pid_n = (pid % width) // group_size
 
     a_block_ptr = tl.make_block_ptr(
-        base=a_ptr, shape=(m, k), strides=(lda, 1),
+        base=a_ptr,
+        shape=(m, k),
+        strides=(lda, 1),
         offsets=(pid_m * BLOCK_M, 0),
-        block_shape=(BLOCK_M, BLOCK_K), order=(1, 0),
+        block_shape=(BLOCK_M, BLOCK_K),
+        order=(1, 0),
     )
 
     b_block_ptr = tl.make_block_ptr(
-        base=b_ptr, shape=(n, k), strides=(ldb, 1),
+        base=b_ptr,
+        shape=(n, k),
+        strides=(ldb, 1),
         offsets=(pid_n * BLOCK_N, 0),
-        block_shape=(BLOCK_N, BLOCK_K), order=(1, 0),
+        block_shape=(BLOCK_N, BLOCK_K),
+        order=(1, 0),
     )
 
     c_block_ptr = tl.make_block_ptr(
-        base=c_ptr, shape=(m, n), strides=(ldc, 1),
+        base=c_ptr,
+        shape=(m, n),
+        strides=(ldc, 1),
         offsets=(pid_m * BLOCK_M, pid_n * BLOCK_N),
-        block_shape=(BLOCK_M, BLOCK_N), order=(1, 0),
+        block_shape=(BLOCK_M, BLOCK_N),
+        order=(1, 0),
     )
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
@@ -311,7 +318,9 @@ def _sgemm_nt_kernel3(
     for i in range(0, tl.cdiv(k, BLOCK_K)):
         a = tl.load(a_block_ptr, boundary_check=(0, 1))
         b = tl.load(b_block_ptr, boundary_check=(0, 1))
-        acc = tl.dot(a, tl.trans(b), acc, out_dtype=tl.float32, input_precision="tf32x3")
+        acc = tl.dot(
+            a, tl.trans(b), acc, out_dtype=tl.float32, input_precision="tf32x3"
+        )
         a_block_ptr = tl.advance(a_block_ptr, (0, BLOCK_K))
         b_block_ptr = tl.advance(b_block_ptr, (0, BLOCK_K))
 
@@ -736,9 +745,7 @@ def _sgemm_pad_tensors(
 
 def _is_sgemm_thin(m: int, n: int, k: int, **_kw) -> bool:
     return (
-        min(m, n) <= 64
-        and k >= 256
-        and triton.cdiv(m, 128) * triton.cdiv(n, 32) < 32
+        min(m, n) <= 64 and k >= 256 and triton.cdiv(m, 128) * triton.cdiv(n, 32) < 32
     )
 
 
@@ -775,10 +782,21 @@ def _make_sgemm_nn_thin_runner(
             num_k_splits,
         )
         _sgemm_nn_thin_kernel[grid_thin](
-            A, B, C, alpha, beta, m, n, k, lda, ldb, ldc,
+            A,
+            B,
+            C,
+            alpha,
+            beta,
+            m,
+            n,
+            k,
+            lda,
+            ldb,
+            ldc,
             BETA_IS_ZERO=beta_is_zero,
             SPLIT_K=num_k_splits,
         )
+
     return run
 
 
@@ -789,6 +807,7 @@ def _make_sgemm_nn_aligned_runner(
         _sgemm_nn_kernel2[grid](
             A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
         )
+
     return run
 
 
@@ -797,21 +816,41 @@ def _make_sgemm_nn_padded_runner(
 ):
     def run():
         (
-            A_padded, B_padded, C_padded, C_2d,
-            lda_pad, ldb_pad, ldc_pad, m_pad, n_pad, k_pad,
-        ) = _sgemm_pad_tensors(A, lda, CUBLAS_OP_N, B, ldb, CUBLAS_OP_N, C, ldc, m, n, k)
+            A_padded,
+            B_padded,
+            C_padded,
+            C_2d,
+            lda_pad,
+            ldb_pad,
+            ldc_pad,
+            m_pad,
+            n_pad,
+            k_pad,
+        ) = _sgemm_pad_tensors(
+            A, lda, CUBLAS_OP_N, B, ldb, CUBLAS_OP_N, C, ldc, m, n, k
+        )
 
         grid_pad = lambda meta: (
             triton.cdiv(m_pad, meta["BLOCK_M"]) * triton.cdiv(n_pad, meta["BLOCK_N"]),
         )
 
         _sgemm_nn_kernel2[grid_pad](
-            A_padded, B_padded, C_padded, alpha, beta,
-            m_pad, n_pad, k_pad,
-            lda_pad, ldb_pad, ldc_pad, beta_is_zero,
+            A_padded,
+            B_padded,
+            C_padded,
+            alpha,
+            beta,
+            m_pad,
+            n_pad,
+            k_pad,
+            lda_pad,
+            ldb_pad,
+            ldc_pad,
+            beta_is_zero,
         )
 
         C_2d[:m, :n] = C_padded[:m, :n]
+
     return run
 
 
@@ -822,11 +861,24 @@ def _make_sgemm_nn_fallback_runner(
         _sgemm_nn_kernel[grid](
             A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
         )
+
     return run
 
 
 def _build_sgemm_nn_dispatch_table(
-    A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid,
+    A,
+    lda,
+    B,
+    ldb,
+    C,
+    ldc,
+    m,
+    n,
+    k,
+    alpha,
+    beta,
+    beta_is_zero,
+    grid,
     model=libcache.model,
 ) -> SizeAutoDispatch:
     dispatch = SizeAutoDispatch(
@@ -835,24 +887,32 @@ def _build_sgemm_nn_dispatch_table(
         model=model,
     )
     dispatch.add(
-        lambda: _make_sgemm_nn_aligned_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        lambda: _make_sgemm_nn_aligned_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+        ),
         aligned=True,
         name="aligned_k2",
     )
     dispatch.add(
-        lambda: _make_sgemm_nn_padded_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        lambda: _make_sgemm_nn_padded_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero
+        ),
         aligned=False,
         name="padded_k2",
         filter=_is_sgemm_large,
     )
     dispatch.add(
-        lambda: _make_sgemm_nn_thin_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        lambda: _make_sgemm_nn_thin_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero
+        ),
         aligned=False,
         name="thin",
         filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k),
     )
     dispatch.add(
-        lambda: _make_sgemm_nn_fallback_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        lambda: _make_sgemm_nn_fallback_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+        ),
         aligned=False,
         name="fallback",
         filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k),
@@ -867,6 +927,7 @@ def _make_sgemm_tn_aligned_runner(
         _sgemm_tn_kernel2[grid](
             A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
         )
+
     return run
 
 
@@ -875,21 +936,41 @@ def _make_sgemm_tn_padded_runner(
 ):
     def run():
         (
-            A_padded, B_padded, C_padded, C_2d,
-            lda_pad, ldb_pad, ldc_pad, m_pad, n_pad, k_pad,
-        ) = _sgemm_pad_tensors(A, lda, CUBLAS_OP_T, B, ldb, CUBLAS_OP_N, C, ldc, m, n, k)
+            A_padded,
+            B_padded,
+            C_padded,
+            C_2d,
+            lda_pad,
+            ldb_pad,
+            ldc_pad,
+            m_pad,
+            n_pad,
+            k_pad,
+        ) = _sgemm_pad_tensors(
+            A, lda, CUBLAS_OP_T, B, ldb, CUBLAS_OP_N, C, ldc, m, n, k
+        )
 
         grid_pad = lambda meta: (
             triton.cdiv(m_pad, meta["BLOCK_M"]) * triton.cdiv(n_pad, meta["BLOCK_N"]),
         )
 
         _sgemm_tn_kernel2[grid_pad](
-            A_padded, B_padded, C_padded, alpha, beta,
-            m_pad, n_pad, k_pad,
-            lda_pad, ldb_pad, ldc_pad, beta_is_zero,
+            A_padded,
+            B_padded,
+            C_padded,
+            alpha,
+            beta,
+            m_pad,
+            n_pad,
+            k_pad,
+            lda_pad,
+            ldb_pad,
+            ldc_pad,
+            beta_is_zero,
         )
 
         C_2d[:m, :n] = C_padded[:m, :n]
+
     return run
 
 
@@ -900,11 +981,24 @@ def _make_sgemm_tn_fallback_runner(
         _sgemm_tn_kernel[grid](
             A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
         )
+
     return run
 
 
 def _build_sgemm_tn_dispatch_table(
-    A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid,
+    A,
+    lda,
+    B,
+    ldb,
+    C,
+    ldc,
+    m,
+    n,
+    k,
+    alpha,
+    beta,
+    beta_is_zero,
+    grid,
     model=libcache.model,
 ) -> SizeAutoDispatch:
     dispatch = SizeAutoDispatch(
@@ -913,18 +1007,24 @@ def _build_sgemm_tn_dispatch_table(
         model=model,
     )
     dispatch.add(
-        lambda: _make_sgemm_tn_aligned_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        lambda: _make_sgemm_tn_aligned_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+        ),
         aligned=True,
         name="aligned_k2",
     )
     dispatch.add(
-        lambda: _make_sgemm_tn_padded_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        lambda: _make_sgemm_tn_padded_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero
+        ),
         aligned=False,
         name="padded_k2",
         filter=_is_sgemm_large,
     )
     dispatch.add(
-        lambda: _make_sgemm_tn_fallback_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        lambda: _make_sgemm_tn_fallback_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+        ),
         aligned=False,
         name="fallback",
         filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k),
@@ -939,6 +1039,7 @@ def _make_sgemm_nt_aligned_runner(
         _sgemm_nt_kernel2[grid](
             A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
         )
+
     return run
 
 
@@ -947,21 +1048,41 @@ def _make_sgemm_nt_padded_runner(
 ):
     def run():
         (
-            A_padded, B_padded, C_padded, C_2d,
-            lda_pad, ldb_pad, ldc_pad, m_pad, n_pad, k_pad,
-        ) = _sgemm_pad_tensors(A, lda, CUBLAS_OP_N, B, ldb, CUBLAS_OP_T, C, ldc, m, n, k)
+            A_padded,
+            B_padded,
+            C_padded,
+            C_2d,
+            lda_pad,
+            ldb_pad,
+            ldc_pad,
+            m_pad,
+            n_pad,
+            k_pad,
+        ) = _sgemm_pad_tensors(
+            A, lda, CUBLAS_OP_N, B, ldb, CUBLAS_OP_T, C, ldc, m, n, k
+        )
 
         grid_pad = lambda meta: (
             triton.cdiv(m_pad, meta["BLOCK_M"]) * triton.cdiv(n_pad, meta["BLOCK_N"]),
         )
 
         _sgemm_nt_kernel2[grid_pad](
-            A_padded, B_padded, C_padded, alpha, beta,
-            m_pad, n_pad, k_pad,
-            lda_pad, ldb_pad, ldc_pad, beta_is_zero,
+            A_padded,
+            B_padded,
+            C_padded,
+            alpha,
+            beta,
+            m_pad,
+            n_pad,
+            k_pad,
+            lda_pad,
+            ldb_pad,
+            ldc_pad,
+            beta_is_zero,
         )
 
         C_2d[:m, :n] = C_padded[:m, :n]
+
     return run
 
 
@@ -980,10 +1101,21 @@ def _make_sgemm_nt_thin_runner(
             num_k_splits,
         )
         _sgemm_nt_thin_kernel[grid_thin](
-            A, B, C, alpha, beta, m, n, k, lda, ldb, ldc,
+            A,
+            B,
+            C,
+            alpha,
+            beta,
+            m,
+            n,
+            k,
+            lda,
+            ldb,
+            ldc,
             BETA_IS_ZERO=beta_is_zero,
             SPLIT_K=num_k_splits,
         )
+
     return run
 
 
@@ -994,6 +1126,7 @@ def _make_sgemm_nt_fallback_runner(
         _sgemm_nt_kernel[grid](
             A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
         )
+
     return run
 
 
@@ -1001,15 +1134,29 @@ def _make_sgemm_nt_kernel3_runner(
     A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
 ):
     """Runner for NT block_ptr kernel3 with tf32x3."""
+
     def run():
         _sgemm_nt_kernel3[grid](
             A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
         )
+
     return run
 
 
 def _build_sgemm_nt_dispatch_table(
-    A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid,
+    A,
+    lda,
+    B,
+    ldb,
+    C,
+    ldc,
+    m,
+    n,
+    k,
+    alpha,
+    beta,
+    beta_is_zero,
+    grid,
     model=libcache.model,
 ) -> SizeAutoDispatch:
     dispatch = SizeAutoDispatch(
@@ -1018,39 +1165,53 @@ def _build_sgemm_nt_dispatch_table(
         model=model,
     )
     dispatch.add(
-        lambda: _make_sgemm_nt_aligned_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        lambda: _make_sgemm_nt_aligned_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+        ),
         aligned=True,
         name="aligned_k2",
     )
     dispatch.add(
-        lambda: _make_sgemm_nt_padded_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        lambda: _make_sgemm_nt_padded_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero
+        ),
         aligned=False,
         name="padded_k2",
         filter=_is_sgemm_large,
     )
     dispatch.add(
-        lambda: _make_sgemm_nt_kernel3_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        lambda: _make_sgemm_nt_kernel3_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+        ),
         aligned=False,
         name="kernel3_square_near_pow2",
         filter=_is_sgemm_square_near_pow2,
     )
     dispatch.add(
-        lambda: _make_sgemm_nt_padded_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        lambda: _make_sgemm_nt_padded_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero
+        ),
         aligned=False,
         name="padded_k2_square_near_pow2_large",
         filter=lambda m, n, k, **kw: _is_sgemm_square_near_pow2(m, n, k) and m >= 768,
     )
     dispatch.add(
-        lambda: _make_sgemm_nt_thin_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        lambda: _make_sgemm_nt_thin_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero
+        ),
         aligned=False,
         name="thin",
-        filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k) and not _is_sgemm_square_near_pow2(m, n, k),
+        filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k)
+        and not _is_sgemm_square_near_pow2(m, n, k),
     )
     dispatch.add(
-        lambda: _make_sgemm_nt_fallback_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        lambda: _make_sgemm_nt_fallback_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+        ),
         aligned=False,
         name="fallback",
-        filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k) and not _is_sgemm_square_near_pow2(m, n, k),
+        filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k)
+        and not _is_sgemm_square_near_pow2(m, n, k),
     )
     return dispatch
 
@@ -1062,6 +1223,7 @@ def _make_sgemm_tt_aligned_runner(
         _sgemm_tt_kernel2[grid](
             A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
         )
+
     return run
 
 
@@ -1070,21 +1232,41 @@ def _make_sgemm_tt_padded_runner(
 ):
     def run():
         (
-            A_padded, B_padded, C_padded, C_2d,
-            lda_pad, ldb_pad, ldc_pad, m_pad, n_pad, k_pad,
-        ) = _sgemm_pad_tensors(A, lda, CUBLAS_OP_T, B, ldb, CUBLAS_OP_T, C, ldc, m, n, k)
+            A_padded,
+            B_padded,
+            C_padded,
+            C_2d,
+            lda_pad,
+            ldb_pad,
+            ldc_pad,
+            m_pad,
+            n_pad,
+            k_pad,
+        ) = _sgemm_pad_tensors(
+            A, lda, CUBLAS_OP_T, B, ldb, CUBLAS_OP_T, C, ldc, m, n, k
+        )
 
         grid_pad = lambda meta: (
             triton.cdiv(m_pad, meta["BLOCK_M"]) * triton.cdiv(n_pad, meta["BLOCK_N"]),
         )
 
         _sgemm_tt_kernel2[grid_pad](
-            A_padded, B_padded, C_padded, alpha, beta,
-            m_pad, n_pad, k_pad,
-            lda_pad, ldb_pad, ldc_pad, beta_is_zero,
+            A_padded,
+            B_padded,
+            C_padded,
+            alpha,
+            beta,
+            m_pad,
+            n_pad,
+            k_pad,
+            lda_pad,
+            ldb_pad,
+            ldc_pad,
+            beta_is_zero,
         )
 
         C_2d[:m, :n] = C_padded[:m, :n]
+
     return run
 
 
@@ -1103,10 +1285,21 @@ def _make_sgemm_tt_thin_runner(
             num_k_splits,
         )
         _sgemm_tt_thin_kernel[grid_thin](
-            A, B, C, alpha, beta, m, n, k, lda, ldb, ldc,
+            A,
+            B,
+            C,
+            alpha,
+            beta,
+            m,
+            n,
+            k,
+            lda,
+            ldb,
+            ldc,
             BETA_IS_ZERO=beta_is_zero,
             SPLIT_K=num_k_splits,
         )
+
     return run
 
 
@@ -1117,11 +1310,24 @@ def _make_sgemm_tt_fallback_runner(
         _sgemm_tt_kernel[grid](
             A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
         )
+
     return run
 
 
 def _build_sgemm_tt_dispatch_table(
-    A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid,
+    A,
+    lda,
+    B,
+    ldb,
+    C,
+    ldc,
+    m,
+    n,
+    k,
+    alpha,
+    beta,
+    beta_is_zero,
+    grid,
     model=libcache.model,
 ) -> SizeAutoDispatch:
     dispatch = SizeAutoDispatch(
@@ -1130,24 +1336,32 @@ def _build_sgemm_tt_dispatch_table(
         model=model,
     )
     dispatch.add(
-        lambda: _make_sgemm_tt_aligned_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        lambda: _make_sgemm_tt_aligned_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+        ),
         aligned=True,
         name="aligned_k2",
     )
     dispatch.add(
-        lambda: _make_sgemm_tt_padded_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        lambda: _make_sgemm_tt_padded_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero
+        ),
         aligned=False,
         name="padded_k2",
         filter=_is_sgemm_large,
     )
     dispatch.add(
-        lambda: _make_sgemm_tt_thin_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero),
+        lambda: _make_sgemm_tt_thin_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero
+        ),
         aligned=False,
         name="thin",
         filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k),
     )
     dispatch.add(
-        lambda: _make_sgemm_tt_fallback_runner(A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid),
+        lambda: _make_sgemm_tt_fallback_runner(
+            A, lda, B, ldb, C, ldc, m, n, k, alpha, beta, beta_is_zero, grid
+        ),
         aligned=False,
         name="fallback",
         filter=lambda m, n, k, **kw: not _is_sgemm_large(m, n, k),
@@ -1225,29 +1439,73 @@ def sgemm(
     with torch_device_fn.device(A.device):
         if transa == CUBLAS_OP_N and transb == CUBLAS_OP_N:
             dispatch = _build_sgemm_nn_dispatch_table(
-                A, lda, B, ldb, C, ldc,
-                m, n, k, alpha, beta, beta_is_zero, grid,
+                A,
+                lda,
+                B,
+                ldb,
+                C,
+                ldc,
+                m,
+                n,
+                k,
+                alpha,
+                beta,
+                beta_is_zero,
+                grid,
             )
             runner = dispatch.lookup_and_build(m, n, k, aligned, snapshot_tensor=C)
             runner()
         elif transa == CUBLAS_OP_T and transb == CUBLAS_OP_N:
             dispatch = _build_sgemm_tn_dispatch_table(
-                A, lda, B, ldb, C, ldc,
-                m, n, k, alpha, beta, beta_is_zero, grid,
+                A,
+                lda,
+                B,
+                ldb,
+                C,
+                ldc,
+                m,
+                n,
+                k,
+                alpha,
+                beta,
+                beta_is_zero,
+                grid,
             )
             runner = dispatch.lookup_and_build(m, n, k, aligned, snapshot_tensor=C)
             runner()
         elif transa == CUBLAS_OP_N and transb == CUBLAS_OP_T:
             dispatch = _build_sgemm_nt_dispatch_table(
-                A, lda, B, ldb, C, ldc,
-                m, n, k, alpha, beta, beta_is_zero, grid,
+                A,
+                lda,
+                B,
+                ldb,
+                C,
+                ldc,
+                m,
+                n,
+                k,
+                alpha,
+                beta,
+                beta_is_zero,
+                grid,
             )
             runner = dispatch.lookup_and_build(m, n, k, aligned, snapshot_tensor=C)
             runner()
         else:
             dispatch = _build_sgemm_tt_dispatch_table(
-                A, lda, B, ldb, C, ldc,
-                m, n, k, alpha, beta, beta_is_zero, grid,
+                A,
+                lda,
+                B,
+                ldb,
+                C,
+                ldc,
+                m,
+                n,
+                k,
+                alpha,
+                beta,
+                beta_is_zero,
+                grid,
             )
             runner = dispatch.lookup_and_build(m, n, k, aligned, snapshot_tensor=C)
             runner()
@@ -1808,10 +2066,7 @@ def _hgemm_nn_is_skinny_aligned_large(m, n, k, aligned, **_kw):
         aligned
         and (m * n > 2048 * 2048)
         and min(m, n) >= 64
-        and (
-            (m >= 16384 and max(n, k) <= 2048)
-            or (n >= 16384 and max(m, k) <= 2048)
-        )
+        and ((m >= 16384 and max(n, k) <= 2048) or (n >= 16384 and max(m, k) <= 2048))
     )
 
 
@@ -1831,63 +2086,152 @@ def _hgemm_nn_is_default(**_kw):
 # Module-level factory functions for hgemm StaticDispatch
 # ---------------------------------------------------------------------------
 def _hgemm_nn_build_kernel4(
-    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+    A,
+    B,
+    C,
+    m,
+    n,
+    k,
+    lda,
+    ldb,
+    ldc,
+    alpha,
+    beta,
+    beta_is_zero,
 ):
-    return lambda: _hgemm_nn_kernel4[(
-        triton.cdiv(m, 128) * triton.cdiv(n, 256),
-    )](
+    return lambda: _hgemm_nn_kernel4[(triton.cdiv(m, 128) * triton.cdiv(n, 256),)](
         TensorDescriptor(base=A, shape=[m, k], strides=[lda, 1], block_shape=[128, 64]),
         TensorDescriptor(base=B, shape=[k, n], strides=[ldb, 1], block_shape=[64, 256]),
-        TensorDescriptor(base=C, shape=[m, n], strides=[ldc, 1], block_shape=[128, 256]),
-        alpha, beta, m, n, k, beta_is_zero,
-        BLOCK_M=128, BLOCK_N=256, BLOCK_K=64, GROUP_M=8,
-        num_stages=4, num_warps=8, num_ctas=1,
+        TensorDescriptor(
+            base=C, shape=[m, n], strides=[ldc, 1], block_shape=[128, 256]
+        ),
+        alpha,
+        beta,
+        m,
+        n,
+        k,
+        beta_is_zero,
+        BLOCK_M=128,
+        BLOCK_N=256,
+        BLOCK_K=64,
+        GROUP_M=8,
+        num_stages=4,
+        num_warps=8,
+        num_ctas=1,
     )
 
 
 def _hgemm_nn_build_kernel3(
-    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+    A,
+    B,
+    C,
+    m,
+    n,
+    k,
+    lda,
+    ldb,
+    ldc,
+    alpha,
+    beta,
+    beta_is_zero,
 ):
     grid = lambda meta: (
         triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
     )
     return lambda: _hgemm_nn_kernel3[grid](
-        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+        A,
+        B,
+        C,
+        alpha,
+        beta,
+        m,
+        n,
+        k,
+        lda,
+        ldb,
+        ldc,
+        beta_is_zero,
     )
 
 
 def _hgemm_nn_build_kernel2(
-    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+    A,
+    B,
+    C,
+    m,
+    n,
+    k,
+    lda,
+    ldb,
+    ldc,
+    alpha,
+    beta,
+    beta_is_zero,
 ):
     grid = lambda meta: (
         triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
     )
     return lambda: _hgemm_nn_kernel2[grid](
-        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+        A,
+        B,
+        C,
+        alpha,
+        beta,
+        m,
+        n,
+        k,
+        lda,
+        ldb,
+        ldc,
+        beta_is_zero,
     )
 
 
 def _hgemm_nn_build_kernel(
-    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+    A,
+    B,
+    C,
+    m,
+    n,
+    k,
+    lda,
+    ldb,
+    ldc,
+    alpha,
+    beta,
+    beta_is_zero,
 ):
     grid = lambda meta: (
         triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
     )
     return lambda: _hgemm_nn_kernel[grid](
-        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+        A,
+        B,
+        C,
+        alpha,
+        beta,
+        m,
+        n,
+        k,
+        lda,
+        ldb,
+        ldc,
+        beta_is_zero,
     )
 
 
-_HGEMM_NN_DISPATCH = StaticDispatch([
-    # skinny + aligned large → kernel4 (TensorDescriptor, hardcoded config)
-    (_hgemm_nn_is_skinny_aligned_large, _hgemm_nn_build_kernel4),
-    # aligned large → kernel3 (TensorDescriptor, autotuned config)
-    (_hgemm_nn_is_aligned_large, _hgemm_nn_build_kernel3),
-    # aligned small → kernel2 (block_ptr)
-    (_hgemm_nn_is_aligned_small, _hgemm_nn_build_kernel2),
-    # default → kernel (original)
-    (_hgemm_nn_is_default, _hgemm_nn_build_kernel),
-])
+_HGEMM_NN_DISPATCH = StaticDispatch(
+    [
+        # skinny + aligned large → kernel4 (TensorDescriptor, hardcoded config)
+        (_hgemm_nn_is_skinny_aligned_large, _hgemm_nn_build_kernel4),
+        # aligned large → kernel3 (TensorDescriptor, autotuned config)
+        (_hgemm_nn_is_aligned_large, _hgemm_nn_build_kernel3),
+        # aligned small → kernel2 (block_ptr)
+        (_hgemm_nn_is_aligned_small, _hgemm_nn_build_kernel2),
+        # default → kernel (original)
+        (_hgemm_nn_is_default, _hgemm_nn_build_kernel),
+    ]
+)
 
 
 def hgemm(
@@ -1952,11 +2296,23 @@ def hgemm(
     with torch_device_fn.device(A.device):
         if transa == CUBLAS_OP_N and transb == CUBLAS_OP_N:
             runner = _HGEMM_NN_DISPATCH.lookup_and_build(
-                m, n, k, aligned,
+                m,
+                n,
+                k,
+                aligned,
                 context=dict(
-                    A=A, B=B, C=C, m=m, n=n, k=k,
-                    lda=lda, ldb=ldb, ldc=ldc,
-                    alpha=alpha, beta=beta, beta_is_zero=beta_is_zero,
+                    A=A,
+                    B=B,
+                    C=C,
+                    m=m,
+                    n=n,
+                    k=k,
+                    lda=lda,
+                    ldb=ldb,
+                    ldc=ldc,
+                    alpha=alpha,
+                    beta=beta,
+                    beta_is_zero=beta_is_zero,
                 ),
             )
             runner()

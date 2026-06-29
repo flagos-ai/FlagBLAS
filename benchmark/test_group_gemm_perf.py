@@ -231,7 +231,6 @@ def gems_group_gemm_wrapper(
 
 
 class GroupGemmBenchmark(Benchmark):
-
     def __init__(self, *args, alpha=1.0, beta=0.0, **kwargs):
         super().__init__(*args, **kwargs)
         self.alpha = alpha

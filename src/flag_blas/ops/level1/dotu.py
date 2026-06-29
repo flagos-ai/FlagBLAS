@@ -382,12 +382,12 @@ def _validate_dotu_inputs(
 
     required_x = 1 + (n - 1) * incx
     required_y = 1 + (n - 1) * incy
-    assert x.numel() >= required_x, (
-        f"x too short: need at least {required_x} elements for n={n}, incx={incx}"
-    )
-    assert y.numel() >= required_y, (
-        f"y too short: need at least {required_y} elements for n={n}, incy={incy}"
-    )
+    assert (
+        x.numel() >= required_x
+    ), f"x too short: need at least {required_x} elements for n={n}, incx={incx}"
+    assert (
+        y.numel() >= required_y
+    ), f"y too short: need at least {required_y} elements for n={n}, incy={incy}"
 
 
 def _dotu_impl(
