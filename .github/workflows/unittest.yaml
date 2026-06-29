@@ -12,9 +12,12 @@ jobs:
   preprocess:
     runs-on: ubuntu-latest
     outputs:
-      labels: ${{ fromJSON(steps.get-labels.outputs.result) }}
+      changed_files: ${{ steps.changed-files.outputs.all_changed_files }}
       pr_id: ${{ steps.get-pr-id.outputs.PR_ID }}
+      labels: ${{ fromJSON(steps.get-labels.outputs.result) }}
     steps:
+      - id: changed-files
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96  # v47.0.6
       - uses: actions/checkout@v4
 
       - id: wait-for-triage
@@ -75,3 +78,4 @@ jobs:
       runner_label: 'h100'
       gpu_check_script: 'tools/check_nvidia_gpu.sh'
       pr_id: ${{ needs.preprocess.outputs.pr_id }}
+      changed_files: ${{ join(needs.preprocess.outputs.changed_files, ' ') }}
