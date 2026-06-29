@@ -7,6 +7,7 @@ import torch
 from scipy.linalg import blas as cpu_blas
 
 import flag_blas
+
 from .accuracy_utils import L1_PAIR_STRIDES, SWAP_SHAPES
 from .conftest import TO_CPU
 
@@ -95,6 +96,7 @@ def swap_reference(n, x, incx, y, incy):
 # Accuracy tests - real dtypes
 # ==============================
 
+
 @pytest.mark.swap
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("shape", SWAP_SHAPES)
@@ -128,6 +130,7 @@ def test_accuracy_swap_real(dtype, shape, incx, incy):
 # ==============================
 # Accuracy tests - complex dtypes
 # ==============================
+
 
 @pytest.mark.swap
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
@@ -163,6 +166,7 @@ def test_accuracy_swap_complex(dtype, shape, incx, incy):
 # Edge case: n <= 0 (empty tensor)
 # ==============================
 
+
 @pytest.mark.swap
 @pytest.mark.parametrize(
     "dtype", [torch.float32, torch.float64, torch.complex64, torch.complex128]
@@ -197,6 +201,7 @@ def test_accuracy_swap_empty_tensor(dtype):
 # Different n: n smaller than allocated length (real)
 # ==============================
 
+
 @pytest.mark.swap
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize(
@@ -230,6 +235,7 @@ def test_accuracy_swap_different_n_real(dtype, n, vec_size):
 # ==============================
 # Different n: n smaller than allocated length (complex)
 # ==============================
+
 
 @pytest.mark.swap
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])

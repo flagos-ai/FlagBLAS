@@ -6,10 +6,10 @@ import warnings
 
 import torch
 
-from flag_blas import runtime
 from flag_blas import testing  # noqa: F401
-from flag_blas.ops import *  # noqa: F401,F403
+from flag_blas import runtime
 from flag_blas.config import aten_patch_list, resolve_user_setting
+from flag_blas.ops import *  # noqa: F401,F403
 from flag_blas.runtime.register import Register
 
 device = runtime.device.name

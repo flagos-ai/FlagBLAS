@@ -7,13 +7,13 @@ import triton.language as tl
 
 from flag_blas import runtime
 from flag_blas.ops.level2._constants import (
-    CUBLAS_OP_N,
-    CUBLAS_OP_T,
-    CUBLAS_OP_C,
-    CUBLAS_FILL_MODE_LOWER,
-    CUBLAS_FILL_MODE_UPPER,
     CUBLAS_DIAG_NON_UNIT,
     CUBLAS_DIAG_UNIT,
+    CUBLAS_FILL_MODE_LOWER,
+    CUBLAS_FILL_MODE_UPPER,
+    CUBLAS_OP_C,
+    CUBLAS_OP_N,
+    CUBLAS_OP_T,
 )
 from flag_blas.runtime import torch_device_fn
 from flag_blas.utils import libentry, libtuner

@@ -6,17 +6,16 @@ import cupy as cp
 import pytest
 import torch
 from cupy_backends.cuda.libs import cublas
-import flag_blas
 
+import flag_blas
+from benchmark.performance_utils import Benchmark
 from flag_blas.ops import (
+    CUBLAS_DIAG_NON_UNIT,
     CUBLAS_FILL_MODE_LOWER,
     CUBLAS_FILL_MODE_UPPER,
     CUBLAS_OP_N,
     CUBLAS_OP_T,
-    CUBLAS_DIAG_NON_UNIT,
 )
-
-from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
 
 STBSV_SIZES = [
@@ -117,7 +116,6 @@ def _stored_band_nnz(n, k):
 
 
 class StbsvBenchmark(Benchmark):
-
     def __init__(
         self,
         *args,

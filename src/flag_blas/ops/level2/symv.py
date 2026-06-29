@@ -5,6 +5,7 @@ from typing import Union
 import torch
 import triton
 import triton.language as tl
+
 from flag_blas.ops.level2._constants import (
     CUBLAS_FILL_MODE_LOWER,
     CUBLAS_FILL_MODE_UPPER,

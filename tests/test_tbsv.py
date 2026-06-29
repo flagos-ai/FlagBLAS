@@ -1,18 +1,19 @@
 import ctypes
 import ctypes.util
 import math
+
+import cupy as cp
 import pytest
 import torch
-import cupy as cp
-import flag_blas
 
+import flag_blas
 from flag_blas.ops import (
+    CUBLAS_DIAG_NON_UNIT,
+    CUBLAS_DIAG_UNIT,
     CUBLAS_FILL_MODE_LOWER,
     CUBLAS_FILL_MODE_UPPER,
     CUBLAS_OP_N,
     CUBLAS_OP_T,
-    CUBLAS_DIAG_NON_UNIT,
-    CUBLAS_DIAG_UNIT,
 )
 
 
