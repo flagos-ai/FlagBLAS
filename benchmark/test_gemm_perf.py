@@ -436,6 +436,7 @@ class GemmBenchmark(Benchmark):
         transb=CUBLAS_OP_N,
         alpha=1.0,
         beta=0.0,
+        alpha_dtype=np.float32,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -443,6 +444,7 @@ class GemmBenchmark(Benchmark):
         self.transb = transb
         self.alpha = alpha
         self.beta = beta
+        self.alpha_dtype = alpha_dtype
 
     def set_more_metrics(self):
         return ["tflops", "gbps"]
@@ -460,8 +462,8 @@ class GemmBenchmark(Benchmark):
         cublas.setMathMode(handle, 0)
         torch.backends.cuda.matmul.allow_tf32 = False
 
-        alpha_np = np.array(self.alpha, dtype=np.float32)
-        beta_np = np.array(self.beta, dtype=np.float32)
+        alpha_np = np.array(self.alpha, dtype=self.alpha_dtype)
+        beta_np = np.array(self.beta, dtype=self.alpha_dtype)
         alpha_ptr = alpha_np.ctypes.data
         beta_ptr = beta_np.ctypes.data
 

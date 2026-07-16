@@ -43,6 +43,7 @@ from flag_blas.ops.level2.tbmv import ctbmv, dtbmv, stbmv, ztbmv
 from flag_blas.ops.level2.tbsv import stbsv
 from flag_blas.ops.level2.tpmv import ctpmv, dtpmv, stpmv, ztpmv
 from flag_blas.ops.level2.trmv import ctrmv, dtrmv, strmv, ztrmv
+from flag_blas.ops.level3.dgemm import dgemm
 from flag_blas.ops.level3.gemm import bfgemm, fp8gemm, hgemm, sgemm
 from flag_blas.ops.level3.group_gemm import group_gemm, group_mm
 
@@ -147,6 +148,7 @@ __all__ = [
     "CUBLAS_OP_C",
     # gemm
     "sgemm",
+    "dgemm",
     "hgemm",
     "bfgemm",
     "fp8gemm",

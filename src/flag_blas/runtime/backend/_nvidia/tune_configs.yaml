@@ -2219,3 +2219,18 @@ ztpmv:
   - META: {BLOCK_SIZE_M: 64, BLOCK_K: 32}
     num_warps: 8
     num_stages: 2
+
+dgemm:
+  - META: {BLOCK_M: 8, BLOCK_N: 8, BLOCK_K: 16, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 8, BLOCK_N: 16, BLOCK_K: 16, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 16, BLOCK_N: 8, BLOCK_K: 16, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 16, BLOCK_N: 16, BLOCK_K: 8, GROUP_M: 4}
+    num_warps: 4
+    num_stages: 3
+
