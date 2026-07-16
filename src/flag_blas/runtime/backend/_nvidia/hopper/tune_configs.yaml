@@ -1666,30 +1666,12 @@ fp8_gemv_splitk:
     num_stages: 4
 
 dgemm:
-  - META: {BLOCK_M: 8, BLOCK_N: 8, BLOCK_K: 16, GROUP_M: 8}
-    num_warps: 4
-    num_stages: 3
-  - META: {BLOCK_M: 8, BLOCK_N: 16, BLOCK_K: 16, GROUP_M: 8}
-    num_warps: 4
-    num_stages: 3
-  - META: {BLOCK_M: 16, BLOCK_N: 8, BLOCK_K: 16, GROUP_M: 8}
-    num_warps: 4
-    num_stages: 3
-  - META: {BLOCK_M: 16, BLOCK_N: 16, BLOCK_K: 8, GROUP_M: 4}
+  - META: {BLOCK_M: 16, BLOCK_N: 16, BLOCK_K: 16, GROUP_M: 8}
     num_warps: 4
     num_stages: 3
 
 dgemm_hopper:
-  - META: {BLOCK_M: 8, BLOCK_N: 16, BLOCK_K: 16, GROUP_M: 8}
-    num_warps: 4
-    num_stages: 3
-  - META: {BLOCK_M: 16, BLOCK_N: 8, BLOCK_K: 16, GROUP_M: 8}
-    num_warps: 4
-    num_stages: 3
-  - META: {BLOCK_M: 16, BLOCK_N: 16, BLOCK_K: 8, GROUP_M: 4}
-    num_warps: 4
-    num_stages: 3
-  - META: {BLOCK_M: 8, BLOCK_N: 32, BLOCK_K: 8, GROUP_M: 8}
+  - META: {BLOCK_M: 16, BLOCK_N: 16, BLOCK_K: 16, GROUP_M: 8}
     num_warps: 4
     num_stages: 3
 
