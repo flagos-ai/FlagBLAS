@@ -17,6 +17,134 @@ logger = logging.getLogger(__name__)
 _DGEMM_HOPPER_KEY = ["m", "n", "k", "TRANS_A", "TRANS_B", "BETA_IS_ZERO"]
 
 
+def _select_dgemm_dot_config(transa: int, transb: int, m: int, n: int, k: int):
+    max_dim = max(m, n, k)
+    min_dim = min(m, n, k)
+    is_aligned = (m % 64 == 0) and (n % 64 == 0) and (k % 64 == 0)
+    maxnreg = None
+
+    if transa == 0 and transb == 0:
+        if max_dim <= 32:
+            block_m, block_n, block_k, num_warps, group_m = 32, 16, 16, 4, 1
+        elif max_dim <= 128:
+            block_m, block_n, block_k, num_warps, group_m = 16, 32, 32, 4, 1
+        elif max_dim <= 256:
+            block_m, block_n, block_k, num_warps, group_m = 16, 32, 64, 4, 1
+        elif max_dim <= 512:
+            if is_aligned:
+                block_m, block_n, block_k, num_warps, group_m = 32, 32, 32, 4, 1
+            else:
+                block_m, block_n, block_k, num_warps, group_m = 64, 32, 32, 4, 1
+        elif max_dim <= 1024:
+            if is_aligned:
+                block_m, block_n, block_k, num_warps, group_m = 64, 128, 64, 8, 1
+                maxnreg = 224
+            else:
+                block_m, block_n, block_k, num_warps, group_m = 64, 128, 16, 4, 1
+        elif max_dim <= 1536:
+            block_m, block_n, block_k, num_warps, group_m = 64, 32, 32, 4, 1
+            maxnreg = 128
+        elif max_dim <= 2048:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 8
+        elif max_dim == 4095:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 16, 4, 16
+        elif max_dim < 4096 and min_dim >= 2048:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 2
+        elif max_dim <= 4096:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 8
+        elif min_dim >= 8192:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 8
+        elif min_dim >= 6144:
+            block_m, block_n, block_k, num_warps, group_m = 128, 64, 32, 4, 8
+        else:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 8
+    elif transa == 0 and transb == 1:
+        if max_dim == 4095:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 16, 4, 16
+        elif max_dim == 511:
+            block_m, block_n, block_k, num_warps, group_m = 64, 32, 32, 4, 1
+        elif max_dim <= 32:
+            block_m, block_n, block_k, num_warps, group_m = 16, 32, 16, 4, 4
+        elif max_dim <= 64:
+            block_m, block_n, block_k, num_warps, group_m = 16, 16, 64, 4, 4
+        elif max_dim <= 128:
+            block_m, block_n, block_k, num_warps, group_m = 16, 16, 64, 4, 1
+        elif max_dim <= 256:
+            block_m, block_n, block_k, num_warps, group_m = 32, 16, 64, 4, 1
+        elif max_dim <= 512:
+            block_m, block_n, block_k, num_warps, group_m = 64, 32, 64, 8, 1
+        elif max_dim <= 1024:
+            block_m, block_n, block_k, num_warps, group_m = 64, 64, 32, 4, 8
+        elif max_dim <= 1536:
+            block_m, block_n, block_k, num_warps, group_m = 32, 64, 32, 4, 4
+        elif max_dim <= 4096:
+            block_m, block_n, block_k, num_warps, group_m = 128, 64, 32, 4, 8
+        elif min_dim >= 6144:
+            block_m, block_n, block_k, num_warps, group_m = 128, 64, 16, 4, 8
+        else:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 8
+    elif transa == 1 and transb == 0:
+        if max_dim == 4095:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 16, 4, 16
+        elif max_dim == 511:
+            block_m, block_n, block_k, num_warps, group_m = 64, 32, 32, 4, 1
+        elif max_dim <= 32:
+            block_m, block_n, block_k, num_warps, group_m = 16, 16, 16, 4, 8
+        elif max_dim <= 64:
+            block_m, block_n, block_k, num_warps, group_m = 16, 16, 64, 4, 1
+        elif max_dim <= 128:
+            block_m, block_n, block_k, num_warps, group_m = 16, 16, 64, 4, 8
+        elif max_dim <= 256:
+            block_m, block_n, block_k, num_warps, group_m = 16, 32, 64, 4, 8
+        elif max_dim == 512:
+            block_m, block_n, block_k, num_warps, group_m = 32, 64, 64, 4, 1
+        elif max_dim == 1023:
+            block_m, block_n, block_k, num_warps, group_m = 64, 64, 16, 4, 8
+        elif max_dim <= 512:
+            block_m, block_n, block_k, num_warps, group_m = 32, 64, 64, 4, 8
+        elif max_dim <= 1024:
+            block_m, block_n, block_k, num_warps, group_m = 32, 128, 16, 4, 1
+            maxnreg = 168
+        elif max_dim <= 1536:
+            block_m, block_n, block_k, num_warps, group_m = 64, 64, 16, 4, 1
+            maxnreg = 168
+        elif max_dim <= 4096:
+            block_m, block_n, block_k, num_warps, group_m = 128, 64, 32, 4, 8
+        elif min_dim >= 8192:
+            block_m, block_n, block_k, num_warps, group_m = 128, 64, 32, 4, 8
+        elif min_dim >= 6144:
+            block_m, block_n, block_k, num_warps, group_m = 128, 64, 32, 4, 4
+        else:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 8
+    else:
+        if max_dim == 4095:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 16, 4, 16
+        elif max_dim == 511:
+            block_m, block_n, block_k, num_warps, group_m = 64, 32, 32, 4, 1
+        elif max_dim <= 32:
+            block_m, block_n, block_k, num_warps, group_m = 16, 16, 16, 4, 8
+        elif max_dim <= 64:
+            block_m, block_n, block_k, num_warps, group_m = 16, 16, 64, 4, 4
+        elif max_dim <= 128:
+            block_m, block_n, block_k, num_warps, group_m = 16, 32, 64, 4, 4
+        elif max_dim <= 256:
+            block_m, block_n, block_k, num_warps, group_m = 16, 32, 64, 4, 8
+        elif max_dim <= 512:
+            block_m, block_n, block_k, num_warps, group_m = 32, 32, 64, 4, 1
+        elif max_dim <= 1536:
+            block_m, block_n, block_k, num_warps, group_m = 64, 64, 16, 4, 1
+        elif max_dim <= 4096:
+            block_m, block_n, block_k, num_warps, group_m = 128, 64, 32, 4, 8
+        elif min_dim >= 8192:
+            block_m, block_n, block_k, num_warps, group_m = 128, 64, 32, 4, 8
+        elif min_dim >= 6144:
+            block_m, block_n, block_k, num_warps, group_m = 128, 64, 32, 4, 4
+        else:
+            block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 8
+
+    return block_m, block_n, block_k, num_warps, group_m, maxnreg
+
+
 @libentry()
 @libtuner(
     configs=runtime.get_tuned_config("dgemm_hopper"),
@@ -92,7 +220,7 @@ def _dgemm_hopper_kernel(
 
 
 @triton.jit
-def _dgemm_nn_dot_kernel(
+def _dgemm_dot_kernel(
     a_ptr,
     b_ptr,
     c_ptr,
@@ -104,6 +232,8 @@ def _dgemm_nn_dot_kernel(
     lda,
     ldb,
     ldc,
+    TRANS_A: tl.constexpr,
+    TRANS_B: tl.constexpr,
     BETA_IS_ZERO: tl.constexpr,
     ALPHA_IS_ONE: tl.constexpr,
     BLOCK_M: tl.constexpr,
@@ -130,13 +260,23 @@ def _dgemm_nn_dot_kernel(
     for k_start in range(0, k, BLOCK_K):
         cur_k = k_start + offs_k
         mask_k = cur_k < k
+        if TRANS_A == 0:
+            a_ptrs = a_ptr + offs_m[:, None] * lda + cur_k[None, :]
+        else:
+            a_ptrs = a_ptr + cur_k[None, :] * lda + offs_m[:, None]
+
+        if TRANS_B == 0:
+            b_ptrs = b_ptr + cur_k[:, None] * ldb + offs_n[None, :]
+        else:
+            b_ptrs = b_ptr + offs_n[None, :] * ldb + cur_k[:, None]
+
         a = tl.load(
-            a_ptr + offs_m[:, None] * lda + cur_k[None, :],
+            a_ptrs,
             mask=mask_m[:, None] & mask_k[None, :],
             other=0.0,
         )
         b = tl.load(
-            b_ptr + cur_k[:, None] * ldb + offs_n[None, :],
+            b_ptrs,
             mask=mask_k[:, None] & mask_n[None, :],
             other=0.0,
         )
@@ -189,46 +329,10 @@ def dgemm(
     alpha_is_one = alpha == 1.0
 
     with torch_device_fn.device(A.device):
-        if transa == 0 and transb == 0:
-            max_dim = max(m, n, k)
-            min_dim = min(m, n, k)
-            is_aligned = (m % 64 == 0) and (n % 64 == 0) and (k % 64 == 0)
-
-            maxnreg = None
-            if max_dim <= 32:
-                block_m, block_n, block_k, num_warps, group_m = 32, 16, 16, 4, 1
-            elif max_dim <= 128:
-                block_m, block_n, block_k, num_warps, group_m = 16, 32, 32, 4, 1
-            elif max_dim <= 256:
-                block_m, block_n, block_k, num_warps, group_m = 16, 32, 64, 4, 1
-            elif max_dim <= 512:
-                if is_aligned:
-                    block_m, block_n, block_k, num_warps, group_m = 32, 32, 32, 4, 1
-                else:
-                    block_m, block_n, block_k, num_warps, group_m = 64, 32, 32, 4, 1
-            elif max_dim <= 1024:
-                if is_aligned:
-                    block_m, block_n, block_k, num_warps, group_m = 64, 128, 64, 8, 1
-                    maxnreg = 224
-                else:
-                    block_m, block_n, block_k, num_warps, group_m = 64, 128, 16, 4, 1
-            elif max_dim <= 1536:
-                block_m, block_n, block_k, num_warps, group_m = 64, 32, 32, 4, 1
-                maxnreg = 128
-            elif max_dim <= 2048:
-                block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 8
-            elif max_dim == 4095:
-                block_m, block_n, block_k, num_warps, group_m = 64, 128, 16, 4, 16
-            elif max_dim < 4096 and min_dim >= 2048:
-                block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 2
-            elif max_dim <= 4096:
-                block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 8
-            elif min_dim >= 8192:
-                block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 8
-            elif min_dim >= 6144:
-                block_m, block_n, block_k, num_warps, group_m = 128, 64, 32, 4, 8
-            else:
-                block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 8
+        if transa in (0, 1) and transb in (0, 1):
+            block_m, block_n, block_k, num_warps, group_m, maxnreg = (
+                _select_dgemm_dot_config(transa, transb, m, n, k)
+            )
 
             launch_kwargs = {
                 "BLOCK_M": block_m,
@@ -241,7 +345,7 @@ def dgemm(
                 launch_kwargs["maxnreg"] = maxnreg
 
             grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
-            _dgemm_nn_dot_kernel[grid](
+            _dgemm_dot_kernel[grid](
                 A,
                 B,
                 C,
@@ -253,6 +357,8 @@ def dgemm(
                 lda,
                 ldb,
                 ldc,
+                transa,
+                transb,
                 beta_is_zero,
                 alpha_is_one,
                 **launch_kwargs,
