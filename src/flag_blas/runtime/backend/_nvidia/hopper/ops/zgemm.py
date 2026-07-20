@@ -1,0 +1,451 @@
+import logging
+
+import torch
+import triton
+import triton.language as tl
+
+from flag_blas.runtime.backend._nvidia.hopper.ops.dgemm import (
+    _dgemm_dot_kernel,
+    _select_dgemm_dot_config,
+)
+from flag_blas.ops.level3.zgemm import (
+    ScalarType,
+    _complex_scalar_parts,
+    _validate_zgemm_args,
+    _zgemm_dot_kernel,
+)
+from flag_blas.runtime import torch_device_fn
+
+logger = logging.getLogger(__name__)
+
+
+_ZGEMM_NN_WORKSPACE = {"key": None, "buffers": None}
+
+
+@triton.jit
+def _zgemm_split_sum_kernel(src, dst_r, dst_i, dst_sum, total, BLOCK: tl.constexpr):
+    pid = tl.program_id(0)
+    offsets = pid * BLOCK + tl.arange(0, BLOCK)
+    mask = offsets < total
+    real = tl.load(src + 2 * offsets, mask=mask, other=0.0)
+    imag = tl.load(src + 2 * offsets + 1, mask=mask, other=0.0)
+    tl.store(dst_r + offsets, real, mask=mask)
+    tl.store(dst_i + offsets, imag, mask=mask)
+    tl.store(dst_sum + offsets, real + imag, mask=mask)
+
+
+@triton.jit
+def _zgemm_merge_3m_kernel(dst, prod_r, prod_i, prod_sum, total, BLOCK: tl.constexpr):
+    pid = tl.program_id(0)
+    offsets = pid * BLOCK + tl.arange(0, BLOCK)
+    mask = offsets < total
+    real_prod = tl.load(prod_r + offsets, mask=mask, other=0.0)
+    imag_prod = tl.load(prod_i + offsets, mask=mask, other=0.0)
+    sum_prod = tl.load(prod_sum + offsets, mask=mask, other=0.0)
+    tl.store(dst + 2 * offsets, real_prod - imag_prod, mask=mask)
+    tl.store(dst + 2 * offsets + 1, sum_prod - real_prod - imag_prod, mask=mask)
+
+
+@triton.jit
+def _zgemm_nn_128_kernel(
+    a_ptr,
+    b_ptr,
+    c_ptr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    grid_m = tl.cdiv(128, BLOCK_M)
+    grid_n = tl.cdiv(128, BLOCK_N)
+    width = GROUP_M * grid_n
+    group_id = pid // width
+    group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
+    pid_m = group_id * GROUP_M + (pid % group_size)
+    pid_n = (pid % width) // group_size
+
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+
+    acc_r = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
+    acc_i = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
+    for k_start in range(0, 128, BLOCK_K):
+        cur_k = k_start + offs_k
+        a_elem = offs_m[:, None] * 128 + cur_k[None, :]
+        b_elem = cur_k[:, None] * 128 + offs_n[None, :]
+        ar = tl.load(a_ptr + 2 * a_elem)
+        ai = tl.load(a_ptr + 2 * a_elem + 1)
+        br = tl.load(b_ptr + 2 * b_elem)
+        bi = tl.load(b_ptr + 2 * b_elem + 1)
+
+        acc_r += tl.dot(ar, br, out_dtype=tl.float64, allow_tf32=False) - tl.dot(
+            ai, bi, out_dtype=tl.float64, allow_tf32=False
+        )
+        acc_i += tl.dot(ar, bi, out_dtype=tl.float64, allow_tf32=False) + tl.dot(
+            ai, br, out_dtype=tl.float64, allow_tf32=False
+        )
+
+    c_elem = offs_m[:, None] * 128 + offs_n[None, :]
+    tl.store(c_ptr + 2 * c_elem, acc_r)
+    tl.store(c_ptr + 2 * c_elem + 1, acc_i)
+
+
+def _try_zgemm_nn_128(
+    m: int,
+    n: int,
+    k: int,
+    A: torch.Tensor,
+    lda: int,
+    B: torch.Tensor,
+    ldb: int,
+    C: torch.Tensor,
+    ldc: int,
+) -> bool:
+    if m != 128 or n != 128 or k != 128 or lda != 128 or ldb != 128 or ldc != 128:
+        return False
+
+    A_real = torch.view_as_real(A).reshape(-1)
+    B_real = torch.view_as_real(B).reshape(-1)
+    C_real = torch.view_as_real(C).reshape(-1)
+    grid = (triton.cdiv(128, 8) * triton.cdiv(128, 16),)
+    _zgemm_nn_128_kernel[grid](
+        A_real,
+        B_real,
+        C_real,
+        BLOCK_M=8,
+        BLOCK_N=16,
+        BLOCK_K=16,
+        GROUP_M=1,
+        num_warps=2,
+        num_stages=4,
+    )
+    return True
+
+
+@triton.jit
+def _zgemm_nn_256_kernel(
+    a_ptr,
+    b_ptr,
+    c_ptr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    grid_m = tl.cdiv(256, BLOCK_M)
+    grid_n = tl.cdiv(256, BLOCK_N)
+    width = GROUP_M * grid_n
+    group_id = pid // width
+    group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
+    pid_m = group_id * GROUP_M + (pid % group_size)
+    pid_n = (pid % width) // group_size
+
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+
+    prod_r = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
+    prod_i = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
+    prod_sum = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
+    for k_start in range(0, 256, BLOCK_K):
+        cur_k = k_start + offs_k
+        a_elem = offs_m[:, None] * 256 + cur_k[None, :]
+        b_elem = cur_k[:, None] * 256 + offs_n[None, :]
+        ar = tl.load(a_ptr + 2 * a_elem)
+        ai = tl.load(a_ptr + 2 * a_elem + 1)
+        br = tl.load(b_ptr + 2 * b_elem)
+        bi = tl.load(b_ptr + 2 * b_elem + 1)
+
+        prod_r += tl.dot(ar, br, out_dtype=tl.float64, allow_tf32=False)
+        prod_i += tl.dot(ai, bi, out_dtype=tl.float64, allow_tf32=False)
+        prod_sum += tl.dot(ar + ai, br + bi, out_dtype=tl.float64, allow_tf32=False)
+
+    c_elem = offs_m[:, None] * 256 + offs_n[None, :]
+    tl.store(c_ptr + 2 * c_elem, prod_r - prod_i)
+    tl.store(c_ptr + 2 * c_elem + 1, prod_sum - prod_r - prod_i)
+
+
+def _try_zgemm_nn_256(
+    m: int,
+    n: int,
+    k: int,
+    A: torch.Tensor,
+    lda: int,
+    B: torch.Tensor,
+    ldb: int,
+    C: torch.Tensor,
+    ldc: int,
+) -> bool:
+    if m != 256 or n != 256 or k != 256 or lda != 256 or ldb != 256 or ldc != 256:
+        return False
+
+    A_real = torch.view_as_real(A).reshape(-1)
+    B_real = torch.view_as_real(B).reshape(-1)
+    C_real = torch.view_as_real(C).reshape(-1)
+    grid = (triton.cdiv(256, 16) * triton.cdiv(256, 32),)
+    _zgemm_nn_256_kernel[grid](
+        A_real,
+        B_real,
+        C_real,
+        BLOCK_M=16,
+        BLOCK_N=32,
+        BLOCK_K=32,
+        GROUP_M=1,
+        num_warps=2,
+    )
+    return True
+
+
+def _get_zgemm_nn_workspace(A: torch.Tensor, m: int, n: int, k: int):
+    key = (A.device, m, n, k)
+    if _ZGEMM_NN_WORKSPACE["key"] != key:
+        _ZGEMM_NN_WORKSPACE["key"] = key
+        _ZGEMM_NN_WORKSPACE["buffers"] = (
+            torch.empty((m, k), device=A.device, dtype=torch.float64),
+            torch.empty((m, k), device=A.device, dtype=torch.float64),
+            torch.empty((m, k), device=A.device, dtype=torch.float64),
+            torch.empty((k, n), device=A.device, dtype=torch.float64),
+            torch.empty((k, n), device=A.device, dtype=torch.float64),
+            torch.empty((k, n), device=A.device, dtype=torch.float64),
+            torch.empty((m, n), device=A.device, dtype=torch.float64),
+            torch.empty((m, n), device=A.device, dtype=torch.float64),
+            torch.empty((m, n), device=A.device, dtype=torch.float64),
+        )
+    return _ZGEMM_NN_WORKSPACE["buffers"]
+
+
+def _launch_dgemm_nn(a, b, c, alpha: float, beta: float, m: int, n: int, k: int):
+    block_m, block_n, block_k, num_warps, group_m, maxnreg = _select_dgemm_dot_config(
+        0, 0, m, n, k
+    )
+    grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
+    launch_kwargs = {
+        "BLOCK_M": block_m,
+        "BLOCK_N": block_n,
+        "BLOCK_K": block_k,
+        "GROUP_M": group_m,
+        "num_warps": num_warps,
+    }
+    if maxnreg is not None:
+        launch_kwargs["maxnreg"] = maxnreg
+    _dgemm_dot_kernel[grid](
+        a,
+        b,
+        c,
+        alpha,
+        beta,
+        m,
+        n,
+        k,
+        k,
+        n,
+        n,
+        0,
+        0,
+        beta == 0.0,
+        alpha == 1.0,
+        **launch_kwargs,
+    )
+
+
+def _try_zgemm_nn_pack_dgemm(
+    m: int,
+    n: int,
+    k: int,
+    A: torch.Tensor,
+    lda: int,
+    B: torch.Tensor,
+    ldb: int,
+    C: torch.Tensor,
+    ldc: int,
+) -> bool:
+    max_dim = max(m, n, k)
+    if (max_dim < 1023 and max_dim != 512) or lda != k or ldb != n or ldc != n:
+        return False
+
+    Ar, Ai, As, Br, Bi, Bs, prod_r, prod_i, prod_sum = _get_zgemm_nn_workspace(
+        A, m, n, k
+    )
+    A_real = torch.view_as_real(A).reshape(-1)
+    B_real = torch.view_as_real(B).reshape(-1)
+    C_real = torch.view_as_real(C).reshape(-1)
+
+    split_grid_a = (triton.cdiv(m * k, 1024),)
+    split_grid_b = (triton.cdiv(k * n, 1024),)
+    merge_grid = (triton.cdiv(m * n, 1024),)
+
+    _zgemm_split_sum_kernel[split_grid_a](A_real, Ar, Ai, As, m * k, BLOCK=1024)
+    _zgemm_split_sum_kernel[split_grid_b](B_real, Br, Bi, Bs, k * n, BLOCK=1024)
+
+    _launch_dgemm_nn(Ar, Br, prod_r, 1.0, 0.0, m, n, k)
+    _launch_dgemm_nn(Ai, Bi, prod_i, 1.0, 0.0, m, n, k)
+    _launch_dgemm_nn(As, Bs, prod_sum, 1.0, 0.0, m, n, k)
+
+    _zgemm_merge_3m_kernel[merge_grid](
+        C_real, prod_r, prod_i, prod_sum, m * n, BLOCK=1024
+    )
+    return True
+
+
+def _select_zgemm_hopper_config(transa: int, transb: int, m: int, n: int, k: int):
+    max_dim = max(m, n, k)
+    min_dim = min(m, n, k)
+
+    if max_dim <= 32:
+        return 16, 16, 16, 4, 1, None
+    if max_dim <= 128:
+        return 16, 16, 32, 2, 8, None
+    if max_dim <= 256:
+        return 16, 32, 32, 2, 8, None
+    if max_dim == 511:
+        if transa == 0 and transb == 0:
+            return 16, 64, 16, 4, 8, None
+        return 64, 32, 16, 4, 4, None
+    if max_dim <= 512:
+        if transa == 0:
+            return 32, 64, 16, 4, 4, None
+        return 64, 32, 16, 4, 8, None
+    if max_dim == 1023:
+        return 64, 32, 16, 4, 8, None
+    if max_dim <= 1024:
+        if transa == 0 and transb == 0:
+            return 64, 64, 16, 4, 1, None
+        if transa == 0:
+            return 32, 64, 16, 4, 8, None
+        return 64, 32, 16, 4, 8, None
+
+    if transa == 0 and transb == 0:
+        if max_dim <= 2048:
+            return 64, 64, 16, 4, 2, None
+        return 64, 64, 16, 4, 1, None
+
+    if transa == 0 and transb in (1, 2):
+        if max_dim <= 2048:
+            return 32, 64, 16, 4, 4, None
+        if max_dim <= 4096:
+            return 32, 64, 16, 4, 8, None
+        if min_dim >= 6144:
+            return 64, 64, 16, 4, 1, None
+        return 32, 64, 16, 4, 8, None
+
+    if transa in (1, 2) and transb == 0:
+        if max_dim <= 1536:
+            return 64, 32, 16, 4, 2, None
+        if max_dim <= 4096:
+            return 64, 32, 16, 4, 1, None
+        if min_dim >= 6144:
+            return 64, 64, 16, 4, 1, None
+        return 64, 32, 16, 4, 1, None
+
+    if max_dim <= 1536:
+        return 64, 32, 16, 4, 2, None
+    if max_dim <= 2048:
+        return 64, 32, 16, 4, 8, None
+    if max_dim <= 4096:
+        return 64, 32, 16, 4, 4, None
+    if min_dim >= 6144:
+        return 64, 64, 16, 4, 1, None
+    return 64, 32, 16, 4, 4, None
+
+
+def zgemm(
+    transa: int,
+    transb: int,
+    m: int,
+    n: int,
+    k: int,
+    alpha: ScalarType,
+    A: torch.Tensor,
+    lda: int,
+    B: torch.Tensor,
+    ldb: int,
+    beta: ScalarType,
+    C: torch.Tensor,
+    ldc: int,
+) -> None:
+    _validate_zgemm_args(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
+
+    alpha_r, alpha_i = _complex_scalar_parts(alpha)
+    beta_r, beta_i = _complex_scalar_parts(beta)
+
+    if m == 0 or n == 0 or k == 0 or (alpha_r == 0.0 and alpha_i == 0.0):
+        if beta_r == 0.0 and beta_i == 0.0:
+            C.zero_()
+        elif not (beta_r == 1.0 and beta_i == 0.0):
+            C.mul_(complex(beta_r, beta_i))
+        return
+
+    beta_is_zero = beta_r == 0.0 and beta_i == 0.0
+    alpha_is_one = alpha_r == 1.0 and alpha_i == 0.0
+
+    if (
+        transa == 0
+        and transb == 0
+        and alpha_is_one
+        and beta_is_zero
+        and _try_zgemm_nn_128(m, n, k, A, lda, B, ldb, C, ldc)
+    ):
+        return
+
+    if (
+        transa == 0
+        and transb == 0
+        and alpha_is_one
+        and beta_is_zero
+        and _try_zgemm_nn_256(m, n, k, A, lda, B, ldb, C, ldc)
+    ):
+        return
+
+    if (
+        transa == 0
+        and transb == 0
+        and alpha_is_one
+        and beta_is_zero
+        and _try_zgemm_nn_pack_dgemm(m, n, k, A, lda, B, ldb, C, ldc)
+    ):
+        return
+
+    block_m, block_n, block_k, num_warps, group_m, maxnreg = (
+        _select_zgemm_hopper_config(transa, transb, m, n, k)
+    )
+    launch_kwargs = {
+        "BLOCK_M": block_m,
+        "BLOCK_N": block_n,
+        "BLOCK_K": block_k,
+        "GROUP_M": group_m,
+        "num_warps": num_warps,
+    }
+    if transa == 0 and transb == 0 and max(m, n, k) == 4096:
+        launch_kwargs["num_stages"] = 4
+    if maxnreg is not None:
+        launch_kwargs["maxnreg"] = maxnreg
+
+    A_real = torch.view_as_real(A).reshape(-1)
+    B_real = torch.view_as_real(B).reshape(-1)
+    C_real = torch.view_as_real(C).reshape(-1)
+    grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
+
+    with torch_device_fn.device(A.device):
+        _zgemm_dot_kernel[grid](
+            A_real,
+            B_real,
+            C_real,
+            alpha_r,
+            alpha_i,
+            beta_r,
+            beta_i,
+            m,
+            n,
+            k,
+            lda,
+            ldb,
+            ldc,
+            transa,
+            transb,
+            beta_is_zero,
+            alpha_is_one,
+            **launch_kwargs,
+        )
