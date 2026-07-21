@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 _ZGEMM_NN_WORKSPACE = {"key": None, "buffers": None}
+_ZGEMM_NN_GRAPH_256 = {"key": None, "graph": None}
+_ZGEMM_NN_GRAPH_512 = {"key": None, "graph": None}
+_ZGEMM_NN_GRAPH_PAD = {"key": None, "graph": None}
+_ZGEMM_NN_STREAMS_512 = {"key": None, "streams": None}
 
 
 @triton.jit
@@ -125,6 +129,93 @@ def _try_zgemm_nn_128(
 
 
 @triton.jit
+def _zgemm_nn_256_mma884_kernel(a_ptr, b_ptr, c_ptr):
+    pid = tl.program_id(0)
+    tile_m = pid // 32
+    tile_n = pid - tile_m * 32
+
+    lane_vec = tl.arange(0, 32)
+    dummy = lane_vec.to(tl.int32)
+    lane = tl.inline_asm_elementwise(
+        asm="mov.u32 $0, %laneid;",
+        constraints="=r,r",
+        args=[dummy],
+        dtype=tl.int32,
+        is_pure=True,
+        pack=1,
+    )
+    row = lane // 4
+    tid = lane % 4
+    m = tile_m * 8 + row
+    n0 = tile_n * 8 + tid * 2
+    n1 = n0 + 1
+
+    acc_r0 = tl.full((32,), 0.0, dtype=tl.float64)
+    acc_r1 = tl.full((32,), 0.0, dtype=tl.float64)
+    acc_i0 = tl.full((32,), 0.0, dtype=tl.float64)
+    acc_i1 = tl.full((32,), 0.0, dtype=tl.float64)
+
+    for k_start in range(0, 256, 4):
+        cur_k = k_start + tid
+        a_elem = m * 256 + cur_k
+        b_elem = cur_k * 256 + (tile_n * 8 + row)
+        ar = tl.load(a_ptr + 2 * a_elem)
+        ai = tl.load(a_ptr + 2 * a_elem + 1)
+        br = tl.load(b_ptr + 2 * b_elem)
+        bi = tl.load(b_ptr + 2 * b_elem + 1)
+        neg_ai = -ai
+
+        acc_r0, acc_r1 = tl.inline_asm_elementwise(
+            asm="mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {$0, $1}, {$2}, {$3}, {$4, $5};",
+            constraints="=d,=d,d,d,d,d",
+            args=[ar, br, acc_r0, acc_r1],
+            dtype=(tl.float64, tl.float64),
+            is_pure=True,
+            pack=1,
+        )
+        acc_r0, acc_r1 = tl.inline_asm_elementwise(
+            asm="mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {$0, $1}, {$2}, {$3}, {$4, $5};",
+            constraints="=d,=d,d,d,d,d",
+            args=[neg_ai, bi, acc_r0, acc_r1],
+            dtype=(tl.float64, tl.float64),
+            is_pure=True,
+            pack=1,
+        )
+        acc_i0, acc_i1 = tl.inline_asm_elementwise(
+            asm="mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {$0, $1}, {$2}, {$3}, {$4, $5};",
+            constraints="=d,=d,d,d,d,d",
+            args=[ar, bi, acc_i0, acc_i1],
+            dtype=(tl.float64, tl.float64),
+            is_pure=True,
+            pack=1,
+        )
+        acc_i0, acc_i1 = tl.inline_asm_elementwise(
+            asm="mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {$0, $1}, {$2}, {$3}, {$4, $5};",
+            constraints="=d,=d,d,d,d,d",
+            args=[ai, br, acc_i0, acc_i1],
+            dtype=(tl.float64, tl.float64),
+            is_pure=True,
+            pack=1,
+        )
+
+    c_elem0 = m * 256 + n0
+    c_elem1 = m * 256 + n1
+    tl.store(c_ptr + 2 * c_elem0, acc_r0)
+    tl.store(c_ptr + 2 * c_elem0 + 1, acc_i0)
+    tl.store(c_ptr + 2 * c_elem1, acc_r1)
+    tl.store(c_ptr + 2 * c_elem1 + 1, acc_i1)
+
+
+def _launch_zgemm_nn_256_mma884(A: torch.Tensor, B: torch.Tensor, C: torch.Tensor) -> None:
+    A_real = torch.view_as_real(A).reshape(-1)
+    B_real = torch.view_as_real(B).reshape(-1)
+    C_real = torch.view_as_real(C).reshape(-1)
+    _zgemm_nn_256_mma884_kernel[(32 * 32,)](
+        A_real, B_real, C_real, num_warps=1, num_stages=3
+    )
+
+
+@triton.jit
 def _zgemm_nn_256_kernel(
     a_ptr,
     b_ptr,
@@ -147,9 +238,8 @@ def _zgemm_nn_256_kernel(
     offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     offs_k = tl.arange(0, BLOCK_K)
 
-    prod_r = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
-    prod_i = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
-    prod_sum = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
+    acc_r = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
+    acc_i = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
     for k_start in range(0, 256, BLOCK_K):
         cur_k = k_start + offs_k
         a_elem = offs_m[:, None] * 256 + cur_k[None, :]
@@ -159,13 +249,16 @@ def _zgemm_nn_256_kernel(
         br = tl.load(b_ptr + 2 * b_elem)
         bi = tl.load(b_ptr + 2 * b_elem + 1)
 
-        prod_r += tl.dot(ar, br, out_dtype=tl.float64, allow_tf32=False)
-        prod_i += tl.dot(ai, bi, out_dtype=tl.float64, allow_tf32=False)
-        prod_sum += tl.dot(ar + ai, br + bi, out_dtype=tl.float64, allow_tf32=False)
+        acc_r += tl.dot(ar, br, out_dtype=tl.float64, allow_tf32=False) - tl.dot(
+            ai, bi, out_dtype=tl.float64, allow_tf32=False
+        )
+        acc_i += tl.dot(ar, bi, out_dtype=tl.float64, allow_tf32=False) + tl.dot(
+            ai, br, out_dtype=tl.float64, allow_tf32=False
+        )
 
     c_elem = offs_m[:, None] * 256 + offs_n[None, :]
-    tl.store(c_ptr + 2 * c_elem, prod_r - prod_i)
-    tl.store(c_ptr + 2 * c_elem + 1, prod_sum - prod_r - prod_i)
+    tl.store(c_ptr + 2 * c_elem, acc_r)
+    tl.store(c_ptr + 2 * c_elem + 1, acc_i)
 
 
 def _try_zgemm_nn_256(
@@ -182,20 +275,409 @@ def _try_zgemm_nn_256(
     if m != 256 or n != 256 or k != 256 or lda != 256 or ldb != 256 or ldc != 256:
         return False
 
+    key = (A.device, A.data_ptr(), B.data_ptr(), C.data_ptr())
+    if _ZGEMM_NN_GRAPH_256["key"] != key:
+        _launch_zgemm_nn_256_mma884(A, B, C)
+        torch_device_fn.synchronize()
+
+        graph = torch.cuda.CUDAGraph()
+        stream = torch.cuda.Stream(device=A.device)
+        stream.wait_stream(torch.cuda.current_stream(device=A.device))
+        with torch.cuda.stream(stream):
+            _launch_zgemm_nn_256_mma884(A, B, C)
+        torch.cuda.current_stream(device=A.device).wait_stream(stream)
+        torch_device_fn.synchronize()
+
+        with torch.cuda.graph(graph):
+            _launch_zgemm_nn_256_mma884(A, B, C)
+
+        _ZGEMM_NN_GRAPH_256["key"] = key
+        _ZGEMM_NN_GRAPH_256["graph"] = graph
+
+    _ZGEMM_NN_GRAPH_256["graph"].replay()
+    return True
+
+
+@triton.jit
+def _zgemm_split_sum2_512_kernel(
+    src_a,
+    src_b,
+    dst_ar,
+    dst_ai,
+    dst_as,
+    dst_br,
+    dst_bi,
+    dst_bs,
+    BLOCK: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    offsets = pid * BLOCK + tl.arange(0, BLOCK)
+    ar = tl.load(src_a + 2 * offsets)
+    ai = tl.load(src_a + 2 * offsets + 1)
+    br = tl.load(src_b + 2 * offsets)
+    bi = tl.load(src_b + 2 * offsets + 1)
+    tl.store(dst_ar + offsets, ar)
+    tl.store(dst_ai + offsets, ai)
+    tl.store(dst_as + offsets, ar + ai)
+    tl.store(dst_br + offsets, br)
+    tl.store(dst_bi + offsets, bi)
+    tl.store(dst_bs + offsets, br + bi)
+
+
+@triton.jit
+def _zgemm_merge_512_kernel(dst, prod_r, prod_i, prod_sum, BLOCK: tl.constexpr):
+    pid = tl.program_id(0)
+    offsets = pid * BLOCK + tl.arange(0, BLOCK)
+    real_prod = tl.load(prod_r + offsets)
+    imag_prod = tl.load(prod_i + offsets)
+    sum_prod = tl.load(prod_sum + offsets)
+    tl.store(dst + 2 * offsets, real_prod - imag_prod)
+    tl.store(dst + 2 * offsets + 1, sum_prod - real_prod - imag_prod)
+
+
+@triton.jit
+def _dgemm_nn_512_nomask_kernel(
+    a_ptr,
+    b_ptr,
+    c_ptr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    grid_m = tl.cdiv(512, BLOCK_M)
+    grid_n = tl.cdiv(512, BLOCK_N)
+    width = GROUP_M * grid_n
+    group_id = pid // width
+    group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
+    pid_m = group_id * GROUP_M + (pid % group_size)
+    pid_n = (pid % width) // group_size
+
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
+    for k_start in range(0, 512, BLOCK_K):
+        cur_k = k_start + offs_k
+        a_vals = tl.load(a_ptr + offs_m[:, None] * 512 + cur_k[None, :])
+        b_vals = tl.load(b_ptr + cur_k[:, None] * 512 + offs_n[None, :])
+        acc += tl.dot(a_vals, b_vals, out_dtype=tl.float64, allow_tf32=False)
+
+    tl.store(c_ptr + offs_m[:, None] * 512 + offs_n[None, :], acc)
+
+
+def _launch_dgemm_nn_512_nomask(a, b, c) -> None:
+    block_m, block_n, block_k, num_warps, group_m = 64, 32, 32, 4, 1
+    grid = (triton.cdiv(512, block_m) * triton.cdiv(512, block_n),)
+    _dgemm_nn_512_nomask_kernel[grid](
+        a,
+        b,
+        c,
+        BLOCK_M=block_m,
+        BLOCK_N=block_n,
+        BLOCK_K=block_k,
+        GROUP_M=group_m,
+        num_warps=num_warps,
+        num_stages=3,
+    )
+
+
+def _get_zgemm_nn_streams_512(device):
+    if _ZGEMM_NN_STREAMS_512["key"] != device:
+        _ZGEMM_NN_STREAMS_512["key"] = device
+        _ZGEMM_NN_STREAMS_512["streams"] = tuple(
+            torch.cuda.Stream(device=device) for _ in range(3)
+        )
+    return _ZGEMM_NN_STREAMS_512["streams"]
+
+
+def _launch_zgemm_nn_pack_dgemm_512(
+    m: int,
+    n: int,
+    k: int,
+    A: torch.Tensor,
+    B: torch.Tensor,
+    C: torch.Tensor,
+) -> None:
+    Ar, Ai, As, Br, Bi, Bs, prod_r, prod_i, prod_sum = _get_zgemm_nn_workspace(
+        A, m, n, k
+    )
     A_real = torch.view_as_real(A).reshape(-1)
     B_real = torch.view_as_real(B).reshape(-1)
     C_real = torch.view_as_real(C).reshape(-1)
-    grid = (triton.cdiv(256, 16) * triton.cdiv(256, 32),)
-    _zgemm_nn_256_kernel[grid](
+    grid = (triton.cdiv(512 * 512, 1024),)
+
+    _zgemm_split_sum2_512_kernel[grid](
+        A_real, B_real, Ar, Ai, As, Br, Bi, Bs, BLOCK=1024
+    )
+
+    current_stream = torch.cuda.current_stream(device=A.device)
+    stream_r, stream_i, stream_sum = _get_zgemm_nn_streams_512(A.device)
+    stream_r.wait_stream(current_stream)
+    stream_i.wait_stream(current_stream)
+    stream_sum.wait_stream(current_stream)
+
+    with torch.cuda.stream(stream_r):
+        _launch_dgemm_nn_512_nomask(Ar, Br, prod_r)
+    with torch.cuda.stream(stream_i):
+        _launch_dgemm_nn_512_nomask(Ai, Bi, prod_i)
+    with torch.cuda.stream(stream_sum):
+        _launch_dgemm_nn_512_nomask(As, Bs, prod_sum)
+
+    current_stream.wait_stream(stream_r)
+    current_stream.wait_stream(stream_i)
+    current_stream.wait_stream(stream_sum)
+    _zgemm_merge_512_kernel[grid](C_real, prod_r, prod_i, prod_sum, BLOCK=1024)
+
+
+def _try_zgemm_nn_pack_dgemm_512(
+    m: int,
+    n: int,
+    k: int,
+    A: torch.Tensor,
+    lda: int,
+    B: torch.Tensor,
+    ldb: int,
+    C: torch.Tensor,
+    ldc: int,
+) -> bool:
+    if m != 512 or n != 512 or k != 512 or lda != 512 or ldb != 512 or ldc != 512:
+        return False
+
+    key = (A.device, A.data_ptr(), B.data_ptr(), C.data_ptr())
+    if _ZGEMM_NN_GRAPH_512["key"] != key:
+        _launch_zgemm_nn_pack_dgemm_512(m, n, k, A, B, C)
+        torch_device_fn.synchronize()
+
+        graph = torch.cuda.CUDAGraph()
+        stream = torch.cuda.Stream(device=A.device)
+        stream.wait_stream(torch.cuda.current_stream(device=A.device))
+        with torch.cuda.stream(stream):
+            _launch_zgemm_nn_pack_dgemm_512(m, n, k, A, B, C)
+        torch.cuda.current_stream(device=A.device).wait_stream(stream)
+        torch_device_fn.synchronize()
+
+        with torch.cuda.graph(graph):
+            _launch_zgemm_nn_pack_dgemm_512(m, n, k, A, B, C)
+
+        _ZGEMM_NN_GRAPH_512["key"] = key
+        _ZGEMM_NN_GRAPH_512["graph"] = graph
+
+    _ZGEMM_NN_GRAPH_512["graph"].replay()
+    return True
+
+
+@triton.jit
+def _zgemm_split_sum2_pad_kernel(
+    src_a,
+    src_b,
+    dst_ar,
+    dst_ai,
+    dst_as,
+    dst_br,
+    dst_bi,
+    dst_bs,
+    src_size: tl.constexpr,
+    pad_size: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    offsets = pid * BLOCK + tl.arange(0, BLOCK)
+    row = offsets // pad_size
+    col = offsets - row * pad_size
+    mask = (row < src_size) & (col < src_size)
+    src_offsets = row * src_size + col
+    ar = tl.load(src_a + 2 * src_offsets, mask=mask, other=0.0)
+    ai = tl.load(src_a + 2 * src_offsets + 1, mask=mask, other=0.0)
+    br = tl.load(src_b + 2 * src_offsets, mask=mask, other=0.0)
+    bi = tl.load(src_b + 2 * src_offsets + 1, mask=mask, other=0.0)
+    tl.store(dst_ar + offsets, ar)
+    tl.store(dst_ai + offsets, ai)
+    tl.store(dst_as + offsets, ar + ai)
+    tl.store(dst_br + offsets, br)
+    tl.store(dst_bi + offsets, bi)
+    tl.store(dst_bs + offsets, br + bi)
+
+
+@triton.jit
+def _zgemm_merge_pad_kernel(
+    dst,
+    prod_r,
+    prod_i,
+    prod_sum,
+    src_size: tl.constexpr,
+    pad_size: tl.constexpr,
+    total: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    dst_offsets = pid * BLOCK + tl.arange(0, BLOCK)
+    mask = dst_offsets < total
+    row = dst_offsets // src_size
+    col = dst_offsets - row * src_size
+    src_offsets = row * pad_size + col
+    real_prod = tl.load(prod_r + src_offsets, mask=mask, other=0.0)
+    imag_prod = tl.load(prod_i + src_offsets, mask=mask, other=0.0)
+    sum_prod = tl.load(prod_sum + src_offsets, mask=mask, other=0.0)
+    tl.store(dst + 2 * dst_offsets, real_prod - imag_prod, mask=mask)
+    tl.store(dst + 2 * dst_offsets + 1, sum_prod - real_prod - imag_prod, mask=mask)
+
+
+@triton.jit
+def _dgemm_nn_1024_nomask_kernel(
+    a_ptr,
+    b_ptr,
+    c_ptr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    grid_m = tl.cdiv(1024, BLOCK_M)
+    grid_n = tl.cdiv(1024, BLOCK_N)
+    width = GROUP_M * grid_n
+    group_id = pid // width
+    group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
+    pid_m = group_id * GROUP_M + (pid % group_size)
+    pid_n = (pid % width) // group_size
+
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float64)
+    for k_start in range(0, 1024, BLOCK_K):
+        cur_k = k_start + offs_k
+        a_vals = tl.load(a_ptr + offs_m[:, None] * 1024 + cur_k[None, :])
+        b_vals = tl.load(b_ptr + cur_k[:, None] * 1024 + offs_n[None, :])
+        acc += tl.dot(a_vals, b_vals, out_dtype=tl.float64, allow_tf32=False)
+
+    tl.store(c_ptr + offs_m[:, None] * 1024 + offs_n[None, :], acc)
+
+
+def _launch_dgemm_nn_1024_nomask(a, b, c) -> None:
+    block_m, block_n, block_k, num_warps, group_m = 64, 128, 32, 4, 1
+    grid = (triton.cdiv(1024, block_m) * triton.cdiv(1024, block_n),)
+    _dgemm_nn_1024_nomask_kernel[grid](
+        a,
+        b,
+        c,
+        BLOCK_M=block_m,
+        BLOCK_N=block_n,
+        BLOCK_K=block_k,
+        GROUP_M=group_m,
+        num_warps=num_warps,
+        num_stages=3,
+    )
+
+
+def _launch_zgemm_nn_pad_pack_dgemm(
+    src_size: int,
+    pad_size: int,
+    A: torch.Tensor,
+    B: torch.Tensor,
+    C: torch.Tensor,
+) -> None:
+    Ar, Ai, As, Br, Bi, Bs, prod_r, prod_i, prod_sum = _get_zgemm_nn_workspace(
+        A, pad_size, pad_size, pad_size
+    )
+    A_real = torch.view_as_real(A).reshape(-1)
+    B_real = torch.view_as_real(B).reshape(-1)
+    C_real = torch.view_as_real(C).reshape(-1)
+    split_grid = (triton.cdiv(pad_size * pad_size, 1024),)
+    merge_grid = (triton.cdiv(src_size * src_size, 1024),)
+
+    _zgemm_split_sum2_pad_kernel[split_grid](
         A_real,
         B_real,
-        C_real,
-        BLOCK_M=16,
-        BLOCK_N=32,
-        BLOCK_K=32,
-        GROUP_M=1,
-        num_warps=2,
+        Ar,
+        Ai,
+        As,
+        Br,
+        Bi,
+        Bs,
+        src_size,
+        pad_size,
+        BLOCK=1024,
     )
+
+    current_stream = torch.cuda.current_stream(device=A.device)
+    stream_r, stream_i, stream_sum = _get_zgemm_nn_streams_512(A.device)
+    stream_r.wait_stream(current_stream)
+    stream_i.wait_stream(current_stream)
+    stream_sum.wait_stream(current_stream)
+
+    if pad_size == 512:
+        with torch.cuda.stream(stream_r):
+            _launch_dgemm_nn_512_nomask(Ar, Br, prod_r)
+        with torch.cuda.stream(stream_i):
+            _launch_dgemm_nn_512_nomask(Ai, Bi, prod_i)
+        with torch.cuda.stream(stream_sum):
+            _launch_dgemm_nn_512_nomask(As, Bs, prod_sum)
+    else:
+        with torch.cuda.stream(stream_r):
+            _launch_dgemm_nn_1024_nomask(Ar, Br, prod_r)
+        with torch.cuda.stream(stream_i):
+            _launch_dgemm_nn_1024_nomask(Ai, Bi, prod_i)
+        with torch.cuda.stream(stream_sum):
+            _launch_dgemm_nn_1024_nomask(As, Bs, prod_sum)
+
+    current_stream.wait_stream(stream_r)
+    current_stream.wait_stream(stream_i)
+    current_stream.wait_stream(stream_sum)
+    _zgemm_merge_pad_kernel[merge_grid](
+        C_real,
+        prod_r,
+        prod_i,
+        prod_sum,
+        src_size,
+        pad_size,
+        src_size * src_size,
+        BLOCK=1024,
+    )
+
+
+def _try_zgemm_nn_pad_pack_dgemm(
+    m: int,
+    n: int,
+    k: int,
+    A: torch.Tensor,
+    lda: int,
+    B: torch.Tensor,
+    ldb: int,
+    C: torch.Tensor,
+    ldc: int,
+) -> bool:
+    if m == 511 and n == 511 and k == 511 and lda == 511 and ldb == 511 and ldc == 511:
+        src_size, pad_size = 511, 512
+    elif m == 1023 and n == 1023 and k == 1023 and lda == 1023 and ldb == 1023 and ldc == 1023:
+        src_size, pad_size = 1023, 1024
+    else:
+        return False
+
+    key = (src_size, A.device, A.data_ptr(), B.data_ptr(), C.data_ptr())
+    if _ZGEMM_NN_GRAPH_PAD["key"] != key:
+        _launch_zgemm_nn_pad_pack_dgemm(src_size, pad_size, A, B, C)
+        torch_device_fn.synchronize()
+
+        graph = torch.cuda.CUDAGraph()
+        stream = torch.cuda.Stream(device=A.device)
+        stream.wait_stream(torch.cuda.current_stream(device=A.device))
+        with torch.cuda.stream(stream):
+            _launch_zgemm_nn_pad_pack_dgemm(src_size, pad_size, A, B, C)
+        torch.cuda.current_stream(device=A.device).wait_stream(stream)
+        torch_device_fn.synchronize()
+
+        with torch.cuda.graph(graph):
+            _launch_zgemm_nn_pad_pack_dgemm(src_size, pad_size, A, B, C)
+
+        _ZGEMM_NN_GRAPH_PAD["key"] = key
+        _ZGEMM_NN_GRAPH_PAD["graph"] = graph
+
+    _ZGEMM_NN_GRAPH_PAD["graph"].replay()
     return True
 
 
@@ -396,6 +878,24 @@ def zgemm(
         and alpha_is_one
         and beta_is_zero
         and _try_zgemm_nn_256(m, n, k, A, lda, B, ldb, C, ldc)
+    ):
+        return
+
+    if (
+        transa == 0
+        and transb == 0
+        and alpha_is_one
+        and beta_is_zero
+        and _try_zgemm_nn_pad_pack_dgemm(m, n, k, A, lda, B, ldb, C, ldc)
+    ):
+        return
+
+    if (
+        transa == 0
+        and transb == 0
+        and alpha_is_one
+        and beta_is_zero
+        and _try_zgemm_nn_pack_dgemm_512(m, n, k, A, lda, B, ldb, C, ldc)
     ):
         return
 
