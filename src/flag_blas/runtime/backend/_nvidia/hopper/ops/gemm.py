@@ -1904,6 +1904,181 @@ _HGEMM_NN_DISPATCH = StaticDispatch([
 ])
 
 
+# ---------------------------------------------------------------------------
+# Module-level condition predicates for hgemm_tn StaticDispatch
+# ---------------------------------------------------------------------------
+def _hgemm_tn_is_skinny_aligned(m, n, k, aligned, **_kw):
+    return aligned and (
+        (m >= 16384 and max(n, k) <= 2048)
+        or (n >= 16384 and max(m, k) <= 2048)
+    )
+
+
+def _hgemm_tn_is_aligned(m, n, k, aligned, **_kw):
+    return aligned
+
+
+def _hgemm_tn_is_default(**_kw):
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Module-level condition predicates for hgemm_nt StaticDispatch
+# ---------------------------------------------------------------------------
+def _hgemm_nt_is_aligned(m, n, k, aligned, **_kw):
+    return aligned
+
+
+def _hgemm_nt_is_default(**_kw):
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Module-level condition predicates for hgemm_tt StaticDispatch
+# ---------------------------------------------------------------------------
+def _hgemm_tt_is_skinny_aligned(m, n, k, aligned, **_kw):
+    return aligned and m >= 16384 and max(n, k) <= 2048
+
+
+def _hgemm_tt_is_aligned(m, n, k, aligned, **_kw):
+    return aligned
+
+
+def _hgemm_tt_is_default(**_kw):
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Module-level factory functions for hgemm_tn StaticDispatch
+# ---------------------------------------------------------------------------
+def _hgemm_tn_build_kernel3(
+    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+):
+    return lambda: _hgemm_tn_kernel3[(
+        triton.cdiv(m, 128) * triton.cdiv(n, 256),
+    )](
+        TensorDescriptor(base=A, shape=[k, m], strides=[lda, 1], block_shape=[64, 128]),
+        TensorDescriptor(base=B, shape=[k, n], strides=[ldb, 1], block_shape=[64, 256]),
+        TensorDescriptor(base=C, shape=[m, n], strides=[ldc, 1], block_shape=[128, 256]),
+        alpha, beta, m, n, k, beta_is_zero,
+        BLOCK_M=128, BLOCK_N=256, BLOCK_K=64, GROUP_M=8,
+        num_stages=4, num_warps=8, num_ctas=1,
+    )
+
+
+def _hgemm_tn_build_kernel2(
+    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_tn_kernel2[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+
+def _hgemm_tn_build_kernel(
+    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_tn_kernel[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Module-level factory functions for hgemm_nt StaticDispatch
+# ---------------------------------------------------------------------------
+def _hgemm_nt_build_kernel2(
+    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_nt_kernel2[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+
+def _hgemm_nt_build_kernel(
+    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_nt_kernel[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Module-level factory functions for hgemm_tt StaticDispatch
+# ---------------------------------------------------------------------------
+def _hgemm_tt_build_kernel3(
+    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+):
+    return lambda: _hgemm_tt_kernel3[(
+        triton.cdiv(m, 128) * triton.cdiv(n, 256),
+    )](
+        TensorDescriptor(base=A, shape=[k, m], strides=[lda, 1], block_shape=[64, 128]),
+        TensorDescriptor(base=B, shape=[n, k], strides=[ldb, 1], block_shape=[256, 64]),
+        TensorDescriptor(base=C, shape=[m, n], strides=[ldc, 1], block_shape=[128, 256]),
+        alpha, beta, m, n, k, beta_is_zero,
+        BLOCK_M=128, BLOCK_N=256, BLOCK_K=64, GROUP_M=8,
+        num_stages=4, num_warps=8, num_ctas=1,
+    )
+
+
+def _hgemm_tt_build_kernel2(
+    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_tt_kernel2[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+
+def _hgemm_tt_build_kernel(
+    A, B, C, m, n, k, lda, ldb, ldc, alpha, beta, beta_is_zero,
+):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _hgemm_tt_kernel[grid](
+        A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero,
+    )
+
+
+_HGEMM_TN_DISPATCH = StaticDispatch([
+    # skinny + aligned → kernel3 (TensorDescriptor, hardcoded config)
+    (_hgemm_tn_is_skinny_aligned, _hgemm_tn_build_kernel3),
+    # aligned → kernel2 (block_ptr)
+    (_hgemm_tn_is_aligned, _hgemm_tn_build_kernel2),
+    # default → kernel (original)
+    (_hgemm_tn_is_default, _hgemm_tn_build_kernel),
+])
+
+_HGEMM_NT_DISPATCH = StaticDispatch([
+    # aligned → kernel2 (block_ptr)
+    (_hgemm_nt_is_aligned, _hgemm_nt_build_kernel2),
+    # default → kernel (original)
+    (_hgemm_nt_is_default, _hgemm_nt_build_kernel),
+])
+
+_HGEMM_TT_DISPATCH = StaticDispatch([
+    # skinny + aligned → kernel3 (TensorDescriptor, hardcoded config)
+    (_hgemm_tt_is_skinny_aligned, _hgemm_tt_build_kernel3),
+    # aligned → kernel2 (block_ptr)
+    (_hgemm_tt_is_aligned, _hgemm_tt_build_kernel2),
+    # default → kernel (original)
+    (_hgemm_tt_is_default, _hgemm_tt_build_kernel),
+])
+
+
 def hgemm(
     transa: int,
     transb: int,
@@ -1975,126 +2150,35 @@ def hgemm(
             )
             runner()
         elif transa == CUBLAS_OP_T and transb == CUBLAS_OP_N:
-            is_skinny = (m >= 16384 and max(n, k) <= 2048) or (
-                n >= 16384 and max(m, k) <= 2048
+            runner = _HGEMM_TN_DISPATCH.lookup_and_build(
+                m, n, k, aligned,
+                context=dict(
+                    A=A, B=B, C=C, m=m, n=n, k=k,
+                    lda=lda, ldb=ldb, ldc=ldc,
+                    alpha=alpha, beta=beta, beta_is_zero=beta_is_zero,
+                ),
             )
-            if aligned and is_skinny:
-                BLOCK_M = 128
-                BLOCK_N = 256
-                BLOCK_K = 64
-                GROUP_M = 8
-                NUM_STAGES = 4
-                NUM_WARPS = 8
-                NUM_CTAS = 1
-                desc_a = TensorDescriptor(
-                    base=A,
-                    shape=[k, m],
-                    strides=[lda, 1],
-                    block_shape=[BLOCK_K, BLOCK_M],
-                )
-                desc_b = TensorDescriptor(
-                    base=B,
-                    shape=[k, n],
-                    strides=[ldb, 1],
-                    block_shape=[BLOCK_K, BLOCK_N],
-                )
-                desc_c = TensorDescriptor(
-                    base=C,
-                    shape=[m, n],
-                    strides=[ldc, 1],
-                    block_shape=[BLOCK_M, BLOCK_N],
-                )
-                grid = (triton.cdiv(m, BLOCK_M) * triton.cdiv(n, BLOCK_N),)
-                _hgemm_tn_kernel3[grid](
-                    desc_a,
-                    desc_b,
-                    desc_c,
-                    alpha,
-                    beta,
-                    m,
-                    n,
-                    k,
-                    beta_is_zero,
-                    BLOCK_M=BLOCK_M,
-                    BLOCK_N=BLOCK_N,
-                    BLOCK_K=BLOCK_K,
-                    GROUP_M=GROUP_M,
-                    num_stages=NUM_STAGES,
-                    num_warps=NUM_WARPS,
-                    num_ctas=NUM_CTAS,
-                )
-            elif aligned:
-                _hgemm_tn_kernel2[grid](
-                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                )
-            else:
-                _hgemm_tn_kernel[grid](
-                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                )
+            runner()
         elif transa == CUBLAS_OP_N and transb == CUBLAS_OP_T:
-            if aligned:
-                _hgemm_nt_kernel2[grid](
-                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                )
-            else:
-                _hgemm_nt_kernel[grid](
-                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                )
+            runner = _HGEMM_NT_DISPATCH.lookup_and_build(
+                m, n, k, aligned,
+                context=dict(
+                    A=A, B=B, C=C, m=m, n=n, k=k,
+                    lda=lda, ldb=ldb, ldc=ldc,
+                    alpha=alpha, beta=beta, beta_is_zero=beta_is_zero,
+                ),
+            )
+            runner()
         else:
-            is_skinny = m >= 16384 and max(n, k) <= 2048
-            if is_skinny and aligned:
-                BLOCK_M = 128
-                BLOCK_N = 256
-                BLOCK_K = 64
-                GROUP_M = 8
-                NUM_STAGES = 4
-                NUM_WARPS = 8
-                NUM_CTAS = 1
-                desc_a = TensorDescriptor(
-                    base=A,
-                    shape=[k, m],
-                    strides=[lda, 1],
-                    block_shape=[BLOCK_K, BLOCK_M],
-                )
-                desc_b = TensorDescriptor(
-                    base=B,
-                    shape=[n, k],
-                    strides=[ldb, 1],
-                    block_shape=[BLOCK_N, BLOCK_K],
-                )
-                desc_c = TensorDescriptor(
-                    base=C,
-                    shape=[m, n],
-                    strides=[ldc, 1],
-                    block_shape=[BLOCK_M, BLOCK_N],
-                )
-                grid = (triton.cdiv(m, BLOCK_M) * triton.cdiv(n, BLOCK_N),)
-                _hgemm_tt_kernel3[grid](
-                    desc_a,
-                    desc_b,
-                    desc_c,
-                    alpha,
-                    beta,
-                    m,
-                    n,
-                    k,
-                    beta == 0.0,
-                    BLOCK_M=BLOCK_M,
-                    BLOCK_N=BLOCK_N,
-                    BLOCK_K=BLOCK_K,
-                    GROUP_M=GROUP_M,
-                    num_stages=NUM_STAGES,
-                    num_warps=NUM_WARPS,
-                    num_ctas=NUM_CTAS,
-                )
-            elif aligned:
-                _hgemm_tt_kernel2[grid](
-                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                )
-            else:
-                _hgemm_tt_kernel[grid](
-                    A, B, C, alpha, beta, m, n, k, lda, ldb, ldc, beta_is_zero
-                )
+            runner = _HGEMM_TT_DISPATCH.lookup_and_build(
+                m, n, k, aligned,
+                context=dict(
+                    A=A, B=B, C=C, m=m, n=n, k=k,
+                    lda=lda, ldb=ldb, ldc=ldc,
+                    alpha=alpha, beta=beta, beta_is_zero=beta_is_zero,
+                ),
+            )
+            runner()
 
 
 @libentry()
