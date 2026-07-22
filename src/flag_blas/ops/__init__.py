@@ -43,6 +43,7 @@ from flag_blas.ops.level2.tbmv import ctbmv, dtbmv, stbmv, ztbmv
 from flag_blas.ops.level2.tbsv import stbsv
 from flag_blas.ops.level2.tpmv import ctpmv, dtpmv, stpmv, ztpmv
 from flag_blas.ops.level2.trmv import ctrmv, dtrmv, strmv, ztrmv
+from flag_blas.ops.level3.cgemm import cgemm
 from flag_blas.ops.level3.dgemm import dgemm
 from flag_blas.ops.level3.zgemm import zgemm
 from flag_blas.ops.level3.gemm import bfgemm, fp8gemm, hgemm, sgemm
@@ -150,6 +151,7 @@ __all__ = [
     # gemm
     "sgemm",
     "dgemm",
+    "cgemm",
     "zgemm",
     "hgemm",
     "bfgemm",
