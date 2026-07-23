@@ -349,6 +349,14 @@ def _launch_zgemm_256_mma884(
     A_real = torch.view_as_real(A).reshape(-1)
     B_real = torch.view_as_real(B).reshape(-1)
     C_real = torch.view_as_real(C).reshape(-1)
+    if transa == 0 and transb == 0:
+        num_stages, maxnreg = 4, 80
+    elif transa == 0 and transb == 1:
+        num_stages, maxnreg = 2, 72
+    elif transa == 1 and transb == 0:
+        num_stages, maxnreg = 5, 72
+    else:
+        num_stages, maxnreg = 1, 72
     _zgemm_256_mma884_kernel[(32 * 32,)](
         A_real,
         B_real,
@@ -356,7 +364,8 @@ def _launch_zgemm_256_mma884(
         TRANS_A=transa,
         TRANS_B=transb,
         num_warps=1,
-        num_stages=3,
+        num_stages=num_stages,
+        maxnreg=maxnreg,
     )
 
 
