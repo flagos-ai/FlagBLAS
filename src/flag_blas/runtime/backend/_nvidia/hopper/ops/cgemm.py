@@ -12,6 +12,7 @@ from flag_blas.ops.level3.cgemm import (
     _validate_cgemm_args,
 )
 from flag_blas.runtime import torch_device_fn
+from flag_blas.runtime.dispatch import StaticDispatch
 from flag_blas.runtime.backend._nvidia.hopper.ops.gemm import sgemm as _sgemm_hopper
 
 try:
@@ -308,6 +309,165 @@ def _select_cgemm_hopper_config(transa: int, transb: int, m: int, n: int, k: int
     return 64, 32, 32, 4, 8, None
 
 
+
+# ---------------------------------------------------------------------------
+# Module-level condition predicates for cgemm StaticDispatch
+# ---------------------------------------------------------------------------
+def _cgemm_can_cublas(m, n, k, A, B, C, lda, ldb, ldc, transa, transb, **_kw):
+    if cp is None or cublas is None:
+        return False
+    if transa not in (0, 1) or transb not in (0, 1):
+        return False
+    if A.dim() != 2 or B.dim() != 2 or C.dim() != 2:
+        return False
+    if ldc != n or C.shape[0] < m or C.shape[1] != n:
+        return False
+
+    if transa == 0:
+        if A.shape[0] < m or A.shape[1] < k or lda != A.shape[1]:
+            return False
+    elif A.shape[0] < k or A.shape[1] < m or lda != A.shape[1]:
+        return False
+
+    if transb == 0:
+        if B.shape[0] < k or B.shape[1] < n or ldb != B.shape[1]:
+            return False
+    elif B.shape[0] < n or B.shape[1] < k or ldb != B.shape[1]:
+        return False
+
+    return True
+
+
+def _cgemm_can_torch_mm(
+    m, n, k, A, B, C, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw
+):
+    if not (alpha_is_one and beta_is_zero):
+        return False
+    if transa not in (0, 1) or transb not in (0, 1):
+        return False
+    if A.dim() != 2 or B.dim() != 2 or C.dim() != 2:
+        return False
+    if ldc != n or C.shape[0] < m or C.shape[1] != n:
+        return False
+
+    if transa == 0:
+        if A.shape[0] < m or A.shape[1] < k or lda != A.shape[1]:
+            return False
+    elif A.shape[0] < k or A.shape[1] < m or lda != A.shape[1]:
+        return False
+
+    if transb == 0:
+        if B.shape[0] < k or B.shape[1] < n or ldb != B.shape[1]:
+            return False
+    elif B.shape[0] < n or B.shape[1] < k or ldb != B.shape[1]:
+        return False
+
+    return True
+
+
+def _cgemm_can_pack_sgemm(
+    m, n, k, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw
+):
+    return (
+        alpha_is_one
+        and beta_is_zero
+        and transa in (0, 1)
+        and transb in (0, 1)
+        and ldc == n
+        and max(m, n, k) >= 256
+    )
+
+
+def _cgemm_is_default(**_kw):
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Module-level factory functions for cgemm StaticDispatch
+# ---------------------------------------------------------------------------
+def _cgemm_build_cublas(
+    transa, transb, m, n, k, alpha_r, alpha_i, beta_r, beta_i, A, lda, B, ldb, C, ldc,
+    **_kw
+):
+    return lambda: _try_cgemm_cublas(
+        transa, transb, m, n, k, alpha_r, alpha_i, beta_r, beta_i, A, lda, B, ldb, C, ldc
+    )
+
+
+def _cgemm_build_torch_mm(transa, transb, m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_cgemm_torch_mm(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _cgemm_build_pack_sgemm(transa, transb, m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_cgemm_pack_sgemm(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _cgemm_build_dot_kernel(
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha_r,
+    alpha_i,
+    beta_r,
+    beta_i,
+    A,
+    lda,
+    B,
+    ldb,
+    C,
+    ldc,
+    beta_is_zero,
+    alpha_is_one,
+):
+    block_m, block_n, block_k, num_warps, group_m, maxnreg = (
+        _select_cgemm_hopper_config(transa, transb, m, n, k)
+    )
+    launch_kwargs = {
+        "BLOCK_M": block_m,
+        "BLOCK_N": block_n,
+        "BLOCK_K": block_k,
+        "GROUP_M": group_m,
+        "num_warps": num_warps,
+    }
+    if maxnreg is not None:
+        launch_kwargs["maxnreg"] = maxnreg
+
+    A_real = torch.view_as_real(A).reshape(-1)
+    B_real = torch.view_as_real(B).reshape(-1)
+    C_real = torch.view_as_real(C).reshape(-1)
+    grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
+
+    return lambda: _cgemm_dot_kernel[grid](
+        A_real,
+        B_real,
+        C_real,
+        alpha_r,
+        alpha_i,
+        beta_r,
+        beta_i,
+        m,
+        n,
+        k,
+        lda,
+        ldb,
+        ldc,
+        transa,
+        transb,
+        beta_is_zero,
+        alpha_is_one,
+        **launch_kwargs,
+    )
+
+
+_CGEMM_DISPATCH = StaticDispatch([
+    (_cgemm_can_cublas, _cgemm_build_cublas),
+    (_cgemm_can_torch_mm, _cgemm_build_torch_mm),
+    (_cgemm_can_pack_sgemm, _cgemm_build_pack_sgemm),
+    (_cgemm_is_default, _cgemm_build_dot_kernel),
+])
+
 def cgemm(
     transa: int,
     transb: int,
@@ -338,75 +498,41 @@ def cgemm(
     beta_is_zero = beta_r == 0.0 and beta_i == 0.0
     alpha_is_one = alpha_r == 1.0 and alpha_i == 0.0
 
-    if _try_cgemm_cublas(
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha_r,
-        alpha_i,
-        beta_r,
-        beta_i,
-        A,
-        lda,
-        B,
-        ldb,
-        C,
-        ldc,
-    ):
-        return
-
-    if (
-        alpha_is_one
-        and beta_is_zero
-        and _try_cgemm_torch_mm(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
-    ):
-        return
-
-    if (
-        alpha_is_one
-        and beta_is_zero
-        and _try_cgemm_pack_sgemm(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
-    ):
-        return
-
-    block_m, block_n, block_k, num_warps, group_m, maxnreg = (
-        _select_cgemm_hopper_config(transa, transb, m, n, k)
+    context = dict(
+        transa=transa,
+        transb=transb,
+        m=m,
+        n=n,
+        k=k,
+        alpha_r=alpha_r,
+        alpha_i=alpha_i,
+        beta_r=beta_r,
+        beta_i=beta_i,
+        A=A,
+        lda=lda,
+        B=B,
+        ldb=ldb,
+        C=C,
+        ldc=ldc,
+        beta_is_zero=beta_is_zero,
+        alpha_is_one=alpha_is_one,
     )
-    launch_kwargs = {
-        "BLOCK_M": block_m,
-        "BLOCK_N": block_n,
-        "BLOCK_K": block_k,
-        "GROUP_M": group_m,
-        "num_warps": num_warps,
-    }
-    if maxnreg is not None:
-        launch_kwargs["maxnreg"] = maxnreg
-
-    A_real = torch.view_as_real(A).reshape(-1)
-    B_real = torch.view_as_real(B).reshape(-1)
-    C_real = torch.view_as_real(C).reshape(-1)
-    grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
-
     with torch_device_fn.device(A.device):
-        _cgemm_dot_kernel[grid](
-            A_real,
-            B_real,
-            C_real,
-            alpha_r,
-            alpha_i,
-            beta_r,
-            beta_i,
+        runner = _CGEMM_DISPATCH.lookup_and_build(
             m,
             n,
             k,
-            lda,
-            ldb,
-            ldc,
-            transa,
-            transb,
-            beta_is_zero,
-            alpha_is_one,
-            **launch_kwargs,
+            aligned=True,
+            context=context,
+            transa=transa,
+            transb=transb,
+            A=A,
+            B=B,
+            C=C,
+            lda=lda,
+            ldb=ldb,
+            ldc=ldc,
+            alpha_is_one=alpha_is_one,
+            beta_is_zero=beta_is_zero,
         )
+        runner()

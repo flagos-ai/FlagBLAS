@@ -10,6 +10,7 @@ from flag_blas.ops.level3.dgemm import (
     _validate_dgemm_args,
 )
 from flag_blas.runtime import torch_device_fn
+from flag_blas.runtime.dispatch import StaticDispatch
 from flag_blas.utils import libentry, libtuner
 
 logger = logging.getLogger(__name__)
@@ -298,6 +299,115 @@ def _dgemm_dot_kernel(
 
 
 
+# ---------------------------------------------------------------------------
+# Module-level condition predicates for dgemm StaticDispatch
+# ---------------------------------------------------------------------------
+def _dgemm_is_dot_supported(transa, transb, **_kw):
+    return transa in (0, 1) and transb in (0, 1)
+
+
+def _dgemm_is_default(**_kw):
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Module-level factory functions for dgemm StaticDispatch
+# ---------------------------------------------------------------------------
+def _dgemm_build_dot_kernel(
+    A,
+    B,
+    C,
+    m,
+    n,
+    k,
+    lda,
+    ldb,
+    ldc,
+    alpha,
+    beta,
+    transa,
+    transb,
+    beta_is_zero,
+    alpha_is_one,
+):
+    block_m, block_n, block_k, num_warps, group_m, maxnreg = (
+        _select_dgemm_dot_config(transa, transb, m, n, k)
+    )
+    launch_kwargs = {
+        "BLOCK_M": block_m,
+        "BLOCK_N": block_n,
+        "BLOCK_K": block_k,
+        "GROUP_M": group_m,
+        "num_warps": num_warps,
+    }
+    if maxnreg is not None:
+        launch_kwargs["maxnreg"] = maxnreg
+
+    grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
+    return lambda: _dgemm_dot_kernel[grid](
+        A,
+        B,
+        C,
+        alpha,
+        beta,
+        m,
+        n,
+        k,
+        lda,
+        ldb,
+        ldc,
+        transa,
+        transb,
+        beta_is_zero,
+        alpha_is_one,
+        **launch_kwargs,
+    )
+
+
+def _dgemm_build_hopper_kernel(
+    A,
+    B,
+    C,
+    m,
+    n,
+    k,
+    lda,
+    ldb,
+    ldc,
+    alpha,
+    beta,
+    transa,
+    transb,
+    beta_is_zero,
+    alpha_is_one,
+):
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
+    )
+    return lambda: _dgemm_hopper_kernel[grid](
+        A,
+        B,
+        C,
+        alpha,
+        beta,
+        m,
+        n,
+        k,
+        lda,
+        ldb,
+        ldc,
+        transa,
+        transb,
+        beta_is_zero,
+    )
+
+
+_DGEMM_DISPATCH = StaticDispatch([
+    (_dgemm_is_dot_supported, _dgemm_build_dot_kernel),
+    (_dgemm_is_default, _dgemm_build_hopper_kernel),
+])
+
+
 def dgemm(
     transa: int,
     transb: int,
@@ -329,58 +439,29 @@ def dgemm(
     alpha_is_one = alpha == 1.0
 
     with torch_device_fn.device(A.device):
-        if transa in (0, 1) and transb in (0, 1):
-            block_m, block_n, block_k, num_warps, group_m, maxnreg = (
-                _select_dgemm_dot_config(transa, transb, m, n, k)
-            )
-
-            launch_kwargs = {
-                "BLOCK_M": block_m,
-                "BLOCK_N": block_n,
-                "BLOCK_K": block_k,
-                "GROUP_M": group_m,
-                "num_warps": num_warps,
-            }
-            if maxnreg is not None:
-                launch_kwargs["maxnreg"] = maxnreg
-
-            grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
-            _dgemm_dot_kernel[grid](
-                A,
-                B,
-                C,
-                alpha,
-                beta,
-                m,
-                n,
-                k,
-                lda,
-                ldb,
-                ldc,
-                transa,
-                transb,
-                beta_is_zero,
-                alpha_is_one,
-                **launch_kwargs,
-            )
-            return
-
-        grid = lambda meta: (
-            triton.cdiv(m, meta["BLOCK_M"]) * triton.cdiv(n, meta["BLOCK_N"]),
-        )
-        _dgemm_hopper_kernel[grid](
-            A,
-            B,
-            C,
-            alpha,
-            beta,
+        runner = _DGEMM_DISPATCH.lookup_and_build(
             m,
             n,
             k,
-            lda,
-            ldb,
-            ldc,
-            transa,
-            transb,
-            beta_is_zero,
+            aligned=True,
+            transa=transa,
+            transb=transb,
+            context=dict(
+                A=A,
+                B=B,
+                C=C,
+                m=m,
+                n=n,
+                k=k,
+                lda=lda,
+                ldb=ldb,
+                ldc=ldc,
+                alpha=alpha,
+                beta=beta,
+                transa=transa,
+                transb=transb,
+                beta_is_zero=beta_is_zero,
+                alpha_is_one=alpha_is_one,
+            ),
         )
+        runner()

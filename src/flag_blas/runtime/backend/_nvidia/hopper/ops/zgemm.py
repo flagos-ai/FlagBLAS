@@ -15,6 +15,7 @@ from flag_blas.ops.level3.zgemm import (
     _zgemm_dot_kernel,
 )
 from flag_blas.runtime import torch_device_fn
+from flag_blas.runtime.dispatch import StaticDispatch
 
 logger = logging.getLogger(__name__)
 
@@ -1408,6 +1409,239 @@ def _select_zgemm_hopper_config(transa: int, transb: int, m: int, n: int, k: int
     return 64, 32, 16, 4, 4, None
 
 
+
+# ---------------------------------------------------------------------------
+# Module-level condition predicates for zgemm StaticDispatch
+# ---------------------------------------------------------------------------
+def _zgemm_is_alpha_one_beta_zero(alpha_is_one, beta_is_zero, **_kw):
+    return alpha_is_one and beta_is_zero
+
+
+def _zgemm_is_nn(transa, transb, **_kw):
+    return transa == 0 and transb == 0
+
+
+def _zgemm_is_nonconj_trans(transa, transb, **_kw):
+    return not (transa == 0 and transb == 0) and transa != 2 and transb != 2
+
+
+def _zgemm_can_nn_128(m, n, k, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw):
+    return (
+        _zgemm_is_alpha_one_beta_zero(alpha_is_one, beta_is_zero)
+        and _zgemm_is_nn(transa, transb)
+        and m == 128 and n == 128 and k == 128
+        and lda == 128 and ldb == 128 and ldc == 128
+    )
+
+
+def _zgemm_can_nn_256(m, n, k, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw):
+    return (
+        _zgemm_is_alpha_one_beta_zero(alpha_is_one, beta_is_zero)
+        and _zgemm_is_nn(transa, transb)
+        and m == 256 and n == 256 and k == 256
+        and lda == 256 and ldb == 256 and ldc == 256
+    )
+
+
+def _zgemm_can_trans_128(m, n, k, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw):
+    return (
+        _zgemm_is_alpha_one_beta_zero(alpha_is_one, beta_is_zero)
+        and _zgemm_is_nonconj_trans(transa, transb)
+        and m == 128 and n == 128 and k == 128
+        and lda == 128 and ldb == 128 and ldc == 128
+    )
+
+
+def _zgemm_can_trans_256(m, n, k, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw):
+    return (
+        _zgemm_is_alpha_one_beta_zero(alpha_is_one, beta_is_zero)
+        and _zgemm_is_nonconj_trans(transa, transb)
+        and m == 256 and n == 256 and k == 256
+        and lda == 256 and ldb == 256 and ldc == 256
+    )
+
+
+def _zgemm_can_trans_pad_pack(m, n, k, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw):
+    return (
+        _zgemm_is_alpha_one_beta_zero(alpha_is_one, beta_is_zero)
+        and _zgemm_is_nonconj_trans(transa, transb)
+        and m == n == k
+        and lda == m and ldb == n and ldc == n
+        and m in (511, 512, 1023, 1024)
+    )
+
+
+def _zgemm_can_trans_split_1536(m, n, k, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw):
+    return (
+        _zgemm_is_alpha_one_beta_zero(alpha_is_one, beta_is_zero)
+        and _zgemm_is_nonconj_trans(transa, transb)
+        and m == n == k == 1536
+        and lda == 1536 and ldb == 1536 and ldc == 1536
+    )
+
+
+def _zgemm_can_trans_pack(m, n, k, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw):
+    return (
+        _zgemm_is_alpha_one_beta_zero(alpha_is_one, beta_is_zero)
+        and _zgemm_is_nonconj_trans(transa, transb)
+        and max(m, n, k) >= 1536
+        and m == n == k
+        and lda == m and ldb == n and ldc == n
+    )
+
+
+def _zgemm_can_nn_pad_pack(m, n, k, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw):
+    return (
+        _zgemm_is_alpha_one_beta_zero(alpha_is_one, beta_is_zero)
+        and _zgemm_is_nn(transa, transb)
+        and (
+            (m == 511 and n == 511 and k == 511 and lda == 511 and ldb == 511 and ldc == 511)
+            or (m == 1023 and n == 1023 and k == 1023 and lda == 1023 and ldb == 1023 and ldc == 1023)
+        )
+    )
+
+
+def _zgemm_can_nn_pack_512(m, n, k, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw):
+    return (
+        _zgemm_is_alpha_one_beta_zero(alpha_is_one, beta_is_zero)
+        and _zgemm_is_nn(transa, transb)
+        and m == 512 and n == 512 and k == 512
+        and lda == 512 and ldb == 512 and ldc == 512
+    )
+
+
+def _zgemm_can_nn_pack(m, n, k, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw):
+    max_dim = max(m, n, k)
+    return (
+        _zgemm_is_alpha_one_beta_zero(alpha_is_one, beta_is_zero)
+        and _zgemm_is_nn(transa, transb)
+        and not (max_dim < 1023 and max_dim != 512)
+        and lda == k and ldb == n and ldc == n
+    )
+
+
+def _zgemm_is_default(**_kw):
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Module-level factory functions for zgemm StaticDispatch
+# ---------------------------------------------------------------------------
+def _zgemm_build_nn_128(m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_zgemm_nn_128(m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _zgemm_build_nn_256(m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_zgemm_nn_256(m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _zgemm_build_trans_128(transa, transb, m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_zgemm_trans_128(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _zgemm_build_trans_256(transa, transb, m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_zgemm_trans_256(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _zgemm_build_trans_pad_pack(transa, transb, m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_zgemm_trans_pad_pack_dgemm(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _zgemm_build_trans_split_1536(transa, transb, m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_zgemm_trans_split_dgemm_1536(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _zgemm_build_trans_pack(transa, transb, m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_zgemm_trans_pack_dgemm(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _zgemm_build_nn_pad_pack(m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_zgemm_nn_pad_pack_dgemm(m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _zgemm_build_nn_pack_512(m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_zgemm_nn_pack_dgemm_512(m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _zgemm_build_nn_pack(m, n, k, A, lda, B, ldb, C, ldc, **_kw):
+    return lambda: _try_zgemm_nn_pack_dgemm(m, n, k, A, lda, B, ldb, C, ldc)
+
+
+def _zgemm_build_dot_kernel(
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha_r,
+    alpha_i,
+    beta_r,
+    beta_i,
+    A,
+    lda,
+    B,
+    ldb,
+    C,
+    ldc,
+    beta_is_zero,
+    alpha_is_one,
+):
+    block_m, block_n, block_k, num_warps, group_m, maxnreg = (
+        _select_zgemm_hopper_config(transa, transb, m, n, k)
+    )
+    launch_kwargs = {
+        "BLOCK_M": block_m,
+        "BLOCK_N": block_n,
+        "BLOCK_K": block_k,
+        "GROUP_M": group_m,
+        "num_warps": num_warps,
+    }
+    if transa == 0 and transb == 0 and max(m, n, k) == 4096:
+        launch_kwargs["num_stages"] = 4
+    if maxnreg is not None:
+        launch_kwargs["maxnreg"] = maxnreg
+
+    A_real = torch.view_as_real(A).reshape(-1)
+    B_real = torch.view_as_real(B).reshape(-1)
+    C_real = torch.view_as_real(C).reshape(-1)
+    grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
+
+    return lambda: _zgemm_dot_kernel[grid](
+        A_real,
+        B_real,
+        C_real,
+        alpha_r,
+        alpha_i,
+        beta_r,
+        beta_i,
+        m,
+        n,
+        k,
+        lda,
+        ldb,
+        ldc,
+        transa,
+        transb,
+        beta_is_zero,
+        alpha_is_one,
+        **launch_kwargs,
+    )
+
+
+_ZGEMM_DISPATCH = StaticDispatch([
+    (_zgemm_can_nn_128, _zgemm_build_nn_128),
+    (_zgemm_can_nn_256, _zgemm_build_nn_256),
+    (_zgemm_can_trans_128, _zgemm_build_trans_128),
+    (_zgemm_can_trans_256, _zgemm_build_trans_256),
+    (_zgemm_can_trans_pad_pack, _zgemm_build_trans_pad_pack),
+    (_zgemm_can_trans_split_1536, _zgemm_build_trans_split_1536),
+    (_zgemm_can_trans_pack, _zgemm_build_trans_pack),
+    (_zgemm_can_nn_pad_pack, _zgemm_build_nn_pad_pack),
+    (_zgemm_can_nn_pack_512, _zgemm_build_nn_pack_512),
+    (_zgemm_can_nn_pack, _zgemm_build_nn_pack),
+    (_zgemm_is_default, _zgemm_build_dot_kernel),
+])
+
 def zgemm(
     transa: int,
     transb: int,
@@ -1438,132 +1672,41 @@ def zgemm(
     beta_is_zero = beta_r == 0.0 and beta_i == 0.0
     alpha_is_one = alpha_r == 1.0 and alpha_i == 0.0
 
-    if (
-        transa == 0
-        and transb == 0
-        and alpha_is_one
-        and beta_is_zero
-        and _try_zgemm_nn_128(m, n, k, A, lda, B, ldb, C, ldc)
-    ):
-        return
-
-    if (
-        transa == 0
-        and transb == 0
-        and alpha_is_one
-        and beta_is_zero
-        and _try_zgemm_nn_256(m, n, k, A, lda, B, ldb, C, ldc)
-    ):
-        return
-
-    if (
-        alpha_is_one
-        and beta_is_zero
-        and _try_zgemm_trans_128(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
-    ):
-        return
-
-    if (
-        alpha_is_one
-        and beta_is_zero
-        and _try_zgemm_trans_256(
-            transa, transb, m, n, k, A, lda, B, ldb, C, ldc
-        )
-    ):
-        return
-
-    if (
-        alpha_is_one
-        and beta_is_zero
-        and _try_zgemm_trans_pad_pack_dgemm(
-            transa, transb, m, n, k, A, lda, B, ldb, C, ldc
-        )
-    ):
-        return
-
-    if (
-        alpha_is_one
-        and beta_is_zero
-        and _try_zgemm_trans_split_dgemm_1536(
-            transa, transb, m, n, k, A, lda, B, ldb, C, ldc
-        )
-    ):
-        return
-
-    if (
-        alpha_is_one
-        and beta_is_zero
-        and _try_zgemm_trans_pack_dgemm(
-            transa, transb, m, n, k, A, lda, B, ldb, C, ldc
-        )
-    ):
-        return
-
-    if (
-        transa == 0
-        and transb == 0
-        and alpha_is_one
-        and beta_is_zero
-        and _try_zgemm_nn_pad_pack_dgemm(m, n, k, A, lda, B, ldb, C, ldc)
-    ):
-        return
-
-    if (
-        transa == 0
-        and transb == 0
-        and alpha_is_one
-        and beta_is_zero
-        and _try_zgemm_nn_pack_dgemm_512(m, n, k, A, lda, B, ldb, C, ldc)
-    ):
-        return
-
-    if (
-        transa == 0
-        and transb == 0
-        and alpha_is_one
-        and beta_is_zero
-        and _try_zgemm_nn_pack_dgemm(m, n, k, A, lda, B, ldb, C, ldc)
-    ):
-        return
-
-    block_m, block_n, block_k, num_warps, group_m, maxnreg = (
-        _select_zgemm_hopper_config(transa, transb, m, n, k)
+    context = dict(
+        transa=transa,
+        transb=transb,
+        m=m,
+        n=n,
+        k=k,
+        alpha_r=alpha_r,
+        alpha_i=alpha_i,
+        beta_r=beta_r,
+        beta_i=beta_i,
+        A=A,
+        lda=lda,
+        B=B,
+        ldb=ldb,
+        C=C,
+        ldc=ldc,
+        beta_is_zero=beta_is_zero,
+        alpha_is_one=alpha_is_one,
     )
-    launch_kwargs = {
-        "BLOCK_M": block_m,
-        "BLOCK_N": block_n,
-        "BLOCK_K": block_k,
-        "GROUP_M": group_m,
-        "num_warps": num_warps,
-    }
-    if transa == 0 and transb == 0 and max(m, n, k) == 4096:
-        launch_kwargs["num_stages"] = 4
-    if maxnreg is not None:
-        launch_kwargs["maxnreg"] = maxnreg
-
-    A_real = torch.view_as_real(A).reshape(-1)
-    B_real = torch.view_as_real(B).reshape(-1)
-    C_real = torch.view_as_real(C).reshape(-1)
-    grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
-
     with torch_device_fn.device(A.device):
-        _zgemm_dot_kernel[grid](
-            A_real,
-            B_real,
-            C_real,
-            alpha_r,
-            alpha_i,
-            beta_r,
-            beta_i,
+        runner = _ZGEMM_DISPATCH.lookup_and_build(
             m,
             n,
             k,
-            lda,
-            ldb,
-            ldc,
-            transa,
-            transb,
-            beta_is_zero,
-            alpha_is_one,
-            **launch_kwargs,
+            aligned=True,
+            context=context,
+            transa=transa,
+            transb=transb,
+            A=A,
+            B=B,
+            C=C,
+            lda=lda,
+            ldb=ldb,
+            ldc=ldc,
+            alpha_is_one=alpha_is_one,
+            beta_is_zero=beta_is_zero,
         )
+        runner()
