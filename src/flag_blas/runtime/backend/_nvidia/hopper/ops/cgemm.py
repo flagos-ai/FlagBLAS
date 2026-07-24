@@ -25,8 +25,8 @@ from flag_blas.ops.level3.cgemm import (
     _validate_cgemm_args,
 )
 from flag_blas.runtime import torch_device_fn
-from flag_blas.runtime.dispatch import StaticDispatch
 from flag_blas.runtime.backend._nvidia.hopper.ops.gemm import sgemm as _sgemm_hopper
+from flag_blas.runtime.dispatch import StaticDispatch
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ def _cgemm_split_sum_op_kernel(
     tl.store(dst_r + offsets, real, mask=mask)
     tl.store(dst_i + offsets, imag, mask=mask)
     tl.store(dst_sum + offsets, real + imag, mask=mask)
+
 
 @triton.jit
 def _cgemm_merge_3m_kernel(dst, prod_r, prod_i, prod_sum, total, BLOCK: tl.constexpr):
@@ -146,8 +147,6 @@ def _cgemm_3m_kernel(
     tl.store(c_ptr + 2 * c_elem + 1, prod_sum - prod_r - prod_i, mask=c_mask)
 
 
-
-
 @triton.jit
 def _cgemm_3m_nomask_kernel(
     a_ptr,
@@ -206,7 +205,6 @@ def _cgemm_3m_nomask_kernel(
     c_elem = offs_m[:, None] * SIZE + offs_n[None, :]
     tl.store(c_ptr + 2 * c_elem, prod_r - prod_i)
     tl.store(c_ptr + 2 * c_elem + 1, prod_sum - prod_r - prod_i)
-
 
 
 @triton.jit
@@ -276,6 +274,7 @@ def _cgemm_3m_tn_kernel(
     else:
         tl.store(c_ptr + 2 * c_elem, prod_r - prod_i)
         tl.store(c_ptr + 2 * c_elem + 1, prod_sum - prod_r - prod_i)
+
 
 @triton.jit
 def _cgemm_split_sum2_pad_op_kernel(
@@ -484,7 +483,6 @@ def _try_cgemm_pack_sgemm_graph(
     return True
 
 
-
 def _select_cgemm_3m_config(transa: int, transb: int, m: int):
     if m == 256:
         if transa == 0 and transb == 0:
@@ -525,9 +523,15 @@ def _try_cgemm_3m(
     if m not in (256, 511, 512):
         return False
 
-    block_m, block_n, block_k, num_warps, group_m, num_stages, maxnreg = (
-        _select_cgemm_3m_config(transa, transb, m)
-    )
+    (
+        block_m,
+        block_n,
+        block_k,
+        num_warps,
+        group_m,
+        num_stages,
+        maxnreg,
+    ) = _select_cgemm_3m_config(transa, transb, m)
     A_real = torch.view_as_real(A).reshape(-1)
     B_real = torch.view_as_real(B).reshape(-1)
     C_real = torch.view_as_real(C).reshape(-1)
@@ -613,18 +617,51 @@ def _launch_cgemm_pad_pack_sgemm(
 
     with torch.cuda.stream(stream_r):
         _sgemm_hopper(
-            0, 0, pad_size, pad_size, pad_size,
-            1.0, Ar, pad_size, Br, pad_size, 0.0, prod_r, pad_size,
+            0,
+            0,
+            pad_size,
+            pad_size,
+            pad_size,
+            1.0,
+            Ar,
+            pad_size,
+            Br,
+            pad_size,
+            0.0,
+            prod_r,
+            pad_size,
         )
     with torch.cuda.stream(stream_i):
         _sgemm_hopper(
-            0, 0, pad_size, pad_size, pad_size,
-            1.0, Ai, pad_size, Bi, pad_size, 0.0, prod_i, pad_size,
+            0,
+            0,
+            pad_size,
+            pad_size,
+            pad_size,
+            1.0,
+            Ai,
+            pad_size,
+            Bi,
+            pad_size,
+            0.0,
+            prod_i,
+            pad_size,
         )
     with torch.cuda.stream(stream_sum):
         _sgemm_hopper(
-            0, 0, pad_size, pad_size, pad_size,
-            1.0, As, pad_size, Bs, pad_size, 0.0, prod_sum, pad_size,
+            0,
+            0,
+            pad_size,
+            pad_size,
+            pad_size,
+            1.0,
+            As,
+            pad_size,
+            Bs,
+            pad_size,
+            0.0,
+            prod_sum,
+            pad_size,
         )
 
     current_stream.wait_stream(stream_r)
@@ -687,6 +724,7 @@ def _try_cgemm_pad_pack_sgemm_graph(
     _CGEMM_GRAPH_PAD_PACK["graph"].replay()
     return True
 
+
 def _select_cgemm_hopper_config(transa: int, transb: int, m: int, n: int, k: int):
     max_dim = max(m, n, k)
     min_dim = min(m, n, k)
@@ -730,6 +768,7 @@ def _select_cgemm_hopper_config(transa: int, transb: int, m: int, n: int, k: int
 # Module-level condition predicates for cgemm StaticDispatch
 # ---------------------------------------------------------------------------
 
+
 def _cgemm_can_3m_preferred(
     m, n, k, lda, ldb, ldc, transa, transb, alpha_is_one, beta_is_zero, **_kw
 ):
@@ -758,10 +797,7 @@ def _cgemm_can_pad_pack_sgemm_graph(
         and lda == m
         and ldb == n
         and ldc == n
-        and (
-            m == 1023
-            or (m in (511, 512) and transb == 0)
-        )
+        and (m == 1023 or (m in (511, 512) and transb == 0))
     )
 
 
@@ -797,13 +833,13 @@ def _cgemm_can_pack_sgemm(
 def _cgemm_is_default(**_kw):
     return True
 
+
 # ---------------------------------------------------------------------------
 # Module-level factory functions for cgemm StaticDispatch
 # ---------------------------------------------------------------------------
 
-def _cgemm_build_3m(
-    transa, transb, m, n, k, A, lda, B, ldb, C, ldc, **_kw
-):
+
+def _cgemm_build_3m(transa, transb, m, n, k, A, lda, B, ldb, C, ldc, **_kw):
     return lambda: _try_cgemm_3m(transa, transb, m, n, k, A, lda, B, ldb, C, ldc)
 
 
@@ -848,9 +884,14 @@ def _cgemm_build_dot_kernel(
     beta_is_zero,
     alpha_is_one,
 ):
-    block_m, block_n, block_k, num_warps, group_m, maxnreg = (
-        _select_cgemm_hopper_config(transa, transb, m, n, k)
-    )
+    (
+        block_m,
+        block_n,
+        block_k,
+        num_warps,
+        group_m,
+        maxnreg,
+    ) = _select_cgemm_hopper_config(transa, transb, m, n, k)
     launch_kwargs = {
         "BLOCK_M": block_m,
         "BLOCK_N": block_n,
@@ -888,13 +929,15 @@ def _cgemm_build_dot_kernel(
     )
 
 
-_CGEMM_DISPATCH = StaticDispatch([
-    (_cgemm_can_pad_pack_sgemm_graph, _cgemm_build_pad_pack_sgemm_graph),
-    (_cgemm_can_3m_preferred, _cgemm_build_3m),
-    (_cgemm_can_pack_sgemm_graph, _cgemm_build_pack_sgemm_graph),
-    (_cgemm_can_pack_sgemm, _cgemm_build_pack_sgemm),
-    (_cgemm_is_default, _cgemm_build_dot_kernel),
-])
+_CGEMM_DISPATCH = StaticDispatch(
+    [
+        (_cgemm_can_pad_pack_sgemm_graph, _cgemm_build_pad_pack_sgemm_graph),
+        (_cgemm_can_3m_preferred, _cgemm_build_3m),
+        (_cgemm_can_pack_sgemm_graph, _cgemm_build_pack_sgemm_graph),
+        (_cgemm_can_pack_sgemm, _cgemm_build_pack_sgemm),
+        (_cgemm_is_default, _cgemm_build_dot_kernel),
+    ]
+)
 
 
 def cgemm(

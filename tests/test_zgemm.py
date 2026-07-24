@@ -151,9 +151,7 @@ def test_zgemm_alpha_beta(alpha, beta):
     C = torch.randn(m, n, dtype=torch.complex128, device=device)
     expected = alpha * (A @ B) + beta * C
 
-    flag_blas.zgemm(
-        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A, k, B, n, beta, C, n
-    )
+    flag_blas.zgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A, k, B, n, beta, C, n)
 
     if TO_CPU:
         utils.blas_assert_close(C, expected.cpu(), torch.complex128, reduce_dim=k)

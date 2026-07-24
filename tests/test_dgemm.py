@@ -139,9 +139,7 @@ def test_dgemm_alpha_beta(alpha, beta):
     C = torch.randn(m, n, dtype=torch.float64, device=device)
     expected = alpha * (A @ B) + beta * C
 
-    flag_blas.dgemm(
-        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A, k, B, n, beta, C, n
-    )
+    flag_blas.dgemm(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A, k, B, n, beta, C, n)
 
     if TO_CPU:
         utils.blas_assert_close(C, expected.cpu(), torch.float64, reduce_dim=k)

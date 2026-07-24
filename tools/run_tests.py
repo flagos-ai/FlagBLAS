@@ -485,7 +485,7 @@ def parse_benchmark_log(log_file, op):
                 line = line.strip()
                 if not line.startswith("[INFO] "):
                     continue
-                json_str = line[len("[INFO] "):]
+                json_str = line[len("[INFO] ") :]
                 # Skip the initial "Benchmark record logger enabled" message
                 if json_str.startswith("Benchmark record logger"):
                     continue
@@ -506,8 +506,7 @@ def parse_benchmark_log(log_file, op):
 
     # Check if any benchmark failed
     has_failed = any(
-        any(m.get("error_msg") for m in r.get("result", []))
-        for r in records
+        any(m.get("error_msg") for m in r.get("result", [])) for r in records
     )
 
     bench_res = {}
@@ -567,7 +566,9 @@ def run_accuracy_q(gpu_id, op):
     op_dir = CFG.output_dir.joinpath(op)
     ensure_dir(op_dir)
     dur = time.time()
-    code = run_cmd(op, cmd, cwd=accuracy_dir, env=env, timeout=CFG.timeout, flavor="accuracy")
+    code = run_cmd(
+        op, cmd, cwd=accuracy_dir, env=env, timeout=CFG.timeout, flavor="accuracy"
+    )
     dur = time.time() - dur
 
     if code == TIMEOUT:
@@ -629,11 +630,13 @@ def run_benchmark_q(gpu_id, op):
     dur = time.time()
     cmd = (
         f'pytest -m "{op}" --level core --record log'
-        f' --output benchmark_{op}.log --skip_correctness'
+        f" --output benchmark_{op}.log --skip_correctness"
     )
     if ENV_INFO["flag_blas"]["vendor"] == "kunlunxin":
         cmd += " --fg_mode operator"
-    code = run_cmd(op, cmd, cwd=benchmark_dir, env=env, timeout=CFG.timeout, flavor="performance")
+    code = run_cmd(
+        op, cmd, cwd=benchmark_dir, env=env, timeout=CFG.timeout, flavor="performance"
+    )
     dur = time.time() - dur
 
     if code == TIMEOUT:

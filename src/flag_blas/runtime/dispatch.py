@@ -174,18 +174,23 @@ class SizeAutoDispatch:
                 name = config.kwargs.get("_candidate_name", None)
                 logger.debug(
                     "SizeAutoDispatch DB lookup hit: table=%s key=%s -> %s",
-                    self._table_name, cache_key, name,
+                    self._table_name,
+                    cache_key,
+                    name,
                 )
                 return name
             logger.debug(
                 "SizeAutoDispatch DB lookup miss: table=%s key=%s",
-                self._table_name, cache_key,
+                self._table_name,
+                cache_key,
             )
             return None
         except Exception:
             logger.error(
                 "SizeAutoDispatch DB lookup error for table=%s key=%s",
-                self._table_name, cache_key, exc_info=True,
+                self._table_name,
+                cache_key,
+                exc_info=True,
             )
             return None
 
@@ -193,7 +198,9 @@ class SizeAutoDispatch:
         if self._model is None:
             logger.debug(
                 "SizeAutoDispatch DB save skipped (no model): table=%s key=%s candidate=%s",
-                self._table_name, cache_key, candidate_name,
+                self._table_name,
+                cache_key,
+                candidate_name,
             )
             return
         try:
@@ -201,12 +208,17 @@ class SizeAutoDispatch:
             self._model.put_config(self._table_name, cache_key, c)
             logger.info(
                 "SizeAutoDispatch DB save success: table=%s key=%s -> %s",
-                self._table_name, cache_key, candidate_name,
+                self._table_name,
+                cache_key,
+                candidate_name,
             )
         except Exception:
             logger.error(
                 "SizeAutoDispatch DB save error for table=%s key=%s candidate=%s",
-                self._table_name, cache_key, candidate_name, exc_info=True,
+                self._table_name,
+                cache_key,
+                candidate_name,
+                exc_info=True,
             )
 
     def lookup_and_build(
@@ -269,7 +281,8 @@ class SizeAutoDispatch:
         logger.warning(
             "SizeAutoDispatch: all candidates failed for key %s, "
             "falling back to %r without persisting",
-            cache_key, entries[0].name,
+            cache_key,
+            entries[0].name,
         )
         return entries[0].factory()
 
@@ -316,7 +329,9 @@ class SizeAutoDispatch:
             except Exception as e:
                 logger.warning(
                     "SizeAutoDispatch: candidate %r failed for key %s: %s",
-                    entry.name, cache_key, e,
+                    entry.name,
+                    cache_key,
+                    e,
                 )
 
         if not timings:
@@ -331,7 +346,9 @@ class SizeAutoDispatch:
         best_name = min(timings, key=timings.get)
         logger.debug(
             "SizeAutoDispatch: key=%s best=%s timings=%s",
-            cache_key, best_name, timings,
+            cache_key,
+            best_name,
+            timings,
         )
         if snapshot is not None:
             snapshot_tensor.copy_(snapshot)

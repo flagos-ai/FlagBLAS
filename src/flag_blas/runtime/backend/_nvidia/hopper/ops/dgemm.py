@@ -19,10 +19,7 @@ import triton
 import triton.language as tl
 
 from flag_blas import runtime
-from flag_blas.ops.level3.dgemm import (
-    ScalarType,
-    _validate_dgemm_args,
-)
+from flag_blas.ops.level3.dgemm import ScalarType, _validate_dgemm_args
 from flag_blas.runtime import torch_device_fn
 from flag_blas.runtime.dispatch import StaticDispatch
 from flag_blas.utils import libentry, libtuner
@@ -233,7 +230,6 @@ def _dgemm_hopper_kernel(
         tl.store(c_ptrs, alpha * acc + beta * c_vals, mask=c_mask)
 
 
-
 @triton.jit
 def _dgemm_dot_kernel(
     a_ptr,
@@ -312,7 +308,6 @@ def _dgemm_dot_kernel(
             tl.store(c_ptrs, alpha * acc + beta * c_vals, mask=c_mask)
 
 
-
 # ---------------------------------------------------------------------------
 # Module-level condition predicates for dgemm StaticDispatch
 # ---------------------------------------------------------------------------
@@ -344,8 +339,8 @@ def _dgemm_build_dot_kernel(
     beta_is_zero,
     alpha_is_one,
 ):
-    block_m, block_n, block_k, num_warps, group_m, maxnreg = (
-        _select_dgemm_dot_config(transa, transb, m, n, k)
+    block_m, block_n, block_k, num_warps, group_m, maxnreg = _select_dgemm_dot_config(
+        transa, transb, m, n, k
     )
     launch_kwargs = {
         "BLOCK_M": block_m,
@@ -416,10 +411,12 @@ def _dgemm_build_hopper_kernel(
     )
 
 
-_DGEMM_DISPATCH = StaticDispatch([
-    (_dgemm_is_dot_supported, _dgemm_build_dot_kernel),
-    (_dgemm_is_default, _dgemm_build_hopper_kernel),
-])
+_DGEMM_DISPATCH = StaticDispatch(
+    [
+        (_dgemm_is_dot_supported, _dgemm_build_dot_kernel),
+        (_dgemm_is_default, _dgemm_build_hopper_kernel),
+    ]
+)
 
 
 def dgemm(
