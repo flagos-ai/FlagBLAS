@@ -46,7 +46,10 @@ def emit_record_logger(message: str) -> None:
         if getattr(handler, "stream", None) is None:
             handler.acquire()
             try:
-                handler.stream = handler._open()
+                if hasattr(handler, "_open"):
+                    handler.stream = handler._open()
+                else:
+                    handler.stream = None
             finally:
                 handler.release()
     recordLogger.info(message)

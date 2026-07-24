@@ -25,6 +25,42 @@ ops:
       - BLAS
     stages:
       - stable: '0.1'
+  - id: dgemm
+    description: |
+      Double-precision GEMM, based on FP64 format.
+      This is a simple wrapper of the existing BLAS float64 `gemm` operator.
+    for:
+      - dgemm
+    labels:
+      - dgemm
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: cgemm
+    description: |
+      Single-precision complex GEMM, based on complex64 format.
+      This is a simple wrapper of the existing BLAS complex64 `gemm` operator.
+    for:
+      - cgemm
+    labels:
+      - cgemm
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
+  - id: zgemm
+    description: |
+      Double-precision complex GEMM, based on complex128 format.
+      This is a simple wrapper of the existing BLAS complex128 `gemm` operator.
+    for:
+      - zgemm
+    labels:
+      - zgemm
+    kind:
+      - BLAS
+    stages:
+      - beta: '0.1'
   - id: hgemm
     description: |
       half-precision GEMM, based on FP16 format.

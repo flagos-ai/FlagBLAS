@@ -38,7 +38,8 @@ class PersistantModel(object):
     @abstractmethod
     def get_config(
         self, name: str, key: Sequence[Union[bool, int, float, str]]
-    ) -> Optional[triton.Config]: ...
+    ) -> Optional[triton.Config]:
+        ...
 
     @abstractmethod
     def get_benchmark(
@@ -46,7 +47,8 @@ class PersistantModel(object):
         name: str,
         keys: Sequence[Union[bool, int, float, str]],
         config: triton.Config,
-    ) -> Optional[Tuple[float, float, float]]: ...
+    ) -> Optional[Tuple[float, float, float]]:
+        ...
 
     @overload
     def put_config(
@@ -54,7 +56,8 @@ class PersistantModel(object):
         name: str,
         keys: Sequence[Union[bool, int, float, str]],
         config: triton.Config,
-    ) -> None: ...
+    ) -> None:
+        ...
 
     @overload
     def put_config(
@@ -62,7 +65,8 @@ class PersistantModel(object):
         name: str,
         keys: Sequence[Union[bool, int, float, str]],
         config: Dict[str, Union[bool, int, float, str]],
-    ) -> None: ...
+    ) -> None:
+        ...
 
     @abstractmethod
     def put_config(
@@ -70,7 +74,8 @@ class PersistantModel(object):
         name: str,
         keys: Sequence[Union[bool, int, float, str]],
         config: Union[triton.Config, Dict[str, Union[bool, int, float, str]]],
-    ) -> None: ...
+    ) -> None:
+        ...
 
     @overload
     def put_benchmark(
@@ -79,7 +84,8 @@ class PersistantModel(object):
         keys: Sequence[Union[bool, int, float, str]],
         config: triton.Config,
         benchmark: Tuple[float, float, float],
-    ) -> None: ...
+    ) -> None:
+        ...
 
     @overload
     def put_benchmark(
@@ -88,7 +94,8 @@ class PersistantModel(object):
         keys: Sequence[Union[bool, int, float, str]],
         config: Dict[str, Union[bool, int, float, str]],
         benchmark: Tuple[float, float, float],
-    ) -> None: ...
+    ) -> None:
+        ...
 
     @abstractmethod
     def put_benchmark(
@@ -97,4 +104,5 @@ class PersistantModel(object):
         keys: Sequence[Union[bool, int, float, str]],
         config: Union[triton.Config, Dict[str, Union[bool, int, float, str]]],
         benchmark: Tuple[float, float, float],
-    ) -> None: ...
+    ) -> None:
+        ...
