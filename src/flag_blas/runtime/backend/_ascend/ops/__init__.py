@@ -1,5 +1,6 @@
 from .gemv import cgemv, sgemv
 from .ger import cgerc, cgeru
+from .group_gemm import group_bfgemm
 from .hemv import chemv
 from .hpmv import chpmv
 from .hpr2 import chpr2
@@ -25,4 +26,5 @@ __all__ = [
     "ctpmv",
     "strsv",
     "ctrsv",
+    "group_bfgemm",
 ]
