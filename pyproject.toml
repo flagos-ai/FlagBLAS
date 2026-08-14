@@ -51,6 +51,7 @@ test = [
     "gitpython",
     "pyyaml",
     "coverage",
+    "pytest-md-report",
 ]
 
 [project.urls]

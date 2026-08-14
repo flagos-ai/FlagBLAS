@@ -16,21 +16,15 @@ import ctypes
 import ctypes.util
 from typing import Generator
 
+import cupy as cp
 import pytest
 import torch
+from cupy_backends.cuda.libs import cublas
 
 import flag_blas
 from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 from flag_blas.utils import shape_utils
-
-IS_HYGON = flag_blas.vendor_name == "hygon"
-
-if IS_HYGON:
-    import atexit
-else:
-    import cupy as cp
-    from cupy_backends.cuda.libs import cublas
 
 SPMV_SIZES = [
     256,
@@ -58,178 +52,47 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-if IS_HYGON:
-    _HIPBLAS_LIBRARY = None
-    _HIPBLAS_HANDLES = {}
-    _HIPBLAS_SPMV_FUNCS = {
-        torch.float32: ("hipblasSspmv", ctypes.c_float),
-        torch.float64: ("hipblasDspmv", ctypes.c_double),
-    }
+_cublas = load_cublas()
 
-    def _check_hipblas_status(status, operation):
-        if status != 0:
-            raise RuntimeError(f"{operation} failed with hipBLAS status {status}")
-
-    def _load_hipblas():
-        global _HIPBLAS_LIBRARY
-        if _HIPBLAS_LIBRARY is None:
-            library_name = ctypes.util.find_library("hipblas")
-            if library_name is None:
-                raise RuntimeError("Unable to find the hipBLAS shared library")
-            library = ctypes.CDLL(library_name)
-            library.hipblasCreate.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
-            library.hipblasCreate.restype = ctypes.c_int
-            library.hipblasDestroy.argtypes = [ctypes.c_void_p]
-            library.hipblasDestroy.restype = ctypes.c_int
-            library.hipblasSetStream.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-            library.hipblasSetStream.restype = ctypes.c_int
-            library.hipblasSetPointerMode.argtypes = [ctypes.c_void_p, ctypes.c_int]
-            library.hipblasSetPointerMode.restype = ctypes.c_int
-            _HIPBLAS_LIBRARY = library
-        return _HIPBLAS_LIBRARY
-
-    def _prepare_hipblas(device):
-        library = _load_hipblas()
-        torch_device = torch.device(device)
-        device_index = torch_device.index
-        if device_index is None:
-            device_index = torch.cuda.current_device()
-        handle = _HIPBLAS_HANDLES.get(device_index)
-        if handle is None:
-            with torch.cuda.device(device_index):
-                handle = ctypes.c_void_p()
-                _check_hipblas_status(
-                    library.hipblasCreate(ctypes.byref(handle)), "hipblasCreate"
-                )
-                _check_hipblas_status(
-                    library.hipblasSetPointerMode(handle, 0),
-                    "hipblasSetPointerMode",
-                )
-            _HIPBLAS_HANDLES[device_index] = handle
-        stream = torch.cuda.current_stream(device).cuda_stream
-        _check_hipblas_status(
-            library.hipblasSetStream(handle, ctypes.c_void_p(stream)),
-            "hipblasSetStream",
-        )
-        return library, handle
-
-    def _destroy_hipblas_handles():
-        if _HIPBLAS_LIBRARY is None:
-            return
-        for handle in tuple(_HIPBLAS_HANDLES.values()):
-            try:
-                _HIPBLAS_LIBRARY.hipblasDestroy(handle)
-            except Exception:
-                pass
-        _HIPBLAS_HANDLES.clear()
-
-    def _resolve_hipblas_spmv(library, dtype):
-        try:
-            symbol, scalar_type = _HIPBLAS_SPMV_FUNCS[dtype]
-        except KeyError as error:
-            raise ValueError(
-                f"Unsupported Hygon SPMV benchmark dtype: {dtype}"
-            ) from error
-        function = getattr(library, symbol)
-        function.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.POINTER(scalar_type),
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.POINTER(scalar_type),
-            ctypes.c_void_p,
-            ctypes.c_int,
-        ]
-        function.restype = ctypes.c_int
-        return function, scalar_type
-
-    atexit.register(_destroy_hipblas_handles)
+_CUBLAS_SPMV_FUNCS = {
+    torch.float32: (_cublas.cublasSspmv_v2, ctypes.c_float),
+    torch.float64: (_cublas.cublasDspmv_v2, ctypes.c_double),
+}
 
 
-_cublas = None if IS_HYGON else load_cublas()
-
-_CUBLAS_SPMV_FUNCS = (
-    {}
-    if IS_HYGON
-    else {
-        torch.float32: (_cublas.cublasSspmv_v2, ctypes.c_float),
-        torch.float64: (_cublas.cublasDspmv_v2, ctypes.c_double),
-    }
-)
-
-
-if IS_HYGON:
-
-    def cublas_spmv_baseline(
-        AP,
-        x,
-        y,
-        uplo,
-        n,
-        alpha,
-        incx,
-        beta,
-        incy,
-        handle,
-        c_func,
-        alpha_ptr,
-        beta_ptr,
-        hip_uplo,
-        **kwargs,
-    ):
-        status = c_func(
-            handle,
-            hip_uplo,
-            n,
-            alpha_ptr,
-            ctypes.c_void_p(AP.data_ptr()),
-            ctypes.c_void_p(x.data_ptr()),
-            incx,
-            beta_ptr,
-            ctypes.c_void_p(y.data_ptr()),
-            incy,
-        )
-        _check_hipblas_status(status, "hipBLAS SPMV")
+def cublas_spmv_baseline(
+    AP,
+    x,
+    y,
+    uplo,
+    n,
+    alpha,
+    incx,
+    beta,
+    incy,
+    handle,
+    c_func,
+    alpha_c,
+    beta_c,
+    **kwargs,
+):
+    if n == 0:
         return y
-
-else:
-
-    def cublas_spmv_baseline(
-        AP,
-        x,
-        y,
-        uplo,
-        n,
-        alpha,
-        incx,
-        beta,
-        incy,
-        handle,
-        c_func,
-        alpha_c,
-        beta_c,
-        **kwargs,
-    ):
-        if n == 0:
-            return y
-        status = c_func(
-            ctypes.c_void_p(handle),
-            ctypes.c_int(uplo),
-            ctypes.c_int(n),
-            ctypes.byref(alpha_c),
-            ctypes.c_void_p(AP.data_ptr()),
-            ctypes.c_void_p(x.data_ptr()),
-            ctypes.c_int(incx),
-            ctypes.byref(beta_c),
-            ctypes.c_void_p(y.data_ptr()),
-            ctypes.c_int(incy),
-        )
-        if status != 0:
-            raise RuntimeError(f"cublasXspmv_v2 failed with status code: {status}")
-        return y
+    status = c_func(
+        ctypes.c_void_p(handle),
+        ctypes.c_int(uplo),
+        ctypes.c_int(n),
+        ctypes.byref(alpha_c),
+        ctypes.c_void_p(AP.data_ptr()),
+        ctypes.c_void_p(x.data_ptr()),
+        ctypes.c_int(incx),
+        ctypes.byref(beta_c),
+        ctypes.c_void_p(y.data_ptr()),
+        ctypes.c_int(incy),
+    )
+    if status != 0:
+        raise RuntimeError(f"cublasXspmv_v2 failed with status code: {status}")
+    return y
 
 
 def _gems_wrapper(op):
@@ -240,8 +103,8 @@ def _gems_wrapper(op):
     return _impl
 
 
-gems_sspmv_wrapper = _gems_wrapper(flag_blas.sspmv)
-gems_dspmv_wrapper = _gems_wrapper(flag_blas.dspmv)
+gems_sspmv_wrapper = _gems_wrapper(flag_blas.ops.sspmv)
+gems_dspmv_wrapper = _gems_wrapper(flag_blas.ops.dspmv)
 
 
 def _generate_packed_sym(n, uplo, dtype, device):
@@ -261,7 +124,6 @@ class SpmvBenchmark(Benchmark):
         self.uplo = uplo
         self.alpha = alpha
         self.beta = beta
-        self.correctness_reference = "hipBLAS" if IS_HYGON else "cuBLAS"
 
     def set_more_metrics(self):
         return ["tflops", "gbps"]
@@ -271,22 +133,14 @@ class SpmvBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_HYGON:
-            library, handle = _prepare_hipblas(self.device)
-            c_func, ctor = _resolve_hipblas_spmv(library, cur_dtype)
-            alpha_c = ctor(self.alpha)
-            beta_c = ctor(self.beta)
-            alpha_ptr = ctypes.pointer(alpha_c)
-            beta_ptr = ctypes.pointer(beta_c)
-            hip_uplo = 121 if self.uplo == CUBLAS_FILL_MODE_UPPER else 122
-        else:
-            handle = cp.cuda.device.get_cublas_handle()
-            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
-            if cur_dtype not in _CUBLAS_SPMV_FUNCS:
-                raise ValueError(f"Unsupported dtype: {cur_dtype}")
-            c_func, ctor = _CUBLAS_SPMV_FUNCS[cur_dtype]
-            alpha_c = ctor(self.alpha)
-            beta_c = ctor(self.beta)
+        handle = cp.cuda.device.get_cublas_handle()
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+
+        if cur_dtype not in _CUBLAS_SPMV_FUNCS:
+            raise ValueError(f"Unsupported dtype: {cur_dtype}")
+        c_func, ctor = _CUBLAS_SPMV_FUNCS[cur_dtype]
+        alpha_c = ctor(self.alpha)
+        beta_c = ctor(self.beta)
 
         for shape in self.shapes:
             n = shape[0] if isinstance(shape, (tuple, list)) else shape
@@ -294,7 +148,7 @@ class SpmvBenchmark(Benchmark):
             x = torch.randn(n, dtype=cur_dtype, device=self.device)
             y = torch.randn(n, dtype=cur_dtype, device=self.device)
 
-            call_args = {
+            yield AP, x, y, {
                 "uplo": self.uplo,
                 "n": n,
                 "alpha": self.alpha,
@@ -303,16 +157,9 @@ class SpmvBenchmark(Benchmark):
                 "incy": 1,
                 "handle": handle,
                 "c_func": c_func,
+                "alpha_c": alpha_c,
+                "beta_c": beta_c,
             }
-            if IS_HYGON:
-                call_args.update(
-                    alpha_ptr=alpha_ptr,
-                    beta_ptr=beta_ptr,
-                    hip_uplo=hip_uplo,
-                )
-            else:
-                call_args.update(alpha_c=alpha_c, beta_c=beta_c)
-            yield AP, x, y, call_args
 
     def get_tflops(self, op, *args, **kwargs):
         n = kwargs.get("n", 0)

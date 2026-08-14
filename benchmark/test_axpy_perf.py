@@ -128,6 +128,31 @@ class AxpyBenchmark(Benchmark):
         )
         return io_amount * 1e-9 / (latency * 1e-3)
 
+    def validate_results(self, torch_result, blas_result, dtype):
+        tolerance = flag_blas.testing.RESOLUTION[dtype]
+        try:
+            flag_blas.testing.assert_close(
+                blas_result,
+                torch_result,
+                dtype,
+                equal_nan=False,
+                reduce_dim=1,
+                atol=tolerance,
+            )
+        except AssertionError as e:
+            torch_cpu = torch_result.cpu()
+            blas_cpu = blas_result.cpu()
+            max_abs_diff = torch.max(torch.abs(torch_cpu - blas_cpu))
+            max_rel_diff = torch.max(
+                torch.abs((torch_cpu - blas_cpu) / (torch.abs(torch_cpu) + 1e-9))
+            )
+            raise AssertionError(
+                f"Results differ beyond tolerance {tolerance} for dtype {dtype}:\n"
+                f"Max absolute difference: {max_abs_diff}\n"
+                f"Max relative difference: {max_rel_diff}\n"
+                f"Shape: {torch_cpu.shape}"
+            ) from e
+
     def run_correctness_check(self):
         if self.blas_op is None:
             raise ValueError(f"Missing FlagBLAS op for {self.op_name}")

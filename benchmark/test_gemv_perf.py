@@ -14,166 +14,19 @@
 
 from typing import Generator
 
+import cupy as cp
 import numpy as np
 import pytest
 import torch
+from cupy_backends.cuda.libs import cublas
 
 import flag_blas
 from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 from flag_blas.ops import CUBLAS_OP_C, CUBLAS_OP_N, CUBLAS_OP_T
 from flag_blas.utils import shape_utils
 
-IS_HYGON = flag_blas.vendor_name == "hygon"
-
-if IS_HYGON:
-    import atexit
-    import ctypes
-    import ctypes.util
-else:
-    import cupy as cp
-    from cupy_backends.cuda.libs import cublas
-
 _HUGE_NONCONTIG_COPY_BYTES = 2 * 1024 * 1024 * 1024
 _CHUNKED_COPY_BYTES = 256 * 1024 * 1024
-
-
-if IS_HYGON:
-
-    class HipComplex(ctypes.Structure):
-        _fields_ = [("real", ctypes.c_float), ("imag", ctypes.c_float)]
-
-    class HipDoubleComplex(ctypes.Structure):
-        _fields_ = [("real", ctypes.c_double), ("imag", ctypes.c_double)]
-
-    _HIPBLAS_LIBRARY = None
-    _HIPBLAS_HANDLES = {}
-    _HIPBLAS_GEMV_FUNCS = {
-        torch.float32: ("hipblasSgemv", ctypes.c_float),
-        torch.float64: ("hipblasDgemv", ctypes.c_double),
-        torch.complex64: ("hipblasCgemv_v2", HipComplex),
-        torch.complex128: ("hipblasZgemv_v2", HipDoubleComplex),
-    }
-    _HIPBLAS_GEMV_OPERATIONS = {
-        CUBLAS_OP_N: 111,
-        CUBLAS_OP_T: 112,
-        CUBLAS_OP_C: 113,
-    }
-
-    def _check_hipblas_status(status, operation):
-        if status != 0:
-            raise RuntimeError(f"{operation} failed with hipBLAS status {status}")
-
-    def _load_hipblas():
-        global _HIPBLAS_LIBRARY
-        if _HIPBLAS_LIBRARY is None:
-            library_name = ctypes.util.find_library("hipblas")
-            if library_name is None:
-                raise RuntimeError("Unable to find the hipBLAS shared library")
-            library = ctypes.CDLL(library_name)
-            library.hipblasCreate.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
-            library.hipblasCreate.restype = ctypes.c_int
-            library.hipblasDestroy.argtypes = [ctypes.c_void_p]
-            library.hipblasDestroy.restype = ctypes.c_int
-            library.hipblasSetStream.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-            library.hipblasSetStream.restype = ctypes.c_int
-            library.hipblasSetPointerMode.argtypes = [ctypes.c_void_p, ctypes.c_int]
-            library.hipblasSetPointerMode.restype = ctypes.c_int
-            _HIPBLAS_LIBRARY = library
-        return _HIPBLAS_LIBRARY
-
-    def _prepare_hipblas(device):
-        library = _load_hipblas()
-        torch_device = torch.device(device)
-        device_index = torch_device.index
-        if device_index is None:
-            device_index = torch.cuda.current_device()
-        handle = _HIPBLAS_HANDLES.get(device_index)
-        if handle is None:
-            with torch.cuda.device(device_index):
-                handle = ctypes.c_void_p()
-                _check_hipblas_status(
-                    library.hipblasCreate(ctypes.byref(handle)), "hipblasCreate"
-                )
-                _check_hipblas_status(
-                    library.hipblasSetPointerMode(handle, 0),
-                    "hipblasSetPointerMode",
-                )
-            _HIPBLAS_HANDLES[device_index] = handle
-        stream = torch.cuda.current_stream(device).cuda_stream
-        _check_hipblas_status(
-            library.hipblasSetStream(handle, ctypes.c_void_p(stream)),
-            "hipblasSetStream",
-        )
-        return library, handle
-
-    def _destroy_hipblas_handles():
-        if _HIPBLAS_LIBRARY is None:
-            return
-        for handle in tuple(_HIPBLAS_HANDLES.values()):
-            try:
-                _HIPBLAS_LIBRARY.hipblasDestroy(handle)
-            except Exception:
-                pass
-        _HIPBLAS_HANDLES.clear()
-
-    def _resolve_hipblas_gemv(library, dtype):
-        try:
-            symbol, scalar_type = _HIPBLAS_GEMV_FUNCS[dtype]
-        except KeyError as error:
-            raise ValueError(
-                f"Unsupported Hygon GEMV benchmark dtype: {dtype}"
-            ) from error
-        function = getattr(library, symbol)
-        function.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-        ]
-        function.restype = ctypes.c_int
-        return function, scalar_type
-
-    def _resolve_hipblas_gemm_ex(library):
-        function = library.hipblasGemmEx_v2
-        function.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
-        function.restype = ctypes.c_int
-        return function
-
-    def _make_hipblas_scalar(scalar_type, value):
-        if scalar_type in (HipComplex, HipDoubleComplex):
-            complex_value = complex(value)
-            return scalar_type(complex_value.real, complex_value.imag)
-        return scalar_type(float(value))
-
-    atexit.register(_destroy_hipblas_handles)
 
 
 def _needs_iluvatar_sgemv_chunked_noncontig_copy(tensor):
@@ -241,101 +94,6 @@ def cublas_sgemv(
         y.data_ptr(),
         incy,
     )
-    return y
-
-
-def hipblas_sgemv_baseline(
-    A,
-    x,
-    y,
-    trans,
-    m,
-    n,
-    alpha,
-    A_row,
-    lda_col,
-    lda_row,
-    incx,
-    beta,
-    incy,
-    handle,
-    alpha_ptr,
-    beta_ptr,
-    c_func,
-    hip_trans,
-):
-    if m == 0 or n == 0:
-        return y
-    status = c_func(
-        handle,
-        hip_trans,
-        m,
-        n,
-        ctypes.byref(alpha_ptr),
-        ctypes.c_void_p(A.data_ptr()),
-        lda_col,
-        ctypes.c_void_p(x.data_ptr()),
-        incx,
-        ctypes.byref(beta_ptr),
-        ctypes.c_void_p(y.data_ptr()),
-        incy,
-    )
-    _check_hipblas_status(status, "hipBLAS GEMV")
-    return y
-
-
-hipblas_dgemv_baseline = hipblas_sgemv_baseline
-hipblas_cgemv_baseline = hipblas_sgemv_baseline
-hipblas_zgemv_baseline = hipblas_sgemv_baseline
-
-
-def hipblas_low_precision_gemv_baseline(
-    A,
-    x,
-    y,
-    trans,
-    m,
-    n,
-    alpha,
-    A_row,
-    lda_col,
-    lda_row,
-    incx,
-    beta,
-    incy,
-    handle=None,
-    alpha_ptr=None,
-    beta_ptr=None,
-    cuda_type=None,
-    c_func=None,
-    hip_trans=None,
-    gemm_m=None,
-    gemm_k=None,
-):
-    if m == 0 or n == 0:
-        return y
-    status = c_func(
-        handle,
-        hip_trans,
-        111,
-        gemm_m,
-        1,
-        gemm_k,
-        ctypes.byref(alpha_ptr),
-        ctypes.c_void_p(A_row.data_ptr()),
-        cuda_type,
-        lda_row,
-        ctypes.c_void_p(x.data_ptr()),
-        cuda_type,
-        gemm_k,
-        ctypes.byref(beta_ptr),
-        ctypes.c_void_p(y.data_ptr()),
-        cuda_type,
-        gemm_m,
-        2,
-        160,
-    )
-    _check_hipblas_status(status, "hipblasGemmEx_v2")
     return y
 
 
@@ -516,9 +274,8 @@ def gems_sgemv_wrapper(
     handle,
     alpha_ptr,
     beta_ptr,
-    **kwargs,
 ):
-    flag_blas.sgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
+    flag_blas.ops.sgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
 
@@ -539,9 +296,8 @@ def gems_dgemv_wrapper(
     handle,
     alpha_ptr,
     beta_ptr,
-    **kwargs,
 ):
-    flag_blas.dgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
+    flag_blas.ops.dgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
 
@@ -562,9 +318,8 @@ def gems_cgemv_wrapper(
     handle,
     alpha_ptr,
     beta_ptr,
-    **kwargs,
 ):
-    flag_blas.cgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
+    flag_blas.ops.cgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
 
@@ -585,9 +340,8 @@ def gems_zgemv_wrapper(
     handle,
     alpha_ptr,
     beta_ptr,
-    **kwargs,
 ):
-    flag_blas.zgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
+    flag_blas.ops.zgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
 
@@ -605,13 +359,12 @@ def gems_hgemv_wrapper(
     incx,
     beta,
     incy,
-    handle=None,
-    alpha_ptr=None,
-    beta_ptr=None,
+    handle,
+    alpha_ptr,
+    beta_ptr,
     cuda_type=None,
-    **kwargs,
 ):
-    flag_blas.hgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
+    flag_blas.ops.hgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
 
@@ -629,13 +382,12 @@ def gems_bfgemv_wrapper(
     incx,
     beta,
     incy,
-    handle=None,
-    alpha_ptr=None,
-    beta_ptr=None,
+    handle,
+    alpha_ptr,
+    beta_ptr,
     cuda_type=None,
-    **kwargs,
 ):
-    flag_blas.bfgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
+    flag_blas.ops.bfgemv(trans, m, n, alpha, A_row, lda_row, x, incx, beta, y, incy)
     return y
 
 
@@ -705,27 +457,22 @@ class GemvBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_HYGON:
-            library, handle = _prepare_hipblas(self.device)
-            c_func, scalar_type = _resolve_hipblas_gemv(library, cur_dtype)
-            hip_trans = _HIPBLAS_GEMV_OPERATIONS[self.trans]
-            alpha_ptr = _make_hipblas_scalar(scalar_type, self.alpha)
-            beta_ptr = _make_hipblas_scalar(scalar_type, self.beta)
-        else:
-            handle = cp.cuda.device.get_cublas_handle()
-            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
-            if cur_dtype == torch.float32:
-                np_dtype = np.float32
-            elif cur_dtype == torch.float64:
-                np_dtype = np.float64
-            elif cur_dtype == torch.complex64:
-                np_dtype = np.complex64
-            elif cur_dtype == torch.complex128:
-                np_dtype = np.complex128
-            alpha_np = np.array(self.alpha, dtype=np_dtype)
-            beta_np = np.array(self.beta, dtype=np_dtype)
-            alpha_ptr = alpha_np.ctypes.data
-            beta_ptr = beta_np.ctypes.data
+        handle = cp.cuda.device.get_cublas_handle()
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+
+        if cur_dtype == torch.float32:
+            np_dtype = np.float32
+        elif cur_dtype == torch.float64:
+            np_dtype = np.float64
+        elif cur_dtype == torch.complex64:
+            np_dtype = np.complex64
+        elif cur_dtype == torch.complex128:
+            np_dtype = np.complex128
+
+        alpha_np = np.array(self.alpha, dtype=np_dtype)
+        beta_np = np.array(self.beta, dtype=np_dtype)
+        alpha_ptr = alpha_np.ctypes.data
+        beta_ptr = beta_np.ctypes.data
 
         for shape in self.shapes:
             m, n = shape
@@ -737,7 +484,7 @@ class GemvBenchmark(Benchmark):
             x = torch.randn(x_len, dtype=cur_dtype, device=self.device)
             y = torch.randn(y_len, dtype=cur_dtype, device=self.device)
 
-            kwargs = {
+            yield A_col, x, y.clone(), {
                 "trans": self.trans,
                 "m": m,
                 "n": n,
@@ -752,9 +499,6 @@ class GemvBenchmark(Benchmark):
                 "alpha_ptr": alpha_ptr,
                 "beta_ptr": beta_ptr,
             }
-            if IS_HYGON:
-                kwargs.update(c_func=c_func, hip_trans=hip_trans)
-            yield A_col, x, y.clone(), kwargs
 
     def get_tflops(self, op, *args, **kwargs):
         m = kwargs.get("m", 0)
@@ -787,7 +531,7 @@ class GemvBenchmark(Benchmark):
 def test_perf_sgemv():
     bench = GemvBenchmark(
         op_name="sgemv",
-        torch_op=hipblas_sgemv_baseline if IS_HYGON else cublas_sgemv,
+        torch_op=cublas_sgemv,
         gems_op=gems_sgemv_wrapper,
         dtypes=[torch.float32],
         trans=CUBLAS_OP_N,
@@ -799,7 +543,7 @@ def test_perf_sgemv():
 def test_perf_sgemv_trans():
     bench = GemvBenchmark(
         op_name="sgemv_trans",
-        torch_op=hipblas_sgemv_baseline if IS_HYGON else cublas_sgemv,
+        torch_op=cublas_sgemv,
         gems_op=gems_sgemv_wrapper,
         dtypes=[torch.float32],
         trans=CUBLAS_OP_T,
@@ -813,7 +557,7 @@ def test_perf_dgemv():
         pytest.skip("Device does not support float64")
     bench = GemvBenchmark(
         op_name="dgemv",
-        torch_op=hipblas_dgemv_baseline if IS_HYGON else cublas_dgemv,
+        torch_op=cublas_dgemv,
         gems_op=gems_dgemv_wrapper,
         dtypes=[torch.float64],
         trans=CUBLAS_OP_N,
@@ -827,7 +571,7 @@ def test_perf_dgemv_trans():
         pytest.skip("Device does not support float64")
     bench = GemvBenchmark(
         op_name="dgemv_trans",
-        torch_op=hipblas_dgemv_baseline if IS_HYGON else cublas_dgemv,
+        torch_op=cublas_dgemv,
         gems_op=gems_dgemv_wrapper,
         dtypes=[torch.float64],
         trans=CUBLAS_OP_T,
@@ -839,7 +583,7 @@ def test_perf_dgemv_trans():
 def test_perf_cgemv():
     bench = GemvBenchmark(
         op_name="cgemv",
-        torch_op=hipblas_cgemv_baseline if IS_HYGON else cublas_cgemv,
+        torch_op=cublas_cgemv,
         gems_op=gems_cgemv_wrapper,
         dtypes=[torch.complex64],
         trans=CUBLAS_OP_N,
@@ -853,7 +597,7 @@ def test_perf_cgemv():
 def test_perf_cgemv_trans():
     bench = GemvBenchmark(
         op_name="cgemv_trans",
-        torch_op=hipblas_cgemv_baseline if IS_HYGON else cublas_cgemv,
+        torch_op=cublas_cgemv,
         gems_op=gems_cgemv_wrapper,
         dtypes=[torch.complex64],
         trans=CUBLAS_OP_T,
@@ -867,7 +611,7 @@ def test_perf_cgemv_trans():
 def test_perf_cgemv_conj():
     bench = GemvBenchmark(
         op_name="cgemv_conj",
-        torch_op=hipblas_cgemv_baseline if IS_HYGON else cublas_cgemv,
+        torch_op=cublas_cgemv,
         gems_op=gems_cgemv_wrapper,
         dtypes=[torch.complex64],
         trans=CUBLAS_OP_C,
@@ -883,7 +627,7 @@ def test_perf_zgemv():
         pytest.skip("Device does not support float64")
     bench = GemvBenchmark(
         op_name="zgemv",
-        torch_op=hipblas_zgemv_baseline if IS_HYGON else cublas_zgemv,
+        torch_op=cublas_zgemv,
         gems_op=gems_zgemv_wrapper,
         dtypes=[torch.complex128],
         trans=CUBLAS_OP_N,
@@ -899,7 +643,7 @@ def test_perf_zgemv_trans():
         pytest.skip("Device does not support float64")
     bench = GemvBenchmark(
         op_name="zgemv_trans",
-        torch_op=hipblas_zgemv_baseline if IS_HYGON else cublas_zgemv,
+        torch_op=cublas_zgemv,
         gems_op=gems_zgemv_wrapper,
         dtypes=[torch.complex128],
         trans=CUBLAS_OP_T,
@@ -915,7 +659,7 @@ def test_perf_zgemv_conj():
         pytest.skip("Device does not support float64")
     bench = GemvBenchmark(
         op_name="zgemv_conj",
-        torch_op=hipblas_zgemv_baseline if IS_HYGON else cublas_zgemv,
+        torch_op=cublas_zgemv,
         gems_op=gems_zgemv_wrapper,
         dtypes=[torch.complex128],
         trans=CUBLAS_OP_C,
@@ -927,24 +671,17 @@ def test_perf_zgemv_conj():
 
 class HalfGemvBenchmark(GemvBenchmark):
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_HYGON:
-            if cur_dtype not in (torch.float16, torch.bfloat16):
-                raise ValueError(
-                    f"Unsupported Hygon low-precision GEMV dtype: {cur_dtype}"
-                )
-            library, handle = _prepare_hipblas(self.device)
-            c_func = _resolve_hipblas_gemm_ex(library)
-            alpha_ptr = ctypes.c_float(float(self.alpha))
-            beta_ptr = ctypes.c_float(float(self.beta))
-            cuda_type = 2 if cur_dtype == torch.float16 else 14
-        else:
-            handle = cp.cuda.device.get_cublas_handle()
-            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
-            alpha_np = np.array(self.alpha, dtype=np.float32)
-            beta_np = np.array(self.beta, dtype=np.float32)
-            alpha_ptr = alpha_np.ctypes.data
-            beta_ptr = beta_np.ctypes.data
-            cuda_type = 2 if cur_dtype == torch.float16 else 14
+        handle = cp.cuda.device.get_cublas_handle()
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+
+        alpha_np = np.array(self.alpha, dtype=np.float32)
+        beta_np = np.array(self.beta, dtype=np.float32)
+        alpha_ptr = alpha_np.ctypes.data
+        beta_ptr = beta_np.ctypes.data
+
+        CUDA_R_16F = 2
+        CUDA_R_16BF = 14
+        cuda_type = CUDA_R_16F if cur_dtype == torch.float16 else CUDA_R_16BF
 
         for shape in self.shapes:
             m, n = shape
@@ -955,7 +692,7 @@ class HalfGemvBenchmark(GemvBenchmark):
             x = torch.randn(x_len, dtype=cur_dtype, device=self.device)
             y = torch.randn(y_len, dtype=cur_dtype, device=self.device)
 
-            kwargs = {
+            yield A_row, x, y.clone(), {
                 "trans": self.trans,
                 "m": m,
                 "n": n,
@@ -971,29 +708,13 @@ class HalfGemvBenchmark(GemvBenchmark):
                 "beta_ptr": beta_ptr,
                 "cuda_type": cuda_type,
             }
-            if IS_HYGON:
-                if self.trans == CUBLAS_OP_N:
-                    hip_trans = 112
-                    gemm_m, gemm_k = m, n
-                else:
-                    hip_trans = 111
-                    gemm_m, gemm_k = n, m
-                kwargs.update(
-                    c_func=c_func,
-                    hip_trans=hip_trans,
-                    gemm_m=gemm_m,
-                    gemm_k=gemm_k,
-                )
-            yield A_row, x, y.clone(), kwargs
 
 
 @pytest.mark.hgemv
 def test_perf_hgemv():
     bench = HalfGemvBenchmark(
         op_name="hgemv",
-        torch_op=(
-            hipblas_low_precision_gemv_baseline if IS_HYGON else cublas_half_gemv
-        ),
+        torch_op=cublas_half_gemv,
         gems_op=gems_hgemv_wrapper,
         dtypes=[torch.float16],
         trans=CUBLAS_OP_N,
@@ -1005,9 +726,7 @@ def test_perf_hgemv():
 def test_perf_hgemv_trans():
     bench = HalfGemvBenchmark(
         op_name="hgemv_trans",
-        torch_op=(
-            hipblas_low_precision_gemv_baseline if IS_HYGON else cublas_half_gemv
-        ),
+        torch_op=cublas_half_gemv,
         gems_op=gems_hgemv_wrapper,
         dtypes=[torch.float16],
         trans=CUBLAS_OP_T,
@@ -1019,9 +738,7 @@ def test_perf_hgemv_trans():
 def test_perf_bfgemv():
     bench = HalfGemvBenchmark(
         op_name="bfgemv",
-        torch_op=(
-            hipblas_low_precision_gemv_baseline if IS_HYGON else cublas_half_gemv
-        ),
+        torch_op=cublas_half_gemv,
         gems_op=gems_bfgemv_wrapper,
         dtypes=[torch.bfloat16],
         trans=CUBLAS_OP_N,
@@ -1033,9 +750,7 @@ def test_perf_bfgemv():
 def test_perf_bfgemv_trans():
     bench = HalfGemvBenchmark(
         op_name="bfgemv_trans",
-        torch_op=(
-            hipblas_low_precision_gemv_baseline if IS_HYGON else cublas_half_gemv
-        ),
+        torch_op=cublas_half_gemv,
         gems_op=gems_bfgemv_wrapper,
         dtypes=[torch.bfloat16],
         trans=CUBLAS_OP_T,
@@ -1097,7 +812,7 @@ def gems_fp8_gemv_wrapper(
     beta_ptr,
     **kwargs,
 ):
-    flag_blas.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, incx, beta, y, incy)
+    flag_blas.ops.fp8_gemv(trans, m, n, alpha, A_fp8, n, x_fp8, incx, beta, y, incy)
     return y
 
 
@@ -1218,8 +933,6 @@ class Fp8GemvBenchmark(Benchmark):
 
 @pytest.mark.fp8gemv
 def test_perf_fp8_gemv_e4m3_vs_sgemv_trans():
-    if IS_HYGON:
-        pytest.skip("FP8 GEMV cuBLAS baseline is unavailable on Hygon")
     bench = Fp8GemvBenchmark(
         op_name="fp8_gemv_e4m3_vs_sgemv_trans",
         torch_op=cublas_sgemv_fp8_baseline,
@@ -1233,8 +946,6 @@ def test_perf_fp8_gemv_e4m3_vs_sgemv_trans():
 
 @pytest.mark.fp8gemv
 def test_perf_fp8_gemv_e5m2_vs_sgemv_trans():
-    if IS_HYGON:
-        pytest.skip("FP8 GEMV cuBLAS baseline is unavailable on Hygon")
     bench = Fp8GemvBenchmark(
         op_name="fp8_gemv_e5m2_vs_sgemv_trans",
         torch_op=cublas_sgemv_fp8_baseline,

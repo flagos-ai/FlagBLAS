@@ -51,7 +51,9 @@ def _get_cublas_func(*names):
     raise RuntimeError(f"Cannot find any cuBLAS symbol from: {', '.join(names)}")
 
 
-def cublas_swap(x, y, n=None, incx=1, incy=1, handle=None, tmp=None):
+def cublas_swap(x, y, n=None, incx=1, incy=1, tmp=None):
+    x = x.clone()
+    y = y.clone()
     if n is None:
         n = min(x.numel() // incx, y.numel() // incy)
     if n <= 0:
@@ -68,8 +70,7 @@ def cublas_swap(x, y, n=None, incx=1, incy=1, handle=None, tmp=None):
     else:
         raise TypeError(f"Unsupported dtype for swap: {x.dtype}")
 
-    if handle is None:
-        handle = cp.cuda.device.get_cublas_handle()
+    handle = cp.cuda.device.get_cublas_handle()
     status = func(
         ctypes.c_void_p(handle),
         ctypes.c_int(n),
@@ -83,7 +84,9 @@ def cublas_swap(x, y, n=None, incx=1, incy=1, handle=None, tmp=None):
     return x, y
 
 
-def gems_swap_wrapper(x, y, n=None, incx=1, incy=1, handle=None, tmp=None):
+def gems_swap_wrapper(x, y, n=None, incx=1, incy=1, tmp=None):
+    x = x.clone()
+    y = y.clone()
     if x.dtype == torch.float32:
         flag_blas.ops.sswap(n, x, incx, y, incy)
     elif x.dtype == torch.float64:
@@ -111,7 +114,6 @@ class SwapBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        handle = cp.cuda.device.get_cublas_handle()
         for shape in self.shapes:
             n = shape[0]
             x = torch.randn(n * self.incx, dtype=cur_dtype, device=self.device)
@@ -120,7 +122,6 @@ class SwapBenchmark(Benchmark):
                 "n": n,
                 "incx": self.incx,
                 "incy": self.incy,
-                "handle": handle,
             }
 
     def get_gbps(self, args, latency):

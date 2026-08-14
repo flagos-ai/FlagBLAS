@@ -16,17 +16,12 @@ import ctypes
 import ctypes.util
 from typing import Generator
 
+import cupy as cp
 import pytest
 import torch
+from cupy_backends.cuda.libs import cublas
 
 import flag_blas
-
-if flag_blas.vendor_name == "hygon":
-    import atexit
-else:
-    import cupy as cp
-    from cupy_backends.cuda.libs import cublas
-
 from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 from flag_blas.utils import shape_utils
@@ -64,7 +59,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if flag_blas.vendor_name == "hygon" else load_cublas()
+_cublas = load_cublas()
 
 
 class cuComplex(ctypes.Structure):
@@ -75,106 +70,10 @@ class cuDoubleComplex(ctypes.Structure):
     _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
 
 
-_CUBLAS_HEMV_FUNCS = (
-    {}
-    if flag_blas.vendor_name == "hygon"
-    else {
-        torch.complex64: (_cublas.cublasChemv_v2, cuComplex),
-        torch.complex128: (_cublas.cublasZhemv_v2, cuDoubleComplex),
-    }
-)
-
-
-if flag_blas.vendor_name == "hygon":
-    _HIPBLAS_LIBRARY = None
-    _HIPBLAS_HANDLES = {}
-    _HIPBLAS_HEMV_FUNCS = {
-        torch.complex64: ("hipblasChemv_v2", cuComplex),
-        torch.complex128: ("hipblasZhemv_v2", cuDoubleComplex),
-    }
-
-    def _check_hipblas_status(status, operation):
-        if status != 0:
-            raise RuntimeError(f"{operation} failed with hipBLAS status {status}")
-
-    def _load_hipblas():
-        global _HIPBLAS_LIBRARY
-        if _HIPBLAS_LIBRARY is None:
-            library_name = ctypes.util.find_library("hipblas")
-            if library_name is None:
-                raise RuntimeError("Unable to find the hipBLAS shared library")
-            library = ctypes.CDLL(library_name)
-            library.hipblasCreate.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
-            library.hipblasCreate.restype = ctypes.c_int
-            library.hipblasDestroy.argtypes = [ctypes.c_void_p]
-            library.hipblasDestroy.restype = ctypes.c_int
-            library.hipblasSetStream.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-            library.hipblasSetStream.restype = ctypes.c_int
-            library.hipblasSetPointerMode.argtypes = [ctypes.c_void_p, ctypes.c_int]
-            library.hipblasSetPointerMode.restype = ctypes.c_int
-            _HIPBLAS_LIBRARY = library
-        return _HIPBLAS_LIBRARY
-
-    def _prepare_hipblas(device):
-        library = _load_hipblas()
-        torch_device = torch.device(device)
-        device_index = torch_device.index
-        if device_index is None:
-            device_index = torch.cuda.current_device()
-        handle = _HIPBLAS_HANDLES.get(device_index)
-        if handle is None:
-            with torch.cuda.device(device_index):
-                handle = ctypes.c_void_p()
-                _check_hipblas_status(
-                    library.hipblasCreate(ctypes.byref(handle)), "hipblasCreate"
-                )
-                _check_hipblas_status(
-                    library.hipblasSetPointerMode(handle, 0),
-                    "hipblasSetPointerMode",
-                )
-            _HIPBLAS_HANDLES[device_index] = handle
-        stream = torch.cuda.current_stream(device).cuda_stream
-        _check_hipblas_status(
-            library.hipblasSetStream(handle, ctypes.c_void_p(stream)),
-            "hipblasSetStream",
-        )
-        return library, handle
-
-    def _destroy_hipblas_handles():
-        if _HIPBLAS_LIBRARY is None:
-            return
-        for handle in tuple(_HIPBLAS_HANDLES.values()):
-            try:
-                _HIPBLAS_LIBRARY.hipblasDestroy(handle)
-            except Exception:
-                pass
-        _HIPBLAS_HANDLES.clear()
-
-    def _resolve_hipblas_hemv(library, dtype):
-        try:
-            symbol, scalar_type = _HIPBLAS_HEMV_FUNCS[dtype]
-        except KeyError as error:
-            raise ValueError(
-                f"Unsupported Hygon HEMV benchmark dtype: {dtype}"
-            ) from error
-        function = getattr(library, symbol)
-        function.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-        ]
-        function.restype = ctypes.c_int
-        return function, scalar_type
-
-    atexit.register(_destroy_hipblas_handles)
+_CUBLAS_HEMV_FUNCS = {
+    torch.complex64: (_cublas.cublasChemv_v2, cuComplex),
+    torch.complex128: (_cublas.cublasZhemv_v2, cuDoubleComplex),
+}
 
 
 def _make_scalar(ctor, value):
@@ -196,27 +95,9 @@ def cublas_hemv_baseline(
     c_func,
     alpha_c,
     beta_c,
-    hip_uplo=None,
     **kwargs,
 ):
     if n == 0:
-        return y
-
-    if flag_blas.vendor_name == "hygon":
-        status = c_func(
-            handle,
-            hip_uplo,
-            n,
-            ctypes.byref(alpha_c),
-            ctypes.c_void_p(A.data_ptr()),
-            lda,
-            ctypes.c_void_p(x.data_ptr()),
-            incx,
-            ctypes.byref(beta_c),
-            ctypes.c_void_p(y.data_ptr()),
-            incy,
-        )
-        _check_hipblas_status(status, "hipBLAS HEMV")
         return y
 
     status = c_func(
@@ -245,8 +126,8 @@ def _gems_wrapper(op):
     return _impl
 
 
-gems_chemv_wrapper = _gems_wrapper(flag_blas.chemv)
-gems_zhemv_wrapper = _gems_wrapper(flag_blas.zhemv)
+gems_chemv_wrapper = _gems_wrapper(flag_blas.ops.chemv)
+gems_zhemv_wrapper = _gems_wrapper(flag_blas.ops.zhemv)
 
 
 def _generate_her_A(n, lda, dtype, device):
@@ -271,9 +152,6 @@ class HemvBenchmark(Benchmark):
         self.uplo = uplo
         self.alpha = alpha
         self.beta = beta
-        self.correctness_reference = (
-            "hipBLAS" if flag_blas.vendor_name == "hygon" else "cuBLAS"
-        )
 
     def set_more_metrics(self):
         return ["tflops", "gbps"]
@@ -283,20 +161,14 @@ class HemvBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if flag_blas.vendor_name == "hygon":
-            library, handle = _prepare_hipblas(self.device)
-            c_func, ctor = _resolve_hipblas_hemv(library, cur_dtype)
-            alpha_c = _make_scalar(ctor, self.alpha)
-            beta_c = _make_scalar(ctor, self.beta)
-            hip_uplo = 121 if self.uplo == CUBLAS_FILL_MODE_UPPER else 122
-        else:
-            handle = cp.cuda.device.get_cublas_handle()
-            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
-            if cur_dtype not in _CUBLAS_HEMV_FUNCS:
-                raise ValueError(f"Unsupported dtype: {cur_dtype}")
-            c_func, ctor = _CUBLAS_HEMV_FUNCS[cur_dtype]
-            alpha_c = _make_scalar(ctor, self.alpha)
-            beta_c = _make_scalar(ctor, self.beta)
+        handle = cp.cuda.device.get_cublas_handle()
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+
+        if cur_dtype not in _CUBLAS_HEMV_FUNCS:
+            raise ValueError(f"Unsupported dtype: {cur_dtype}")
+        c_func, ctor = _CUBLAS_HEMV_FUNCS[cur_dtype]
+        alpha_c = _make_scalar(ctor, self.alpha)
+        beta_c = _make_scalar(ctor, self.beta)
 
         for shape in self.shapes:
             n = shape[0] if isinstance(shape, (tuple, list)) else shape
@@ -305,7 +177,7 @@ class HemvBenchmark(Benchmark):
             x = torch.randn(n, dtype=cur_dtype, device=self.device)
             y = torch.randn(n, dtype=cur_dtype, device=self.device)
 
-            kwargs = {
+            yield A, x, y.clone(), {
                 "uplo": self.uplo,
                 "n": n,
                 "alpha": self.alpha,
@@ -318,9 +190,6 @@ class HemvBenchmark(Benchmark):
                 "alpha_c": alpha_c,
                 "beta_c": beta_c,
             }
-            if flag_blas.vendor_name == "hygon":
-                kwargs["hip_uplo"] = hip_uplo
-            yield A, x, y.clone(), kwargs
 
     def get_tflops(self, op, *args, **kwargs):
         n = kwargs.get("n", 0)
