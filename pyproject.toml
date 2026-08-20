@@ -34,6 +34,7 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
+    "torch>=2.6.0",
     "packaging",
     "pybind11",
     "PyYAML",
@@ -41,24 +42,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Platform-specific dependencies (following FlagGems pattern).
-# Each group pins the torch wheel matching the platform's runtime.
-nvidia-cuda128 = [
-    "torch==2.9.1+cu128",
-    "torchaudio==2.9.1+cu128",
-    "torchvision==0.24.0+cu128",
-    "cupy-cuda12x",
-]
-
-# Hygon DCU (ROCm/HIP): pinned DTK-patched torch from the flagos-pypi-hygon index.
-hygon = [
-    #"torch==2.4.1+das.opt2.dtk2604",
-	"numpy==1.26.4",
-]
 test = [
     "pytest>=7.1.0",
     "numpy>=1.26",
     "scipy>=1.14",
+    "cupy-cuda12x",
     "distro==1.9.0",
     "gitpython",
     "pyyaml",
