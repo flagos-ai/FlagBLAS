@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# DEBUG: symv 测试当前处于调试（debug）阶段，尚未稳定收敛
+
 import ctypes
 import ctypes.util
 

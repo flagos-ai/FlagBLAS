@@ -63,7 +63,7 @@ case $VENDOR in
     # needs the DTK runtime libs (LD_LIBRARY_PATH) to detect the DCUs at
     # torch import time, so this must run before any python/torch invocation.
     export DTK_ENV=""
-    for f in /opt/dtk-26.04/env.sh /opt/dtk/env.sh /usr/local/dtk/env.sh /opt/dtk-*/env.sh /usr/local/dtk-*/env.sh; do
+    for f in /opt/dtk-25.04/env.sh /opt/dtk/env.sh /usr/local/dtk/env.sh /opt/dtk-*/env.sh /usr/local/dtk-*/env.sh; do
       if [ -f "$f" ]; then
         export DTK_ENV="$f"
         source "$f" || true
@@ -72,7 +72,7 @@ case $VENDOR in
       fi
     done
     if [ -z "$DTK_ENV" ]; then
-      echo "WARNING: no DTK env.sh found under /opt/dtk-26.04, /opt/dtk*, /usr/local/dtk*. torch will not see the DCUs."
+      echo "WARNING: no DTK env.sh found under /opt/dtk-25.04, /opt/dtk*, /usr/local/dtk*. torch will not see the DCUs."
     fi
     # Explicitly ensure the DTK/hyhal library dirs are on LD_LIBRARY_PATH,
     # in case env.sh does not cover them (torch._C._cuda_init needs them to

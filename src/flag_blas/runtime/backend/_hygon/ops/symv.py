@@ -1,3 +1,4 @@
+# DEBUG: hygon 平台 symv 算子实现，当前处于调试（debug）阶段，尚未稳定收敛
 # Copyright 2026 FlagOS Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
