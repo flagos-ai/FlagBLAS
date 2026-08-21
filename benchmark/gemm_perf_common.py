@@ -213,8 +213,8 @@ def cublas_hgemm(
         C_col.data_ptr(),
         CUDA_R_16F,
         ldc_cublas,
-        CUDA_R_32F,
-        0,
+        cublas.CUBLAS_COMPUTE_32F,
+        cublas.CUBLAS_GEMM_DEFAULT,
     )
     return C_col
 
@@ -303,8 +303,8 @@ def cublas_bfgemm(
         C_col.data_ptr(),
         CUDA_R_16BF,
         ldc_cublas,
-        CUDA_R_32F,
-        0,
+        cublas.CUBLAS_COMPUTE_32F,
+        cublas.CUBLAS_GEMM_DEFAULT,
     )
     return C_col
 
@@ -356,8 +356,8 @@ def cublas_bfgemm_reference(
         C_fp32.data_ptr(),
         CUDA_R_32F,
         ldc_cublas,
-        CUDA_R_32F,
-        0,
+        cublas.CUBLAS_COMPUTE_32F,
+        cublas.CUBLAS_GEMM_DEFAULT,
     )
     C_col.copy_(C_fp32.to(torch.bfloat16))
     return C_col

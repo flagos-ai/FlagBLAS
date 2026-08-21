@@ -45,6 +45,10 @@ def cublas_zgemm_reference(
 
 
 @pytest.mark.zgemm
+@pytest.mark.skipif(
+    flag_blas.vendor_name == "thead",
+    reason="cublasZgemm not supported on T-Head (Zhenwu) platform",
+)
 @pytest.mark.parametrize("m,n,k", ZGEMM_SHAPES)
 @pytest.mark.parametrize(
     "transa,transb",
@@ -133,6 +137,10 @@ def test_accuracy_zgemm(m, n, k, transa, transb):
 
 
 @pytest.mark.zgemm
+@pytest.mark.skipif(
+    flag_blas.vendor_name == "thead",
+    reason="cublasZgemm not supported on T-Head (Zhenwu) platform",
+)
 @pytest.mark.parametrize(
     "alpha,beta",
     [
@@ -160,6 +168,10 @@ def test_zgemm_alpha_beta(alpha, beta):
 
 
 @pytest.mark.zgemm
+@pytest.mark.skipif(
+    flag_blas.vendor_name == "thead",
+    reason="cublasZgemm not supported on T-Head (Zhenwu) platform",
+)
 @pytest.mark.parametrize("m,n,k", [(0, 64, 64), (64, 0, 64), (64, 64, 0)])
 def test_zgemm_empty(m, n, k):
     device = flag_blas.device
