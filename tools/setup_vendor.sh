@@ -24,6 +24,10 @@ SUPPORTED_VENDORS=(
   "hygon"
 )
 export FLAGOS_PYPI="https://resource.flagos.net/repository/flagos-pypi-${VENDOR}/simple"
+# Public mirror backing non-vendor packages (pytest, numpy, ...), mirroring
+# FlagGems: `--default-index <vendor>` + `--index <mirror>` resolve vendor
+# wheels (e.g. torch==2.9.1+musa5.2.0) and plain PyPI packages together.
+export MIRROR="https://mirrors.aliyun.com/pypi/simple"
 
 valid_vendor() {
   needle=$1
@@ -173,6 +177,22 @@ PYEOF
       echo "Baked DTK environment into .venv/bin/activate: $DTK_ENV"
     fi
     ;;
+  mthreads)
+    # Install FlagBLAS with the full MUSA stack (MThreads S2000/S3000/S5000,
+    # MUSA 5.2) in one go, FlagGems-style: the vendor index (default) serves
+    # torch==2.9.1+musa5.2.0 / torch_musa / mkl, while the public mirror backs
+    # the remaining test dependencies.
+    uv pip install -e ".[mthreads-musa520,test]" \
+      --default-index "${FLAGOS_PYPI}" \
+      --index "${MIRROR}"
+
+    # Install FlagTree (Triton-compatible compiler with MUSA backend)
+    uv pip uninstall triton
+    uv pip install flagtree===0.6.0+mthreads3.6 \
+      --default-index "${FLAGOS_PYPI}" \
+      --index "${MIRROR}"
+    ;;
+
 esac
 
 echo "FlagBLAS installation for ${VENDOR} completed."

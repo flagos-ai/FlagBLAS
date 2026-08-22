@@ -33,6 +33,11 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
 ]
+# NOTE: torch is intentionally NOT listed here - it is vendor-specific and
+# ships with platform-local version tags (e.g. torch==2.9.1+musa5.2.0 for
+# mthreads, torch==2.9.1 for nvidia cu128). Installing it unconditionally
+# makes pip try to resolve it against the public PyPI and conflict with the
+# vendor extras. Install torch via the vendor extra or tools/setup_vendor.sh.
 dependencies = [
     "packaging",
     "pybind11",
@@ -55,6 +60,30 @@ hygon = [
     #"torch==2.4.1+das.opt2.dtk2604",
 	"numpy==1.26.4",
 ]
+
+# mthreads (MUSA 5.2): MuBLAS has no PyPI package - it is a system library
+# shipped with the MUSA Toolkit (e.g. `apt install musa-toolkit` or the offline
+# musa_toolkits tar.gz), installed to /usr/local/musa/lib/libmublas.so and
+# loaded from Python via ctypes (see benchmark/gemm_perf_common.py and
+# tests/test_sgemm.py).
+#
+# torch / torch_musa wheels for MUSA only exist on the FlagOS vendor index, so
+# plain `pip install -e ".[mthreads-musa520]"` would fail to resolve them
+# against public PyPI. Pin them as direct URLs to the flagos wheel files so no
+# extra --index-url is needed. NOTE: `name==ver @ url` fails PEP 508
+# validation (packaging does not accept a version specifier before `@`), so
+# the version is encoded in the wheel URL instead. Both wheels are CPython
+# 3.10 / linux-x86_64 only - use Python 3.10 on the MUSA machine.
+mthreads-musa520 = [
+    "torch @ https://resource.flagos.net/repository/flagos-pypi-mthreads/packages/torch/2.9.1+musa5.2.0/torch-2.9.1+musa5.2.0-cp310-cp310-linux_x86_64.whl",
+    "torch_musa @ https://resource.flagos.net/repository/flagos-pypi-mthreads/packages/torch-musa/2.9.1/torch_musa-2.9.1-cp310-cp310-linux_x86_64.whl",
+    "mkl==2024.0.0",
+]
+
+# NOTE: cupy is intentionally NOT in test - it is only needed as the cuBLAS
+# reference for NVIDIA benchmarks and would otherwise be pulled in on every
+# vendor (cupy-cuda12x is CUDA-specific). Install it manually on NVIDIA
+# machines when running benchmarks: `pip install cupy-cuda12x`.
 test = [
     "pytest>=7.1.0",
     "numpy>=1.26",
@@ -83,3 +112,14 @@ build.verbose = true
 logging.level = "INFO"
 wheel.install-dir = "flag_blas"
 build-dir = "build/{cache_tag}"
+
+[tool.uv]
+# The mthreads-musa520 extra pins torch / torch_musa as direct URLs to the
+# FlagOS vendor index, so `uv pip install -e ".[mthreads-musa520]"` resolves
+# them without any --index-url. The vendor index is still needed explicitly
+# when installing platform packages that are NOT pinned by URL (e.g. flagtree
+# in tools/setup_vendor.sh).
+#
+# Do not register the vendor index globally here: its higher local versions
+# (e.g. torch 2.9.1+musa5.2.0) would be picked for other vendors too.
+index-strategy = "unsafe-best-match"

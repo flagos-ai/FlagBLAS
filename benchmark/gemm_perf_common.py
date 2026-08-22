@@ -12,18 +12,255 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ctypes
 import itertools
+import os
 from typing import Generator, List, Tuple
 
-import cupy as cp
 import numpy as np
 import torch
-from cupy_backends.cuda.libs import cublas
 
 import flag_blas
 from benchmark.performance_utils import Benchmark
 from flag_blas.ops import CUBLAS_OP_N
 from flag_blas.utils import shape_utils
+
+# Multi-vendor GEMM reference: use the official BLAS library of the running
+# vendor when available, otherwise fall back to a torch.matmul reference.
+#
+#     vendor      device_name   reference library     loader
+#     ------------------------------------------------------------
+#     nvidia      cuda          cuBLAS                cupy
+#     iluvatar    corex         cuBLAS-compatible     ctypes libcublas (best effort)
+#     mthreads    musa          muBLAS                ctypes libmublas
+#     others      -             none yet              torch.matmul fallback
+_CUBLAS_VENDORS = ("nvidia", "iluvatar")
+
+# GEMM entry names per dtype: (cupy name, ctypes name-suffix).
+_GEMM_NAMES = {
+    torch.float32: ("sgemm", "Sgemm"),
+    torch.float64: ("dgemm", "Dgemm"),
+    torch.complex64: ("cgemm", "Cgemm"),
+    torch.complex128: ("zgemm", "Zgemm"),
+}
+
+try:
+    import cupy as cp
+    from cupy_backends.cuda.libs import cublas
+
+    HAS_CUBLAS = True
+except ImportError:
+    cp = None
+    cublas = None
+    HAS_CUBLAS = False
+
+
+def _load_lib(names, search_dir=None):
+    """Load the first shared library that can be resolved."""
+    if search_dir is not None:
+        for name in names:
+            path = os.path.join(search_dir, name)
+            if os.path.exists(path):
+                try:
+                    return ctypes.cdll.LoadLibrary(path)
+                except OSError:
+                    continue
+    for name in names:
+        try:
+            return ctypes.cdll.LoadLibrary(name)
+        except OSError:
+            continue
+    return None
+
+
+def _lib_hint(vendor):
+    """Directory where the vendor BLAS library usually lives."""
+    if vendor == "mthreads":
+        return os.path.join(os.environ.get("MUSA_HOME", "/usr/local/musa"), "lib")
+    if vendor in _CUBLAS_VENDORS:
+        cuda_home = os.environ.get("CUDA_HOME")
+        return os.path.join(cuda_home, "lib64") if cuda_home else None
+    return None
+
+
+# cuBLAS-compatible library via ctypes (best effort on non-cupy CUDA vendors,
+# e.g. iluvatar), or muBLAS for mthreads.
+_ctypes_blas = None  # (lib, function-prefix)
+if flag_blas.vendor_name in _CUBLAS_VENDORS and not HAS_CUBLAS:
+    _lib = _load_lib(
+        ["libcublas.so", "libcublas.so.12", "libcublas.so.11"],
+        _lib_hint(flag_blas.vendor_name),
+    )
+    if _lib is not None:
+        _ctypes_blas = (_lib, "cublas")
+elif flag_blas.vendor_name == "mthreads":
+    _lib = _load_lib(
+        ["libmublas.so", "libmublas.so.1"], _lib_hint(flag_blas.vendor_name)
+    )
+    if _lib is not None:
+        _ctypes_blas = (_lib, "mublas")
+
+
+
+
+def _clear_musa_sticky_error():
+    """Consume the sticky error muBLAS leaves on the MUSA context.
+
+    When called through ctypes, muBLAS may hit driver APIs the installed MUSA
+    driver does not implement (e.g. on large non-transposed shapes) and leave
+    a sticky musaErrorNotSupported on the context. The error is only reported
+    to the *next* torch_musa API call (e.g. a clone), which would otherwise
+    fail spuriously. Reading musaGetLastError clears it.
+    """
+    global _musart_last_error_fn
+    if _musart_last_error_fn is None:
+        _musart_last_error_fn = ctypes.cdll.LoadLibrary("libmusart.so.5")
+        _musart_last_error_fn.musaGetLastError.restype = ctypes.c_int
+    _musart_last_error_fn.musaGetLastError()
+
+
+_musart_last_error_fn = None
+def native_blas_available():
+    """Whether an official BLAS library is usable on this vendor."""
+    return HAS_CUBLAS or _ctypes_blas is not None
+
+
+def _create_handle(lib, create_names):
+    """Create a native BLAS handle through ctypes (best effort)."""
+    for name in create_names:
+        fn = getattr(lib, name, None)
+        if fn is None:
+            continue
+        fn.restype = ctypes.c_int
+        fn.argtypes = [ctypes.c_void_p]
+        handle = ctypes.c_void_p()
+        if fn(ctypes.byref(handle)) == 0:
+            return handle.value
+    return None
+
+
+def get_blas_handle():
+    """Native BLAS handle of the current vendor (None if unavailable)."""
+    if HAS_CUBLAS:
+        handle = cp.cuda.device.get_cublas_handle()
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+        cublas.setMathMode(handle, 0)
+        return handle
+    if _ctypes_blas is not None:
+        lib, prefix = _ctypes_blas
+        return _create_handle(lib, [f"{prefix}Create_v2", f"{prefix}Create"])
+    return None
+
+
+def _config_gemm_fn(lib, name):
+    fn = getattr(lib, name, None)
+    if fn is None:
+        return None
+    fn.restype = ctypes.c_int
+    fn.argtypes = [
+        ctypes.c_void_p,  # handle
+        ctypes.c_int,  # transa
+        ctypes.c_int,  # transb
+        ctypes.c_int,  # m
+        ctypes.c_int,  # n
+        ctypes.c_int,  # k
+        ctypes.c_void_p,  # alpha
+        ctypes.c_void_p,  # A
+        ctypes.c_int,  # lda
+        ctypes.c_void_p,  # B
+        ctypes.c_int,  # ldb
+        ctypes.c_void_p,  # beta
+        ctypes.c_void_p,  # C
+        ctypes.c_int,  # ldc
+    ]
+    return fn
+
+
+def _native_op(code):
+    """Map a cuBLAS op code (N=0/T=1/C=2) to the native BLAS codes.
+
+    cuBLAS-compatible libraries (iluvatar) reuse 0/1/2, but muBLAS uses
+    MUBLAS_OP_N=111/MUBLAS_OP_T=112/MUBLAS_OP_C=113.
+    """
+    if _ctypes_blas is not None and _ctypes_blas[1] == "mublas":
+        return {CUBLAS_OP_N: 111, 1: 112, 2: 113}[code]
+    return code
+
+
+def native_gemm(handle, dtype, transa, transb, m, n, k, alpha_ptr, A, lda, B,
+                ldb, beta_ptr, C, ldc):
+    """Native GEMM (column-major, cuBLAS semantics) for the current vendor.
+
+    ``A``/``B``/``C`` are torch tensors already in column-major (cuBLAS) layout.
+    Raises ``RuntimeError`` when no native BLAS library is available; callers
+    should fall back to :func:`torch_gemm_reference`.
+    """
+    if HAS_CUBLAS:
+        fn = getattr(cublas, _GEMM_NAMES[dtype][0])
+        fn(
+            handle,
+            transa,
+            transb,
+            m,
+            n,
+            k,
+            alpha_ptr,
+            A.data_ptr(),
+            lda,
+            B.data_ptr(),
+            ldb,
+            beta_ptr,
+            C.data_ptr(),
+            ldc,
+        )
+        return
+    if _ctypes_blas is None:
+        raise RuntimeError(
+            f"No native BLAS library available for vendor {flag_blas.vendor_name!r}"
+        )
+    lib, prefix = _ctypes_blas
+    fn = _config_gemm_fn(lib, f"{prefix}{_GEMM_NAMES[dtype][1]}")
+    if fn is None:
+        raise RuntimeError(
+            f"Vendor library {prefix} does not export "
+            f"{prefix}{_GEMM_NAMES[dtype][1]}"
+        )
+    fn(
+        ctypes.c_void_p(handle),
+        ctypes.c_int(_native_op(transa)),
+        ctypes.c_int(_native_op(transb)),
+        ctypes.c_int(m),
+        ctypes.c_int(n),
+        ctypes.c_int(k),
+        ctypes.c_void_p(alpha_ptr),
+        ctypes.c_void_p(A.data_ptr()),
+        ctypes.c_int(lda),
+        ctypes.c_void_p(B.data_ptr()),
+        ctypes.c_int(ldb),
+        ctypes.c_void_p(beta_ptr),
+        ctypes.c_void_p(C.data_ptr()),
+        ctypes.c_int(ldc),
+    )
+    if prefix == "mublas":
+        _clear_musa_sticky_error()
+
+
+def torch_gemm_reference(A_row, B_row, C_row, transa, transb, alpha, beta):
+    """Reference GEMM implemented with torch.matmul (universal fallback)."""
+    a = A_row if transa == CUBLAS_OP_N else A_row.t()
+    b = B_row if transb == CUBLAS_OP_N else B_row.t()
+    C_row.copy_(alpha * torch.matmul(a, b) + beta * C_row)
+    return C_row
+
+
+def disable_tf32():
+    """Turn off TF32 so fp32 references accumulate in true fp32."""
+    if flag_blas.vendor_name == "mthreads":
+        if hasattr(torch.backends, "mudnn"):
+            torch.backends.mudnn.allow_tf32 = False
+        return
+    if hasattr(torch.backends, "cuda"):
+        torch.backends.cuda.matmul.allow_tf32 = False
 
 CUDA_R_32F = 0
 CUDA_R_16F = 2
@@ -110,23 +347,28 @@ def cublas_sgemm(
     alpha_ptr,
     beta_ptr,
 ):
-    cublas.sgemm(
-        handle,
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha_ptr,
-        A_col.data_ptr(),
-        lda_cublas,
-        B_col.data_ptr(),
-        ldb_cublas,
-        beta_ptr,
-        C_col.data_ptr(),
-        ldc_cublas,
-    )
-    return C_col
+    """fp32 GEMM reference: official BLAS of the running vendor when available
+    (cuBLAS / muBLAS), otherwise a torch.matmul-based fallback."""
+    if native_blas_available():
+        native_gemm(
+            handle,
+            torch.float32,
+            transa,
+            transb,
+            m,
+            n,
+            k,
+            alpha_ptr,
+            A_col,
+            lda_cublas,
+            B_col,
+            ldb_cublas,
+            beta_ptr,
+            C_col,
+            ldc_cublas,
+        )
+        return C_col
+    return torch_gemm_reference(A_row, B_row, C_row, transa, transb, alpha, beta)
 
 
 def gems_sgemm_wrapper(
@@ -195,6 +437,8 @@ def cublas_hgemm(
     alpha_ptr,
     beta_ptr,
 ):
+    if not HAS_CUBLAS:
+        return torch_gemm_reference(A_row, B_row, C_row, transa, transb, alpha, beta)
     cublas.gemmEx(
         handle,
         transa,
@@ -285,6 +529,8 @@ def cublas_bfgemm(
     alpha_ptr,
     beta_ptr,
 ):
+    if not HAS_CUBLAS:
+        return torch_gemm_reference(A_row, B_row, C_row, transa, transb, alpha, beta)
     cublas.gemmEx(
         handle,
         transa,
@@ -333,6 +579,8 @@ def cublas_bfgemm_reference(
     alpha_ptr,
     beta_ptr,
 ):
+    if not HAS_CUBLAS:
+        return torch_gemm_reference(A_row, B_row, C_row, transa, transb, alpha, beta)
     C_fp32 = torch.empty_strided(
         C_col.shape, C_col.stride(), dtype=torch.float32, device=C_col.device
     )
@@ -436,10 +684,11 @@ class GemmBenchmark(Benchmark):
         return GEMM_SHAPES + model_shapes()
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        handle = cp.cuda.device.get_cublas_handle()
-        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
-        cublas.setMathMode(handle, 0)
-        torch.backends.cuda.matmul.allow_tf32 = False
+        # Native BLAS handle of the running vendor (cuBLAS / muBLAS), or None
+        # when the vendor has no official library and we fall back to
+        # torch.matmul.
+        handle = get_blas_handle()
+        disable_tf32()
 
         alpha_np = np.array(self.alpha, dtype=self.alpha_dtype)
         beta_np = np.array(self.beta, dtype=self.alpha_dtype)

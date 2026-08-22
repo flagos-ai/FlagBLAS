@@ -20,6 +20,7 @@ SUPPORTED_VENDORS=(
   "iluvatar"
   "ascend"
   "hygon"
+  "mthreads"
 )
 
 valid_vendor() {
@@ -89,6 +90,26 @@ case $VENDOR in
       done
     fi
     echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
+    ;;
+  mthreads)
+    export MUSA_HOME=${MUSA_HOME:-/usr/local/musa}
+    export PATH="${MUSA_HOME}/bin:${PATH}"
+    export LD_LIBRARY_PATH="${MUSA_HOME}/lib:${LD_LIBRARY_PATH}"
+    if [ -n "${VIRTUAL_ENV}" ]; then
+      export LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib:${LD_LIBRARY_PATH}"
+      SITE_PACKAGES="${VIRTUAL_ENV}/lib/python3.10/site-packages"
+      # torch_musa._MUSAC.so links against the libtorch*.so inside the wheel
+      export LD_LIBRARY_PATH="${SITE_PACKAGES}/torch/lib:${LD_LIBRARY_PATH}"
+      export LD_LIBRARY_PATH="${SITE_PACKAGES}/triton/_C:${LD_LIBRARY_PATH}"
+    fi
+    # musart 5.2 no longer exports the mu* prefixed symbols that mublas 1.13.0
+    # still references (e.g. muThreadExchangeStreamCaptureMode). Preload the real
+    # driver (which exports 3 of the 4) plus a tiny shim for the remaining one.
+    MUSA_COMPAT_SO="${MUSA_HOME}/lib/libmusart_compat.so"
+    MUSA_DRIVER_SO="/usr/lib/x86_64-linux-gnu/libmusa.so.4.3.5"
+    if [ -f "${MUSA_COMPAT_SO}" ] && [ -f "${MUSA_DRIVER_SO}" ]; then
+      export LD_PRELOAD="${MUSA_DRIVER_SO}:${MUSA_COMPAT_SO}${LD_PRELOAD:+:${LD_PRELOAD}}"
+    fi
     ;;
 esac
 
