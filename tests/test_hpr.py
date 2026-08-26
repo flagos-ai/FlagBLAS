@@ -339,6 +339,7 @@ def _run_hpr_row_packed_case(op, dtype, uplo):
         check_fp64_support()
     n = 3
     alpha = 0.75
+    build_device = "cpu" if flag_blas.vendor_name == "ascend" else flag_blas.device
     AP = torch.tensor(
         [
             1.0 + 0.0j,
@@ -349,23 +350,27 @@ def _run_hpr_row_packed_case(op, dtype, uplo):
             -2.0 + 0.0j,
         ],
         dtype=dtype,
-        device=flag_blas.device,
+        device=build_device,
     )
     x = torch.tensor(
         [1.0 + 0.5j, -2.0 + 0.25j, 0.75 - 1.5j],
         dtype=dtype,
-        device=flag_blas.device,
+        device=build_device,
     )
     if uplo == CUBLAS_FILL_MODE_UPPER:
-        rows, cols = torch.triu_indices(n, n, device=flag_blas.device)
+        rows, cols = torch.triu_indices(n, n, device=build_device)
     else:
-        rows, cols = torch.tril_indices(n, n, device=flag_blas.device)
+        rows, cols = torch.tril_indices(n, n, device=build_device)
     diag = rows == cols
     torch.view_as_real(AP)[diag, 1] = 0
     expected = AP.clone()
     update = alpha * x[:, None] * x.conj()[None, :]
     expected += update[rows, cols]
     torch.view_as_real(expected)[diag, 1] = 0
+
+    if flag_blas.vendor_name == "ascend":
+        AP = AP.to(flag_blas.device)
+        x = x.to(flag_blas.device)
 
     op(uplo, n, alpha, x, 1, AP)
 

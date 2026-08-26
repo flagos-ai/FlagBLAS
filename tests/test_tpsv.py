@@ -6,6 +6,9 @@ import torch
 from scipy.linalg import blas as cpu_blas
 
 import flag_blas
+
+if flag_blas.vendor_name != "ascend":
+    from .hipblas_reference import check_hipblas_status, get_hipblas_context
 from flag_blas.ops import (
     CUBLAS_DIAG_NON_UNIT,
     CUBLAS_DIAG_UNIT,
@@ -18,9 +21,15 @@ from flag_blas.ops import (
 
 from .accuracy_utils import blas_assert_close, to_cpu_blas_tensor
 from .conftest import TO_CPU
-from .hipblas_reference import check_hipblas_status, get_hipblas_context
 
 pytestmark = pytest.mark.tpsv
+
+
+def tpsv_randn(*shape, dtype, device):
+    if flag_blas.vendor_name == "ascend" and dtype == torch.complex64:
+        values = torch.randn((*shape, 2), dtype=torch.float32, device=device)
+        return torch.view_as_complex(values)
+    return torch.randn(shape, dtype=dtype, device=device)
 
 
 def load_cublas():
@@ -36,7 +45,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if flag_blas.vendor_name == "hygon" else load_cublas()
+_cublas = None if flag_blas.vendor_name in {"ascend", "hygon"} else load_cublas()
 
 
 def _cublas_tpsv(fn, fn_name, uplo, trans, diag, n, AP, x, incx):
@@ -182,12 +191,17 @@ def _row_major_diag_offsets(n, uplo, device):
 
 def _make_case(n, dtype, uplo, diag, incx, device):
     torch.manual_seed(n + 17 * int(uplo) + 31 * int(diag) + 43 * int(incx))
-    AP = torch.randn(n * (n + 1) // 2, dtype=dtype, device=device) * 0.05
-    AP[_row_major_diag_offsets(n, uplo, device)] = (
+    build_device = (
+        "cpu"
+        if flag_blas.vendor_name == "ascend" and dtype == torch.complex64
+        else device
+    )
+    AP = tpsv_randn(n * (n + 1) // 2, dtype=dtype, device=build_device) * 0.05
+    AP[_row_major_diag_offsets(n, uplo, build_device)] = (
         1.0 if diag == CUBLAS_DIAG_UNIT else 2.0
     )
-    b = torch.randn(1 + (n - 1) * incx, dtype=dtype, device=device)
-    return AP.contiguous(), b.contiguous()
+    b = tpsv_randn(1 + (n - 1) * incx, dtype=dtype, device=build_device)
+    return AP.to(device).contiguous(), b.to(device).contiguous()
 
 
 def _scipy_ref(name, n, AP, x, incx, uplo, trans, diag):
@@ -229,7 +243,8 @@ def scipy_ztpsv_reference(n, AP, x, incx, uplo, trans, diag):
 
 def _run(op, cpu_ref, gpu_ref, dtype, uplo, trans, diag, n, incx=1):
     if (
-        dtype in (torch.float64, torch.complex128)
+        flag_blas.vendor_name == "ascend"
+        and dtype in (torch.float64, torch.complex128)
         and not flag_blas.runtime.device.support_fp64
     ):
         pytest.skip("fp64 is not supported on this device")
@@ -477,28 +492,48 @@ def test_tpsv_n_zero_is_noop(op, dtype):
 @pytest.mark.parametrize("op,dtype", TPSV_VARIANTS)
 @pytest.mark.parametrize("uplo", [CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER])
 def test_tpsv_unit_diag_ignores_stored_diagonal(op, dtype, uplo):
+    if (
+        dtype in (torch.float64, torch.complex128)
+        and not flag_blas.runtime.device.support_fp64
+    ):
+        pytest.skip("fp64 is not supported on this device")
     n = 9
     AP, x = _make_case(n, dtype, uplo, CUBLAS_DIAG_UNIT, 1, flag_blas.device)
-    dirty = AP.clone()
-    offsets = _row_major_diag_offsets(n, uplo, flag_blas.device)
+    build_device = (
+        "cpu"
+        if flag_blas.vendor_name == "ascend" and dtype == torch.complex64
+        else flag_blas.device
+    )
+    dirty = AP.to(build_device).clone()
+    offsets = _row_major_diag_offsets(n, uplo, build_device)
     dirty[offsets] = (
         complex(float("nan"), float("nan")) if dtype.is_complex else float("nan")
     )
+    dirty = dirty.to(flag_blas.device)
     clean_x = x.clone()
     dirty_x = x.clone()
 
     op(uplo, CUBLAS_OP_N, CUBLAS_DIAG_UNIT, n, AP, clean_x, 1)
     op(uplo, CUBLAS_OP_N, CUBLAS_DIAG_UNIT, n, dirty, dirty_x, 1)
 
-    torch.testing.assert_close(dirty_x, clean_x)
+    if flag_blas.vendor_name == "ascend":
+        torch.testing.assert_close(dirty_x.cpu(), clean_x.cpu())
+    else:
+        torch.testing.assert_close(dirty_x, clean_x)
 
 
 @pytest.mark.parametrize("op,dtype", TPSV_VARIANTS)
 def test_tpsv_rejects_noncontiguous_packed_storage(op, dtype):
     n = 8
     packed_len = n * (n + 1) // 2
-    AP = torch.randn(2 * packed_len, dtype=dtype, device=flag_blas.device)[::2]
-    x = torch.randn(n, dtype=dtype, device=flag_blas.device)
+    if flag_blas.vendor_name == "ascend":
+        AP = torch.ones(2 * packed_len, dtype=dtype, device="cpu").to(flag_blas.device)[
+            ::2
+        ]
+        x = torch.ones(n, dtype=dtype, device="cpu").to(flag_blas.device)
+    else:
+        AP = torch.randn(2 * packed_len, dtype=dtype, device=flag_blas.device)[::2]
+        x = torch.randn(n, dtype=dtype, device=flag_blas.device)
 
     with pytest.raises(AssertionError):
         op(

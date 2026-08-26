@@ -869,7 +869,9 @@ def _check_common(uplo, trans, diag, n, AP, x, incx):
     assert diag in (CUBLAS_DIAG_NON_UNIT, CUBLAS_DIAG_UNIT)
     assert n >= 0
     assert incx > 0
-    assert AP.is_cuda and x.is_cuda
+    assert (AP.is_cuda and x.is_cuda) or (
+        AP.device.type == "npu" and x.device.type == "npu"
+    )
     assert AP.numel() >= n * (n + 1) // 2
     assert x.numel() >= 1 + (n - 1) * incx if n > 0 else True
 

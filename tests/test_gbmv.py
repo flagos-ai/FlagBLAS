@@ -194,8 +194,7 @@ def cpu_gbmv_reference(trans, m, n, kl, ku, alpha, AB, lda, x, incx, beta, y, in
         ref_y = torch.empty(y.shape, dtype=ref_dtype)
     else:
         ref_y = to_cpu_blas_tensor(y)
-    column_AB = row_to_column_band(AB, m, n, kl, ku, lda)
-    ref_AB = to_cpu_blas_tensor(column_AB)
+    ref_AB = row_to_column_band(to_cpu_blas_tensor(AB), m, n, kl, ku, lda)
     ref_x = to_cpu_blas_tensor(x)
     func = cpu_blas.zgbmv if ref_AB.dtype.is_complex else cpu_blas.dgbmv
 

@@ -1,24 +1,10 @@
-# Copyright 2026 FlagOS Contributors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 from typing import Union
 
 import torch
 import triton
 import triton.language as tl
 
-from flag_blas.ops.level2.hpr2 import _check_hpr2_args, _complex_scalar
+from flag_blas.ops.level2.her2 import _check_her2_args
 from flag_blas.runtime import torch_device_fn
 from flag_blas.utils import libentry
 
@@ -29,14 +15,14 @@ ScalarType = Union[float, int, complex, torch.Tensor]
 
 @libentry()
 @triton.jit
-def chpr2_scalar_kernel(
-    ap_ptr,
+def cher2_scalar_kernel(
+    a_ptr,
     x_ptr,
     y_ptr,
     alpha_r: tl.float32,
     alpha_i: tl.float32,
 ):
-    ar = tl.load(ap_ptr)
+    ar = tl.load(a_ptr)
     xr = tl.load(x_ptr)
     xi = tl.load(x_ptr + 1)
     yr = tl.load(y_ptr)
@@ -44,19 +30,21 @@ def chpr2_scalar_kernel(
     prod_r = xr * yr + xi * yi
     prod_i = xi * yr - xr * yi
     update_r = 2.0 * (alpha_r * prod_r - alpha_i * prod_i)
-    tl.store(ap_ptr, ar + update_r)
-    tl.store(ap_ptr + 1, 0.0)
+    tl.store(a_ptr, ar + update_r)
+    tl.store(a_ptr + 1, 0.0)
 
 
 @libentry()
 @triton.jit
-def chpr2_kernel(
-    ap_ptr,
+def cher2_kernel(
+    a_ptr,
+    old_ptr,
     x_ptr,
     y_ptr,
     alpha_r: tl.float32,
     alpha_i: tl.float32,
     n,
+    LDA,
     INCX,
     INCY,
     UPLO: tl.constexpr,
@@ -73,23 +61,11 @@ def chpr2_kernel(
         cols = pid_n * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         row_mask = rows < n
         col_mask = cols < n
-        rows64 = rows.to(tl.int64)
-        cols64 = cols.to(tl.int64)
-        n64 = tl.full((), n, tl.int64)
-
         if UPLO == 0:
             tri_mask = rows[None, :] >= cols[:, None]
-            off = rows64[None, :] * (rows64[None, :] + 1) // 2 + cols64[:, None]
         else:
             tri_mask = rows[None, :] <= cols[:, None]
-            off = (
-                rows64[None, :] * n64
-                - rows64[None, :] * (rows64[None, :] + 1) // 2
-                + cols64[:, None]
-            )
-
-        mask = row_mask[None, :] & col_mask[:, None] & tri_mask
-        safe_off = tl.where(mask, off, 0)
+        bounds = col_mask[:, None] & row_mask[None, :]
 
         xrr = tl.load(x_ptr + rows * INCX * 2, mask=row_mask, other=0.0)
         xri = tl.load(x_ptr + rows * INCX * 2 + 1, mask=row_mask, other=0.0)
@@ -107,17 +83,18 @@ def chpr2_kernel(
         update_r = alpha_r * p1r - alpha_i * p1i + alpha_r * p2r + alpha_i * p2i
         update_i = alpha_r * p1i + alpha_i * p1r + alpha_r * p2i - alpha_i * p2r
 
-        ap_off = safe_off * 2
-        ar = tl.load(ap_ptr + ap_off, mask=mask, other=0.0)
-        ai = tl.load(ap_ptr + ap_off + 1, mask=mask, other=0.0)
+        a_off = (rows[None, :] * LDA + cols[:, None]) * 2
+        ar = tl.load(old_ptr + a_off, mask=bounds, other=0.0)
+        ai = tl.load(old_ptr + a_off + 1, mask=bounds, other=0.0)
         diag = rows[None, :] == cols[:, None]
-        out_i = tl.where(diag, 0.0, ai + update_i)
-        tl.store(ap_ptr + ap_off, ar + update_r, mask=mask)
-        tl.store(ap_ptr + ap_off + 1, out_i, mask=mask)
+        out_r = tl.where(tri_mask, ar + update_r, ar)
+        out_i = tl.where(tri_mask, tl.where(diag, 0.0, ai + update_i), ai)
+        tl.store(a_ptr + a_off, out_r, mask=bounds)
+        tl.store(a_ptr + a_off + 1, out_i, mask=bounds)
         tile_id += program_count
 
 
-def chpr2(
+def cher2(
     uplo: int,
     n: int,
     alpha: ScalarType,
@@ -125,38 +102,42 @@ def chpr2(
     incx: int,
     y: torch.Tensor,
     incy: int,
-    AP: torch.Tensor,
-) -> None:
-    _check_hpr2_args(torch.complex64, uplo, n, x, incx, y, incy, AP)
+    A: torch.Tensor,
+    lda: int,
+):
+    _check_her2_args(torch.complex64, uplo, n, x, incx, y, incy, A, lda)
     if n == 0:
-        return
-    ar, ai = _complex_scalar(alpha)
-    if ar == 0.0 and ai == 0.0:
-        return AP
-    with torch_device_fn.device(AP.device):
+        return A
+    alpha_value = complex(alpha.item() if isinstance(alpha, torch.Tensor) else alpha)
+    if alpha_value == 0.0:
+        return A
+    with torch_device_fn.device(A.device):
         if n == 1:
-            chpr2_scalar_kernel[(1,)](
-                torch.view_as_real(AP),
+            cher2_scalar_kernel[(1,)](
+                torch.view_as_real(A),
                 torch.view_as_real(x),
                 torch.view_as_real(y),
-                ar,
-                ai,
+                alpha_value.real,
+                alpha_value.imag,
             )
-            return AP
-        chpr2_kernel[triangular_grid(n)](
-            torch.view_as_real(AP),
+            return A
+        old_A = A.clone()
+        cher2_kernel[triangular_grid(n)](
+            torch.view_as_real(A),
+            torch.view_as_real(old_A),
             torch.view_as_real(x),
             torch.view_as_real(y),
-            ar,
-            ai,
+            alpha_value.real,
+            alpha_value.imag,
             n,
+            lda,
             incx,
             incy,
             UPLO=uplo,
             BLOCK_SIZE=16,
             num_warps=1,
         )
-    return AP
+    return A
 
 
-__all__ = ["chpr2"]
+__all__ = ["cher2"]
