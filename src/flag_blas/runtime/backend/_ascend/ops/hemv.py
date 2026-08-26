@@ -80,7 +80,7 @@ def chemv_kernel(
         cols = pid_n * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         row_mask = rows < n
         col_mask = cols < n
-        mask2d = row_mask[:, None] & col_mask[None, :]
+        mask2d = col_mask[:, None] & row_mask[None, :]
         y_rows_off = rows * INCY * 2
         y_cols_off = cols * INCY * 2
 
@@ -92,8 +92,8 @@ def chemv_kernel(
         xci = tl.load(x_ptr + x_cols_off + 1, mask=col_mask, other=0.0)
 
         if pid_m == pid_n:
-            i = rows[:, None]
-            j = cols[None, :]
+            i = rows[None, :]
+            j = cols[:, None]
             if UPLO == 0:
                 use_direct = j <= i
             else:
@@ -104,22 +104,22 @@ def chemv_kernel(
             ai = tl.load(a_ptr + a_off + 1, mask=mask2d, other=0.0)
             ai = tl.where(use_direct, ai, -ai)
             ai = tl.where(i == j, 0.0, ai)
-            acc_r = tl.sum(ar * xcr[None, :] - ai * xci[None, :], axis=1)
-            acc_i = tl.sum(ar * xci[None, :] + ai * xcr[None, :], axis=1)
+            acc_r = tl.sum(ar * xcr[:, None] - ai * xci[:, None], axis=0)
+            acc_i = tl.sum(ar * xci[:, None] + ai * xcr[:, None], axis=0)
             res_r = alpha_r * acc_r - alpha_i * acc_i
             res_i = alpha_r * acc_i + alpha_i * acc_r
             tl.atomic_add(y_ptr + y_rows_off, res_r, mask=row_mask, sem="relaxed")
             tl.atomic_add(y_ptr + y_rows_off + 1, res_i, mask=row_mask, sem="relaxed")
         else:
-            elem_off = rows[:, None] * LDA + cols[None, :]
+            elem_off = rows[None, :] * LDA + cols[:, None]
             a_off = elem_off * 2
             ar = tl.load(a_ptr + a_off, mask=mask2d, other=0.0)
             ai = tl.load(a_ptr + a_off + 1, mask=mask2d, other=0.0)
 
-            acc_rows_r = tl.sum(ar * xcr[None, :] - ai * xci[None, :], axis=1)
-            acc_rows_i = tl.sum(ar * xci[None, :] + ai * xcr[None, :], axis=1)
-            acc_cols_r = tl.sum(ar * xrr[:, None] + ai * xri[:, None], axis=0)
-            acc_cols_i = tl.sum(ar * xri[:, None] - ai * xrr[:, None], axis=0)
+            acc_rows_r = tl.sum(ar * xcr[:, None] - ai * xci[:, None], axis=0)
+            acc_rows_i = tl.sum(ar * xci[:, None] + ai * xcr[:, None], axis=0)
+            acc_cols_r = tl.sum(ar * xrr[None, :] + ai * xri[None, :], axis=1)
+            acc_cols_i = tl.sum(ar * xri[None, :] - ai * xrr[None, :], axis=1)
 
             row_res_r = alpha_r * acc_rows_r - alpha_i * acc_rows_i
             row_res_i = alpha_r * acc_rows_i + alpha_i * acc_rows_r

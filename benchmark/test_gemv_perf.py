@@ -24,12 +24,13 @@ from flag_blas.ops import CUBLAS_OP_C, CUBLAS_OP_N, CUBLAS_OP_T
 from flag_blas.utils import shape_utils
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_ASCEND = flag_blas.vendor_name == "ascend"
 
 if IS_HYGON:
     import atexit
     import ctypes
     import ctypes.util
-else:
+elif not IS_ASCEND:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -837,6 +838,8 @@ def test_perf_dgemv_trans():
 
 @pytest.mark.cgemv
 def test_perf_cgemv():
+    if IS_ASCEND:
+        pytest.skip("Ascend cgemv vendor-reference benchmark is not available")
     bench = GemvBenchmark(
         op_name="cgemv",
         torch_op=hipblas_cgemv_baseline if IS_HYGON else cublas_cgemv,
@@ -851,6 +854,8 @@ def test_perf_cgemv():
 
 @pytest.mark.cgemv
 def test_perf_cgemv_trans():
+    if IS_ASCEND:
+        pytest.skip("Ascend cgemv vendor-reference benchmark is not available")
     bench = GemvBenchmark(
         op_name="cgemv_trans",
         torch_op=hipblas_cgemv_baseline if IS_HYGON else cublas_cgemv,
@@ -865,6 +870,8 @@ def test_perf_cgemv_trans():
 
 @pytest.mark.cgemv
 def test_perf_cgemv_conj():
+    if IS_ASCEND:
+        pytest.skip("Ascend cgemv vendor-reference benchmark is not available")
     bench = GemvBenchmark(
         op_name="cgemv_conj",
         torch_op=hipblas_cgemv_baseline if IS_HYGON else cublas_cgemv,

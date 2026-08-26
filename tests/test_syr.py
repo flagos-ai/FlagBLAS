@@ -59,6 +59,21 @@ SYR_UPLOS = [CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER]
 SYR_STRIDES = [(2, CUBLAS_FILL_MODE_UPPER, 64), (3, CUBLAS_FILL_MODE_LOWER, 128)]
 
 
+def syr_randn(*shape, dtype, device):
+    if flag_blas.vendor_name == "ascend" and dtype == torch.complex64:
+        values = torch.randn((*shape, 2), dtype=torch.float32, device=device)
+        return torch.view_as_complex(values)
+    return torch.randn(shape, dtype=dtype, device=device)
+
+
+def check_fp64_support(dtype):
+    if (
+        dtype in (torch.float64, torch.complex128)
+        and not flag_blas.runtime.device.support_fp64
+    ):
+        pytest.skip("fp64 is not supported on this device")
+
+
 class _ComplexFloat(ctypes.Structure):
     _fields_ = [("real", ctypes.c_float), ("imag", ctypes.c_float)]
 
@@ -109,15 +124,12 @@ def _get_cublas_handle():
 
 
 def _make_inputs(n, incx, dtype, device):
+    check_fp64_support(dtype)
     lda = n
     x_len = 1 + (n - 1) * incx
     if dtype.is_complex:
-        x = torch.randn(x_len, dtype=dtype, device=device) + 1j * torch.randn(
-            x_len, dtype=dtype, device=device
-        )
-        A = torch.randn((lda, n), dtype=dtype, device=device) + 1j * torch.randn(
-            (lda, n), dtype=dtype, device=device
-        )
+        x = syr_randn(x_len, dtype=dtype, device=device)
+        A = syr_randn(lda, n, dtype=dtype, device=device)
     else:
         x = torch.randn(x_len, dtype=dtype, device=device)
         A = torch.randn((lda, n), dtype=dtype, device=device)
@@ -305,9 +317,10 @@ def test_accuracy_zsyr_stride(incx, uplo, n):
 
 
 def _make_regression_inputs(n, incx, dtype, lda):
+    check_fp64_support(dtype)
     x_len = 1 + (n - 1) * incx if n > 0 else 0
-    x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
-    A = torch.randn((n, lda), dtype=dtype, device=flag_blas.device)
+    x = syr_randn(x_len, dtype=dtype, device=flag_blas.device)
+    A = syr_randn(n, lda, dtype=dtype, device=flag_blas.device)
     return x, A.contiguous()
 
 
@@ -405,11 +418,7 @@ SYR_VARIANTS = [
 @pytest.mark.parametrize("incx", [1, 2, 3])
 @pytest.mark.parametrize("lda_pad", [0, 3])
 def test_accuracy_syr_balanced(name, dtype, alpha, uplo, n, incx, lda_pad):
-    if (
-        dtype in (torch.float64, torch.complex128)
-        and not flag_blas.runtime.device.support_fp64
-    ):
-        pytest.skip("fp64 is not supported on this device")
+    check_fp64_support(dtype)
     lda = n + lda_pad
     x, A = _make_regression_inputs(n, incx, dtype, lda)
     x_before = x.clone()
@@ -418,4 +427,7 @@ def test_accuracy_syr_balanced(name, dtype, alpha, uplo, n, incx, lda_pad):
     getattr(flag_blas, name)(uplo, n, alpha, x, incx, A, lda)
 
     blas_assert_close(A, ref, dtype, reduce_dim=1)
-    torch.testing.assert_close(x, x_before)
+    if flag_blas.vendor_name == "ascend":
+        torch.testing.assert_close(x.cpu(), x_before.cpu())
+    else:
+        torch.testing.assert_close(x, x_before)
