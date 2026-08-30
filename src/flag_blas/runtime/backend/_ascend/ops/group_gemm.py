@@ -4,25 +4,8 @@ import triton.language as tl
 
 from flag_blas import runtime
 from flag_blas.ops.level3.group_gemm import grouped_launch
-from flag_blas.runtime.backend._ascend.utils import CORE_NUM
 from flag_blas.utils import libentry, libtuner
 from flag_blas.utils import triton_lang_extension as tle
-
-
-def _get_num_aicore():
-    try:
-        import triton.runtime.driver as driver
-
-        properties = driver.active.utils.get_device_properties(
-            torch.npu.current_device()
-        )
-        return max(1, int(properties["num_aicore"]))
-    except (ImportError, AttributeError, RuntimeError, KeyError, TypeError, ValueError):
-        return max(1, int(CORE_NUM) // 2)
-
-
-def _use_n_chunk(N, K):
-    return K == 2048 and N == 7168
 
 
 @libentry()
@@ -206,9 +189,9 @@ def group_bfgemm(group_A, group_B, group_list, group_out):
     M, K = group_A.shape
     group_size, _, N = group_B.shape
 
-    num_aicores = _get_num_aicore()
-    if not _use_n_chunk(N, K):
-        grouped_bfgemm_kernel[(num_aicores,)](
+    num_aicores = torch.npu.get_device_properties("npu").multi_processor_count // 2
+    if K == 2048 and N == 7168:
+        grouped_bfgemm_n_chunk_kernel[(num_aicores,)](
             M,
             N,
             K,
@@ -217,11 +200,17 @@ def group_bfgemm(group_A, group_B, group_list, group_out):
             group_list,
             group_out,
             group_size,
+            BLOCK_M=128,
+            BLOCK_N=256,
+            BLOCK_K=256,
+            num_stages=2,
+            num_warps=8,
+            unit_flag=True,
             sync_solver=False,
         )
         return group_out
 
-    grouped_bfgemm_n_chunk_kernel[(num_aicores,)](
+    grouped_bfgemm_kernel[(num_aicores,)](
         M,
         N,
         K,
@@ -230,12 +219,6 @@ def group_bfgemm(group_A, group_B, group_list, group_out):
         group_list,
         group_out,
         group_size,
-        BLOCK_M=128,
-        BLOCK_N=256,
-        BLOCK_K=256,
-        num_stages=2,
-        num_warps=8,
-        unit_flag=True,
         sync_solver=False,
     )
     return group_out
