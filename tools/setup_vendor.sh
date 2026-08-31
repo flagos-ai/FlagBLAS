@@ -54,7 +54,7 @@ case $VENDOR in
     RES="--index-url=https://resource.flagos.net/repository/flagos-pypi-hosted/simple"
     python3.12 -m pip install flagtree===0.5.0 $RES
     uv pip install -e .
-    uv pip install ".[test]"
+    uv pip install ".[test,nvidia-cuda128]"
     ;;
 
   iluvatar)
