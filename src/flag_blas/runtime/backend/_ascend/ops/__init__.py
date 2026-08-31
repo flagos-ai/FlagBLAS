@@ -1,6 +1,6 @@
 from .gemv import cgemv, sgemv
 from .ger import cgerc, cgeru
-from .group_gemm import group_bfgemm
+from .group_gemm import group_bfgemm, group_hgemm, group_tf32gemm
 from .hemv import chemv
 from .hpmv import chpmv
 from .hpr2 import chpr2
@@ -27,4 +27,6 @@ __all__ = [
     "strsv",
     "ctrsv",
     "group_bfgemm",
+    "group_hgemm",
+    "group_tf32gemm",
 ]

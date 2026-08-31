@@ -110,6 +110,208 @@ def grouped_bfgemm_kernel(
 
 
 @libentry()
+@libtuner(configs=runtime.get_tuned_config("group_hgemm"), key=["M", "N", "K"])
+@triton.jit
+def grouped_hgemm_kernel(
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    group_size,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    tile_idx = tle.program_id(0)
+    total_grid = tle.num_programs(0)
+    last_problem_end = tile_idx * 0
+    group_start = (tile_idx * 0).to(tl.int64)
+    a_descriptor = tl.make_tensor_descriptor(
+        group_A,
+        shape=[M, K],
+        strides=[K, 1],
+        block_shape=[BLOCK_M, BLOCK_K],
+    )
+    for group_idx in range(group_size):
+        group_end = tl.load(group_list + group_idx).to(tl.int64)
+        group_m = group_end - group_start
+
+        num_m_tiles = tl.cdiv(group_m, BLOCK_M)
+        num_n_tiles = tl.cdiv(N, BLOCK_N)
+        num_tiles = num_m_tiles * num_n_tiles
+
+        current_problem_end = last_problem_end + num_tiles
+        if tile_idx >= last_problem_end and tile_idx < current_problem_end:
+            loop_count = (current_problem_end - tile_idx + total_grid - 1) // total_grid
+            for _ in tl.range(loop_count):
+                tile_idx_in_gemm = tile_idx - last_problem_end
+                tile_m_idx, tile_n_idx = grouped_launch(
+                    tile_idx_in_gemm,
+                    group_m,
+                    N,
+                    BLOCK_M,
+                    BLOCK_N,
+                    GROUP_M,
+                )
+
+                row_start = group_start + tile_m_idx * BLOCK_M
+                local_m = tile_m_idx * BLOCK_M + tl.arange(0, BLOCK_M)
+                offs_m = group_start + local_m
+                offs_n = tile_n_idx * BLOCK_N + tl.arange(0, BLOCK_N)
+                offs_k = tl.arange(0, BLOCK_K)
+                mask_m = local_m < group_m
+                mask_n = offs_n < N
+
+                accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+                for k in range(0, tl.cdiv(K, BLOCK_K)):
+                    k_offsets = k * BLOCK_K + offs_k
+                    mask_k = k_offsets < K
+                    b_ptrs = (
+                        group_B
+                        + group_idx * K * N
+                        + k_offsets[:, None] * N
+                        + offs_n[None, :]
+                    )
+                    if K % BLOCK_K == 0:
+                        a = tl.load_tensor_descriptor(
+                            a_descriptor,
+                            [row_start.to(tl.int32), k * BLOCK_K],
+                        )
+                    else:
+                        a_ptrs = group_A + offs_m[:, None] * K + k_offsets[None, :]
+                        a = tl.load(
+                            a_ptrs,
+                            mask=mask_m[:, None] & mask_k[None, :],
+                            other=0.0,
+                        )
+                    b = tl.load(
+                        b_ptrs,
+                        mask=mask_k[:, None] & mask_n[None, :],
+                        other=0.0,
+                    )
+                    accumulator = tl.dot(a, b, accumulator, out_dtype=tl.float32)
+
+                out_ptrs = group_out + offs_m[:, None] * N + offs_n[None, :]
+                tl.store(
+                    out_ptrs,
+                    accumulator.to(tl.float16),
+                    mask=mask_m[:, None] & mask_n[None, :],
+                )
+                tile_idx += total_grid
+
+        last_problem_end = current_problem_end
+        group_start = group_end
+
+
+@libentry()
+@libtuner(configs=runtime.get_tuned_config("group_tf32gemm"), key=["M", "N", "K"])
+@triton.jit
+def grouped_tf32gemm_kernel(
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    group_size,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    tile_idx = tle.program_id(0)
+    total_grid = tle.num_programs(0)
+    last_problem_end = tile_idx * 0
+    group_start = (tile_idx * 0).to(tl.int64)
+    a_descriptor = tl.make_tensor_descriptor(
+        group_A,
+        shape=[M, K],
+        strides=[K, 1],
+        block_shape=[BLOCK_M, BLOCK_K],
+    )
+    for group_idx in range(group_size):
+        group_end = tl.load(group_list + group_idx).to(tl.int64)
+        group_m = group_end - group_start
+
+        num_m_tiles = tl.cdiv(group_m, BLOCK_M)
+        num_n_tiles = tl.cdiv(N, BLOCK_N)
+        num_tiles = num_m_tiles * num_n_tiles
+
+        current_problem_end = last_problem_end + num_tiles
+        if tile_idx >= last_problem_end and tile_idx < current_problem_end:
+            loop_count = (current_problem_end - tile_idx + total_grid - 1) // total_grid
+            for _ in tl.range(loop_count):
+                tile_idx_in_gemm = tile_idx - last_problem_end
+                tile_m_idx, tile_n_idx = grouped_launch(
+                    tile_idx_in_gemm,
+                    group_m,
+                    N,
+                    BLOCK_M,
+                    BLOCK_N,
+                    GROUP_M,
+                )
+
+                row_start = group_start + tile_m_idx * BLOCK_M
+                local_m = tile_m_idx * BLOCK_M + tl.arange(0, BLOCK_M)
+                offs_m = group_start + local_m
+                offs_n = tile_n_idx * BLOCK_N + tl.arange(0, BLOCK_N)
+                offs_k = tl.arange(0, BLOCK_K)
+                mask_m = local_m < group_m
+                mask_n = offs_n < N
+
+                accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+                for k in range(0, tl.cdiv(K, BLOCK_K)):
+                    k_offsets = k * BLOCK_K + offs_k
+                    mask_k = k_offsets < K
+                    b_ptrs = (
+                        group_B
+                        + group_idx * K * N
+                        + k_offsets[:, None] * N
+                        + offs_n[None, :]
+                    )
+                    if K % BLOCK_K == 0:
+                        a = tl.load_tensor_descriptor(
+                            a_descriptor,
+                            [row_start.to(tl.int32), k * BLOCK_K],
+                        )
+                    else:
+                        a_ptrs = group_A + offs_m[:, None] * K + k_offsets[None, :]
+                        a = tl.load(
+                            a_ptrs,
+                            mask=mask_m[:, None] & mask_k[None, :],
+                            other=0.0,
+                        )
+                    b = tl.load(
+                        b_ptrs,
+                        mask=mask_k[:, None] & mask_n[None, :],
+                        other=0.0,
+                    )
+                    accumulator = tl.dot(
+                        a,
+                        b,
+                        accumulator,
+                        out_dtype=tl.float32,
+                        input_precision="hf32",
+                    )
+
+                out_ptrs = group_out + offs_m[:, None] * N + offs_n[None, :]
+                tl.store(
+                    out_ptrs,
+                    accumulator,
+                    mask=mask_m[:, None] & mask_n[None, :],
+                )
+                tile_idx += total_grid
+
+        last_problem_end = current_problem_end
+        group_start = group_end
+
+
+@libentry()
 @triton.jit
 def grouped_bfgemm_n_chunk_kernel(
     M,
@@ -211,6 +413,44 @@ def group_bfgemm(group_A, group_B, group_list, group_out):
         return group_out
 
     grouped_bfgemm_kernel[(num_aicores,)](
+        M,
+        N,
+        K,
+        group_A,
+        group_B,
+        group_list,
+        group_out,
+        group_size,
+        sync_solver=False,
+    )
+    return group_out
+
+
+def group_hgemm(group_A, group_B, group_list, group_out):
+    M, K = group_A.shape
+    group_size, _, N = group_B.shape
+    num_aicores = torch.npu.get_device_properties("npu").multi_processor_count // 2
+
+    grouped_hgemm_kernel[(num_aicores,)](
+        M,
+        N,
+        K,
+        group_A,
+        group_B,
+        group_list,
+        group_out,
+        group_size,
+        sync_solver=False,
+    )
+    return group_out
+
+
+def group_tf32gemm(group_A, group_B, group_list, group_out):
+    M, K = group_A.shape
+    group_size, _, N = group_B.shape
+    num_aicores = torch.npu.get_device_properties("npu").multi_processor_count // 2
+
+    grouped_tf32gemm_kernel[(num_aicores,)](
         M,
         N,
         K,

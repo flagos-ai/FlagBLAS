@@ -5,6 +5,7 @@ from triton.tools.tensor_descriptor import TensorDescriptor
 
 from flag_blas import runtime
 from flag_blas.ops.level3.group_gemm import (
+    get_autotune_config,
     grouped_bfgemm_kernel,
     grouped_hgemm_kernel,
     grouped_launch,
@@ -25,13 +26,6 @@ def matmul_tma_set_block_size_hook(nargs):
     nargs["a_desc"].block_shape = [BLOCK_M_val, BLOCK_K_val]
     nargs["b_desc"].block_shape = [BLOCK_K_val, BLOCK_N_val]
     nargs["c_desc"].block_shape = [BLOCK_M_val, BLOCK_N_val]
-
-
-def _get_group_mm_configs():
-    configs = runtime.get_tuned_config("group_mm")
-    for config in configs:
-        config.pre_hook = matmul_tma_set_block_size_hook
-    return configs
 
 
 @libentry()
@@ -629,7 +623,9 @@ def grouped_tf32gemm_small_m_tma_kernel(
 
 
 @libentry()
-@libtuner(configs=_get_group_mm_configs(), key=["M", "N", "K"])
+@libtuner(
+    configs=get_autotune_config(matmul_tma_set_block_size_hook), key=["M", "N", "K"]
+)
 @triton.jit
 def grouped_mm_tma_kernel(
     a_desc,
