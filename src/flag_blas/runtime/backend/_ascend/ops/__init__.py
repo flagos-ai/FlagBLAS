@@ -2,6 +2,7 @@ from .gemv import cgemv, sgemv
 from .ger import cgerc, cgeru
 from .hemv import chemv
 from .her import cher
+from .her2 import cher2
 from .hpmv import chpmv
 from .hpr import chpr
 from .hpr2 import chpr2
@@ -24,6 +25,7 @@ __all__ = [
     "csymv",
     "chemv",
     "cher",
+    "cher2",
     "chpmv",
     "stpmv",
     "ctpmv",
