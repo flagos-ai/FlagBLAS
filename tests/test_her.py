@@ -60,6 +60,18 @@ _cublas_handle = None
 _CUBLAS_HER_FUNCS = None
 
 
+def her_randn(*shape, dtype, device):
+    if flag_blas.vendor_name == "ascend" and dtype == torch.complex64:
+        values = torch.randn(shape, dtype=dtype, device="cpu")
+        return values.to(device)
+    return torch.randn(shape, dtype=dtype, device=device)
+
+
+def check_fp64_support(dtype):
+    if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
+        pytest.skip("fp64 is not supported on this device")
+
+
 def load_cublas():
     lib_names = ["libcublas.so.13"]
     found_path = ctypes.util.find_library("cublas")
@@ -122,15 +134,19 @@ def _get_cublas_handle():
 
 
 def _make_her_inputs(dtype, n, incx, seed):
+    check_fp64_support(dtype)
     torch.manual_seed(seed)
     real_dtype = torch.float32 if dtype is torch.complex64 else torch.float64
     device = flag_blas.device
     x_len = 1 + (n - 1) * incx
-    x = torch.randn(x_len, dtype=dtype, device=device)
-    A = torch.randn((n, n), dtype=dtype, device=device)
+    build_device = "cpu" if flag_blas.vendor_name == "ascend" else device
+    x = her_randn(x_len, dtype=dtype, device=build_device)
+    A = her_randn(n, n, dtype=dtype, device=build_device)
     A = torch.tril(A) + torch.tril(A, -1).mH
     diag = A.diagonal()
     diag.copy_(diag.real.to(dtype))
+    x = x.to(device)
+    A = A.to(device)
     alpha = torch.tensor(0.75, dtype=real_dtype, device=device)
     return alpha, x, A.contiguous()
 
@@ -276,9 +292,10 @@ def test_accuracy_zher_stride(incx, uplo, n):
     ],
 )
 def test_her_padded_lda(name, dtype, alpha_dtype):
+    check_fp64_support(dtype)
     n, lda = 7, 11
-    x = torch.randn(n, dtype=dtype, device=flag_blas.device)
-    A = torch.randn((n, lda), dtype=dtype, device=flag_blas.device)
+    x = her_randn(n, dtype=dtype, device=flag_blas.device)
+    A = her_randn(n, lda, dtype=dtype, device=flag_blas.device)
     alpha = torch.tensor(0.75, dtype=alpha_dtype, device=flag_blas.device)
     ref = _reference(
         name,
@@ -306,12 +323,13 @@ def test_her_n_zero_is_noop():
 
 
 def test_zher_preserves_double_scalar_precision():
+    check_fp64_support(torch.complex128)
     n = 31
     alpha = torch.tensor(
         0.12345678901234568, dtype=torch.float64, device=flag_blas.device
     )
-    x = torch.randn(n, dtype=torch.complex128, device=flag_blas.device)
-    A = torch.randn((n, n), dtype=torch.complex128, device=flag_blas.device)
+    x = her_randn(n, dtype=torch.complex128, device=flag_blas.device)
+    A = her_randn(n, n, dtype=torch.complex128, device=flag_blas.device)
     ref = _reference(
         "zher",
         CUBLAS_FILL_MODE_UPPER,
@@ -329,9 +347,9 @@ def test_zher_preserves_double_scalar_precision():
 
 
 def test_her_rejects_noncontiguous_matrix():
-    base = torch.randn((8, 8), dtype=torch.complex64, device=flag_blas.device)
+    base = her_randn(8, 8, dtype=torch.complex64, device=flag_blas.device)
     A = base.T
-    x = torch.randn(8, dtype=torch.complex64, device=flag_blas.device)
+    x = her_randn(8, dtype=torch.complex64, device=flag_blas.device)
 
     with pytest.raises(AssertionError):
         flag_blas.cher(CUBLAS_FILL_MODE_LOWER, 8, 0.75, x, 1, A, 8)
@@ -358,17 +376,19 @@ HER_VARIANTS = [
 def test_accuracy_her_balanced(
     name, dtype, alpha_dtype, alpha_value, uplo, n, incx, lda_pad
 ):
-    if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
-        pytest.skip("fp64 is not supported on this device")
+    check_fp64_support(dtype)
     lda = n + lda_pad
     x_len = 1 + (n - 1) * incx
-    x = torch.randn(x_len, dtype=dtype, device=flag_blas.device)
+    x = her_randn(x_len, dtype=dtype, device=flag_blas.device)
     x_before = x.clone()
-    A = torch.randn((n, lda), dtype=dtype, device=flag_blas.device)
+    A = her_randn(n, lda, dtype=dtype, device=flag_blas.device)
     alpha = torch.tensor(alpha_value, dtype=alpha_dtype, device=flag_blas.device)
     ref = _reference(name, uplo, n, alpha, x, incx, A.clone(), lda)
 
     getattr(flag_blas, name)(uplo, n, alpha, x, incx, A, lda)
 
     blas_assert_close(A, ref, dtype, reduce_dim=1)
-    torch.testing.assert_close(x, x_before)
+    if flag_blas.vendor_name == "ascend":
+        torch.testing.assert_close(x.cpu(), x_before.cpu())
+    else:
+        torch.testing.assert_close(x, x_before)
