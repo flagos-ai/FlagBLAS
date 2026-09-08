@@ -209,7 +209,7 @@ def _check_syr_args(uplo, n, x, incx, A, lda, dtype):
     assert lda >= max(1, n)
     assert A.dtype == dtype == x.dtype
     assert A.is_contiguous() and x.is_contiguous()
-    assert A.device == x.device and A.is_cuda
+    assert A.device == x.device and (A.is_cuda or A.device.type == "npu")
     if n > 0:
         assert x.numel() >= 1 + (n - 1) * incx
         assert A.numel() >= lda * n
