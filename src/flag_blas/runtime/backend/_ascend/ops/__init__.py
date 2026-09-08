@@ -10,6 +10,7 @@ from .spr import sspr
 from .spr2 import sspr2
 from .symv import csymv, ssymv
 from .syr import csyr, ssyr
+from .syr2 import ssyr2
 from .tpmv import ctpmv, stpmv
 from .trsv import ctrsv, strsv
 
@@ -26,6 +27,7 @@ __all__ = [
     "csymv",
     "ssyr",
     "csyr",
+    "ssyr2",
     "chemv",
     "cher",
     "cher2",
