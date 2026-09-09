@@ -60,8 +60,8 @@ def cublas_hgemm_reference(
         C.data_ptr(),
         CUDA_R_16F,
         ldc,
-        CUDA_R_32F,
-        0,
+        cublas.CUBLAS_COMPUTE_32F,
+        cublas.CUBLAS_GEMM_DEFAULT,
     )
 
 

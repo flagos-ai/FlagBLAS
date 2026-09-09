@@ -146,20 +146,36 @@ def _run_cgemm_benchmark(op_name, transa, transb):
 
 
 @pytest.mark.cgemm
+@pytest.mark.skipif(
+    flag_blas.vendor_name == "thead",
+    reason="cublasCgemm not supported on T-Head (Zhenwu) platform",
+)
 def test_perf_cgemm_nn():
     _run_cgemm_benchmark("cgemm", CUBLAS_OP_N, CUBLAS_OP_N)
 
 
 @pytest.mark.cgemm
+@pytest.mark.skipif(
+    flag_blas.vendor_name == "thead",
+    reason="cublasCgemm not supported on T-Head (Zhenwu) platform",
+)
 def test_perf_cgemm_tn():
     _run_cgemm_benchmark("cgemm_tn", CUBLAS_OP_T, CUBLAS_OP_N)
 
 
 @pytest.mark.cgemm
+@pytest.mark.skipif(
+    flag_blas.vendor_name == "thead",
+    reason="cublasCgemm not supported on T-Head (Zhenwu) platform",
+)
 def test_perf_cgemm_nt():
     _run_cgemm_benchmark("cgemm_nt", CUBLAS_OP_N, CUBLAS_OP_T)
 
 
 @pytest.mark.cgemm
+@pytest.mark.skipif(
+    flag_blas.vendor_name == "thead",
+    reason="cublasCgemm not supported on T-Head (Zhenwu) platform",
+)
 def test_perf_cgemm_tt():
     _run_cgemm_benchmark("cgemm_tt", CUBLAS_OP_T, CUBLAS_OP_T)

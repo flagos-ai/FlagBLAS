@@ -12,27 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from enum import Enum
+from flag_blas.runtime.backend.backend_utils import VendorInfoBase
 
+vendor_info = VendorInfoBase(
+    vendor_name="thead",
+    device_name="cuda",
+    device_query_cmd="ppu-smi",
+    dispatch_key="CUDA",
+)
 
-class vendors(Enum):
-    NVIDIA = 0
-    CAMBRICON = 1
-    METAX = 2
-    ILUVATAR = 3
-    MTHREADS = 4
-    KUNLUNXIN = 5
-    HYGON = 6
-    AMD = 7
-    AIPU = 8
-    ASCEND = 9
-    TSINGMICRO = 10
-    SUNRISE = 11
-    THEAD = 12
+CUSTOMIZED_UNUSED_OPS = ()
 
-    @classmethod
-    def get_all_vendors(cls) -> dict:
-        vendorDict = {}
-        for member in cls:
-            vendorDict[member.name.lower()] = member
-        return vendorDict
+__all__ = ["*"]
