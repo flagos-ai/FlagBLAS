@@ -92,35 +92,13 @@ class DotuBenchmark(Benchmark):
     def get_correctness_reduce_dim(self, args, kwargs):
         return kwargs["n"]
 
-    def validate_results(self, reference_result, blas_result, dtype, reduce_dim=1):
-        if dtype == torch.complex64:
-            rtol = 1e-4
-            atol = max(1e-4, 1e-5 * (max(reduce_dim, 1) ** 0.5))
-            tolerance_desc = "rtol=1e-4,atol=max(1e-4,sqrt(n)*1e-5)"
-        else:
-            rtol = 1e-12
-            atol = max(1e-12, 1e-12 * (max(reduce_dim, 1) ** 0.5))
-            tolerance_desc = "rtol=1e-12,atol=max(1e-12,sqrt(n)*1e-12)"
-
-        try:
-            torch.testing.assert_close(
-                blas_result, reference_result, rtol=rtol, atol=atol
-            )
-        except AssertionError as e:
-            ref_cpu = reference_result.cpu()
-            res_cpu = blas_result.cpu()
-            max_abs_diff = torch.max(torch.abs(ref_cpu - res_cpu))
-            max_rel_diff = torch.max(
-                torch.abs((ref_cpu - res_cpu) / (torch.abs(ref_cpu) + 1e-9))
-            )
-            raise AssertionError(
-                f"Results differ beyond rtol={rtol}, atol={atol} "
-                f"for dtype {dtype} reduce_dim={reduce_dim}:\n"
-                f"Max absolute difference: {max_abs_diff}\n"
-                f"Max relative difference: {max_rel_diff}\n"
-                f"Shape: {ref_cpu.shape}"
-            ) from e
-        return {(str(dtype), tolerance_desc)}
+    def clone_correctness_inputs(self, args, kwargs):
+        # dotu is a read-only reduction: neither cuBLAS nor FlagBLAS mutates
+        # x/y, and the reference op runs before the FlagBLAS op, so the input
+        # tensors can be shared instead of cloned. Cloning the huge
+        # DEFAULT_SHAPES tensors (up to 2^30 elements per operand) would need
+        # ~3x the memory and OOM the correctness pre-check.
+        return args, kwargs, args, kwargs
 
 
 @pytest.mark.dotu
