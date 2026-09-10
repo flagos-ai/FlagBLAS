@@ -65,13 +65,187 @@ case $VENDOR in
     ;;
 
   iluvatar)
-    # Install PyTorch with Corex support
-    uv pip install \
-      "torch>=2.6.0"
+    # Corex PyTorch is published with a local version tag (+corex.4.4.0) that
+    # only exists on the flagos-pypi-iluvatar index, so the `[iluvatar]` extra
+    # can never resolve against plain PyPI. Dropping the index flags makes the
+    # whole `[test,iluvatar]` resolve fail, which silently also skips the
+    # `test` extra -- leaving the venv without torch and without coverage.
+    # The flagos index only hosts vendor wheels, so add a general PyPI mirror
+    # for torch's transitive deps. --index-strategy unsafe-best-match is
+    # required: under uv's default first-index strategy a plain torch from the
+    # mirror is picked and the corex build is never considered.
+    UV_INDEX_URL="https://resource.flagos.net/repository/flagos-pypi-iluvatar/simple"
+    UV_EXTRA_INDEX_URL="https://mirrors.aliyun.com/pypi/simple"
 
-    # Install FlagBLAS in editable mode
     uv pip install -e .
-    uv pip install ".[test]"
+    if ! uv pip install ".[test,iluvatar]" \
+         --index-url ${UV_INDEX_URL} \
+         --extra-index-url ${UV_EXTRA_INDEX_URL} \
+         --index-strategy unsafe-best-match 2>&1 | tee /tmp/iluvatar-deps.log; then
+      echo "::error title=iluvatar deps install failed::$(tail -8 /tmp/iluvatar-deps.log | tr '\n' ' ' | head -c 1500)"
+      exit 1
+    fi
+
+    # FlagTree (which bundles the `triton` package flag_blas imports) is built
+    # from source instead of installed from the prebuilt `flagtree` wheel:
+    # every iluvatar wheel on the mirror (0.5.1+iluvatar3.1, 0.6.0/0.6.1/
+    # 0.6.2a3+iluvatar3.6) is built on Ubuntu 24.04, so its libtriton.so
+    # needs a newer runtime than this Ubuntu 22.04 runner provides ("version
+    # `GLIBC_2.38' not found", then "version `GLIBCXX_3.4.32' not found" once
+    # a glibc 2.34 wheel is picked). Building the iluvatar backend from source
+    # links libtriton.so against the runner's own toolchain. torch is
+    # installed first (above) because FlagTree's build probes it, and
+    # setup.py downloads the iluvatar LLVM + plugin into ~/.flagtree/iluvatar
+    # when the network is reachable.
+    uv pip uninstall triton flagtree || true
+
+    # `uv venv` does not seed pip, but FlagTree's documented source build runs
+    # `python3 -m pip install . --no-build-isolation`; the pip that runs and
+    # the pip that setup.py shells out to must exist. setuptools is pinned <82
+    # because FlagTree's build-system.requires is `setuptools>=79.0.1,<82`
+    # and --no-build-isolation validates it against the venv -- setup.sh
+    # installs the newest setuptools (>=82), which would abort the build.
+    uv pip install pip wheel "setuptools>=79.0.1,<82"
+
+    FLAGTREE_SRC=${FLAGTREE_SRC:-${HOME}/FlagTree}
+    if [ -d "${FLAGTREE_SRC}/.git" ]; then
+      git -C "${FLAGTREE_SRC}" fetch --depth 1 origin main
+      git -C "${FLAGTREE_SRC}" checkout -f FETCH_HEAD
+    else
+      git clone --depth 1 https://github.com/flagos-ai/FlagTree.git "${FLAGTREE_SRC}"
+    fi
+    if [ ! -f "${FLAGTREE_SRC}/setup.py" ]; then
+      echo "::error title=flagtree checkout failed::${FLAGTREE_SRC} has no setup.py (clone/fetch of https://github.com/flagos-ai/FlagTree.git main failed)"
+      exit 1
+    fi
+    echo "FlagTree source: ${FLAGTREE_SRC} @ $(git -C "${FLAGTREE_SRC}" rev-parse --short HEAD)"
+
+    # setup.py fetches the iluvatar LLVM toolchain (~1.5 GiB) with urllib while
+    # generating package metadata; on this runner that aborts the build before
+    # it starts ("The download failed, probably due to network problems!",
+    # setup_tools/utils/tools.py, 4 retries, no backoff). Pre-fetch the tarball
+    # with curl into the directory FlagTree's cache looks for, so check_file()
+    # finds it and the build skips its own download.
+    #
+    # The runner reaches the network through https_proxy and that proxy answers
+    # every request for this KS3 bucket with HTTP 500 ("curl: (22) The
+    # requested URL returned error: 500"). Which of the possible causes it is
+    # (host missing from the proxy's allow-list, CONNECT refused, ...) cannot
+    # be told from here, so try the alternatives in turn and keep the whole log
+    # for the failure annotation.
+    FLAGTREE_LLVM_URL=${FLAGTREE_LLVM_URL:-https://baai-cp-web.ks3-cn-beijing.ksyuncs.com/trans/iluvatar-llvm22-x86_64_v0.6.1.tar.gz}
+
+    # The proxy replies "Tunnel connection failed: 500 Internal Server Error"
+    # for the hosts below even though they are reachable directly (the KS3
+    # fetch works with --noproxy, and so does the CUDA toolchain URL). FlagTree
+    # downloads with urllib, which honours no_proxy, so exempting these hosts
+    # here covers both this script's curl and the build's own downloads --
+    # without it build_ext dies with "<urlopen error Tunnel connection failed:
+    # 500 Internal Server Error>" while fetching cuda_nvcc.
+    no_proxy="${no_proxy:+${no_proxy},}baai-cp-web.ks3-cn-beijing.ksyuncs.com,developer.download.nvidia.com"
+    export no_proxy
+    export NO_PROXY="${no_proxy}"
+
+    LLVM_DIR="${HOME}/.flagtree/iluvatar/iluvatar-llvm22-x86_64"
+    # bin/clang rather than a bare -d: FlagTree's check_file() only tests for
+    # the directory, so a half-extracted cache from an aborted run would be
+    # accepted silently and the build would fail much later on a broken
+    # toolchain.
+    if [ ! -x "${LLVM_DIR}/bin/clang" ]; then
+      mkdir -p "$(dirname "${LLVM_DIR}")"
+      : > /tmp/flagtree-llvm-fetch.log
+      fetched=""
+      for attempt in proxy direct proxy-http; do
+        url="${FLAGTREE_LLVM_URL}"
+        extra=()
+        case "${attempt}" in
+          direct) extra=(--noproxy '*') ;;
+          # Plain HTTP is proxied as an absolute-URI request instead of
+          # CONNECT, which some proxies allow where CONNECT is blocked.
+          proxy-http) url="${url/https:/http:}" ;;
+        esac
+        echo "===== curl [${attempt}] ${url} =====" >> /tmp/flagtree-llvm-fetch.log
+        rm -f /tmp/iluvatar-llvm22.tar.gz
+        if curl -v -fsSL --retry 2 --retry-delay 5 --connect-timeout 30 "${extra[@]}" \
+             -o /tmp/iluvatar-llvm22.tar.gz "${url}" \
+             >> /tmp/flagtree-llvm-fetch.log 2>&1; then
+          fetched="${attempt}"
+          break
+        fi
+      done
+      if [ -z "${fetched}" ]; then
+        echo "----- LLVM fetch log (tail) -----"
+        tail -25 /tmp/flagtree-llvm-fetch.log
+        echo "----- end of tail (full log on the runner: /tmp/flagtree-llvm-fetch.log) -----"
+        # -v puts the proxy's response and curl's last line next to each other,
+        # so the end of the log is the part worth quoting.
+        echo "::error title=iluvatar LLVM download failed::no curl attempt reached ${FLAGTREE_LLVM_URL} [proxy=${https_proxy:-${http_proxy:-<none>}}] -> $(tail -6 /tmp/flagtree-llvm-fetch.log | tr '\n' ' ' | tail -c 900)"
+        exit 1
+      fi
+      echo "iluvatar LLVM downloaded with curl mode: ${fetched}"
+      mkdir -p "${LLVM_DIR}"
+      tar xzf /tmp/iluvatar-llvm22.tar.gz -C "${LLVM_DIR}" --strip-components=1
+      rm -f /tmp/iluvatar-llvm22.tar.gz
+    fi
+    echo "iluvatar LLVM: ${LLVM_DIR} ($(du -sh "${LLVM_DIR}" 2>/dev/null | cut -f1))"
+
+    # FLAGTREE_BACKEND selects the iluvatar backend, MAX_JOBS the native build
+    # parallelism (FlagTree's setup.py reads both). The verbose build output
+    # goes to a log file (it is huge) and its tail is echoed verbatim on
+    # failure, with the *end* of that tail (the exception line) repeated in the
+    # annotation: squeezing the whole tail into the annotation truncated the
+    # exception away, and the raw log itself is not readable without a login.
+    if ! ( cd "${FLAGTREE_SRC}/" \
+           && export FLAGTREE_BACKEND=iluvatar MAX_JOBS="${MAX_JOBS:-32}" \
+           && python3 -m pip install . --no-build-isolation -v ) \
+         > /tmp/flagtree-build.log 2>&1; then
+      echo "----- last 30 lines of /tmp/flagtree-build.log -----"
+      tail -30 /tmp/flagtree-build.log
+      echo "----- end of tail (full log on the runner: /tmp/flagtree-build.log) -----"
+      # pip's summary is the very last thing in the log and the traceback sits
+      # a few lines above it, so take a window and keep its end.
+      echo "::error title=flagtree source build failed::$(tail -25 /tmp/flagtree-build.log | tr '\n' ' ' | tail -c 1800)"
+      exit 1
+    fi
+    tail -3 /tmp/flagtree-build.log
+
+    # Sanity check: the corex torch must be importable, must see the Iluvatar
+    # device, and the flagtree-built triton must load -- otherwise the test
+    # step fails later with a confusing ModuleNotFoundError / import error.
+    # glibc/libstdc++ and the resolved flagtree distribution are printed
+    # because a triton linked against a newer toolchain than the runner's is
+    # the failure mode behind "import triton" errors.
+    set +e
+    python - <<'PYEOF'
+import importlib.metadata, traceback
+try:
+    dist = importlib.metadata.version("torch")
+    print("iluvatar torch dist:", dist)
+    assert "+corex" in dist, f"unexpected torch distribution: {dist}"
+    import torch
+    torch.cuda.init()
+    print("torch.cuda available:", torch.cuda.is_available(),
+          "| count:", torch.cuda.device_count())
+    assert torch.cuda.device_count() > 0, "no iluvatar device visible to torch"
+    import platform
+    print("glibc:", platform.libc_ver())
+    print("flagtree dist:", importlib.metadata.version("flagtree"))
+    import triton
+    print("triton:", triton.__version__, "from", triton.__file__)
+    import triton._C.libtriton as libtriton
+    print("libtriton:", libtriton.__file__)
+except Exception:
+    tb = traceback.format_exc()
+    print(tb)
+    print("::error title=iluvatar runtime sanity check failed::" + tb.replace("%", "%25").replace("\n", "%0A"))
+    raise SystemExit(1)
+PYEOF
+    SANITY_RC=$?
+    set -e
+    if [ $SANITY_RC -ne 0 ]; then
+      echo "::error title=iluvatar runtime sanity check failed::sanity check failed with rc=${SANITY_RC}"
+      exit 1
+    fi
     ;;
 
   ascend)

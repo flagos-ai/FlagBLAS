@@ -40,6 +40,12 @@ vendor/Hygon:
           - "src/flag_blas/runtime/backend/_hygon/**"
           - "tools/check_hygon_gpu.sh"
 
+vendor/Iluvatar:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/flag_blas/runtime/backend/_iluvatar/**"
+          - "tools/check_iluvatar_gpu.sh"
+
 ci/cd:
   - changed-files:
       - any-glob-to-any-file:

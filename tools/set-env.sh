@@ -49,9 +49,37 @@ case $VENDOR in
     export LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
     ;;
   iluvatar)
-    export COREX_ROOT=${COREX_ROOT:-/usr/local/corex}
-    export PATH="${COREX_ROOT}/bin:${PATH}"
-    export LD_LIBRARY_PATH="${COREX_ROOT}/lib:${LD_LIBRARY_PATH}"
+    # Locate the real CoreX install. FlagGems' runners use the canonical
+    # unversioned /usr/local/corex, but some bare runners only ship the
+    # versioned dir (/usr/local/corex-4.4.0) without a symlink, so fall back
+    # to globbing. The corex PyTorch wheels link against the CUDA-10.2
+    # runtime shipped inside CoreX; that lib dir must be on LD_LIBRARY_PATH or
+    # `import torch` dies with "undefined symbol: cudaProfilerInitialize"
+    # (the system libcudart is CUDA 12+ and no longer exports that symbol).
+    export COREX_ROOT=${COREX_ROOT:-}
+    for _cr in /usr/local/corex /usr/local/corex-*; do
+      if [ -d "$_cr" ] && { [ -d "$_cr/bin" ] || [ -d "$_cr/lib" ] || [ -d "$_cr/lib64" ]; }; then
+        export COREX_ROOT="$_cr"
+        break
+      fi
+    done
+    if [ -z "$COREX_ROOT" ]; then
+      echo "WARNING: no corex install found under /usr/local/corex*; corex torch will not work"
+    else
+      export PATH="${COREX_ROOT}/bin:${PATH}"
+      for _cd in "${COREX_ROOT}/lib64" "${COREX_ROOT}/lib"; do
+        if [ -d "$_cd" ]; then
+          case ":${LD_LIBRARY_PATH:-}:" in
+            *":$_cd:"*) ;;
+            *) export LD_LIBRARY_PATH="$_cd${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
+          esac
+        fi
+      done
+      # FlagGems backends.yaml sets CPATH for iluvatar as well.
+      if [ -d /usr/local/cuda-10.2/include ]; then
+        export CPATH=/usr/local/cuda-10.2/include
+      fi
+    fi
     ;;
   ascend)
     if [ -f /usr/local/Ascend/cann/set_env.sh ]; then

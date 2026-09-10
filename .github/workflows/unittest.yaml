@@ -133,3 +133,28 @@ jobs:
       gpu_check_script: 'tools/check_hygon_gpu.sh'
       pr_id: ${{ needs.preprocess.outputs.pr_id }}
       changed_files: ${{ join(needs.preprocess.outputs.changed_files, ' ') }}
+
+  test-iluvatar:
+    needs: preprocess
+    # Always run on workflow_dispatch or push to master.
+    # On PR, only run when the 'tests' or 'vendor/Iluvatar' label is present.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      contains(needs.preprocess.outputs.labels, 'tests') ||
+      contains(needs.preprocess.outputs.labels, 'ops') ||
+      contains(needs.preprocess.outputs.labels, 'core') ||
+      contains(needs.preprocess.outputs.labels, 'benchmark') ||
+      contains(needs.preprocess.outputs.labels, 'vendor/Iluvatar')
+    uses: ./.github/workflows/backend-test.yaml
+    with:
+      vendor: 'iluvatar'
+      # Pin to the BI-V150 (corex 4.4.0) self-hosted runner. The generic
+      # 'iluvatar' label is shared by three machines -- iluvatar-n15
+      # (corex440), iluvatar-n23 (corex450) and iluvatar-n87 (no corex tag) --
+      # so the job could land on a host without the corex 4.4.0 runtime.
+      # 'corex440' is only registered on the BI-V150 machine (iluvatar-n15).
+      runner_label: 'corex440'
+      gpu_check_script: 'tools/check_iluvatar_gpu.sh'
+      pr_id: ${{ needs.preprocess.outputs.pr_id }}
+      changed_files: ${{ join(needs.preprocess.outputs.changed_files, ' ') }}

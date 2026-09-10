@@ -81,6 +81,29 @@ fi
 # Provision the exact Python version via uv managed builds (FlagGems-style),
 # so setup does not depend on any preinstalled system Python / pyenv.
 expected_version=${PYTHON_SUPPORTED[$VENDOR]}
+
+# Iluvatar: the corex driver bundles its own cp310 PyTorch/CuPy under
+# /usr/local/corex-*/lib64/python3/dist-packages. When that env is present we
+# reuse it (PyTorch 2.7.1+corex/cupy 11.4.0+corex are cp310-only and no corex
+# cupy wheel exists for newer pythons), so the venv must be Python 3.10.
+# Otherwise fall back to the flagos mirror wheels (cp312).
+export ILUVATAR_COREX_PYDIR=""
+if [ "$VENDOR" == "iluvatar" ]; then
+  for _cpd in /usr/local/corex-*/lib64/python3/dist-packages /usr/local/corex-*/lib/python3/dist-packages; do
+    if [ -d "$_cpd/torch" ] && [ -d "$_cpd/cupy" ]; then
+      export ILUVATAR_COREX_PYDIR="$_cpd"
+      break
+    fi
+  done
+  if [ -n "$ILUVATAR_COREX_PYDIR" ]; then
+    printf "Detected bundled corex python env at %s -> using Python 3.10\n" "$ILUVATAR_COREX_PYDIR"
+    expected_version=3.10
+  else
+    printf "No bundled corex python env detected -> using Python 3.12 (flagos mirror wheels)\n"
+    expected_version=3.12
+  fi
+fi
+
 printf "Installing Python ${expected_version} ... "
 uv python install "${expected_version}" --python-preference only-managed -q
 if [ "$?" != 0 ]; then

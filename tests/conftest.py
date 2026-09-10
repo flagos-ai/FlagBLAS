@@ -48,6 +48,16 @@ def pytest_addoption(parser):
         default_reference = device
     if flag_blas.vendor_name == "hygon":
         reference_choices.append("hip")
+    if flag_blas.vendor_name == "iluvatar":
+        # CoreX ships cupy only inside its bundled Python env; there is no
+        # pip-installable corex cupy wheel. Without cupy the cuBLAS-style
+        # device reference cannot run, so default to the CPU (SciPy) reference
+        # just like ascend does. Users may still pick the device reference
+        # explicitly via --ref when cupy is available.
+        try:
+            import cupy  # noqa: F401
+        except Exception:
+            default_reference = "cpu"
 
     parser.addoption(
         "--ref",

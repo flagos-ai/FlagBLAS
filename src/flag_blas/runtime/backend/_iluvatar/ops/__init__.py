@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .bfgemm import bfgemm
+from .cgemm import cgemm
+from .hgemm import hgemm
 from .nrm2 import dnrm2, dznrm2, scnrm2, snrm2
+from .sgemm import sgemm
 from .tbsv import stbsv
 
 __all__ = [
@@ -21,4 +25,8 @@ __all__ = [
     "dnrm2",
     "scnrm2",
     "dznrm2",
+    "sgemm",
+    "hgemm",
+    "bfgemm",
+    "cgemm",
 ]

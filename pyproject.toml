@@ -53,6 +53,14 @@ hygon = [
     #"torch==2.4.1+das.opt2.dtk2604",
 	"numpy==1.26.4",
 ]
+
+iluvatar = [
+    "torch==2.7.1+corex.4.4.0",
+    "torchaudio==2.7.1+corex.4.4.0",
+    "torchvision==0.22.1+corex.4.4.0",
+    "numpy<2",
+]
+
 test = [
     "pytest>=7.1.0",
     "numpy>=1.26",

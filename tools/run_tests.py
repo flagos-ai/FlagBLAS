@@ -22,6 +22,7 @@ When stdout is a TTY, shows a live display: completed results scroll upward
 while a pinned footer shows one status line per GPU. When output is piped or
 redirected, falls back to plain line-by-line output with no ANSI codes.
 """
+
 import argparse
 import datetime
 import json
