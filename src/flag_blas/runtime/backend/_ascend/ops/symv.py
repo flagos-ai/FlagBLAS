@@ -296,6 +296,3 @@ def csymv(
             incy,
             UPLO=_row_major_uplo(uplo),
         )
-
-
-__all__ = ["ssymv", "csymv"]

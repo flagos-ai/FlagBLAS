@@ -567,6 +567,3 @@ def ctpmv(
                 UNIT=unit,
                 CONJ=conj,
             )
-
-
-__all__ = ["stpmv", "ctpmv"]

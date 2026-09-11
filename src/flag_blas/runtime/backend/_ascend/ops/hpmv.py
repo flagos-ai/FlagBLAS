@@ -157,6 +157,3 @@ def chpmv(
             UPLO=uplo,
             BETA_IS_ZERO=br == 0.0 and bi == 0.0,
         )
-
-
-__all__ = ["chpmv"]

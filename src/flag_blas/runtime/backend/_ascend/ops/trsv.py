@@ -259,6 +259,3 @@ def ctrsv(uplo, trans, diag, n, A, lda, x, incx):
                 )
         if logical_x_real is not None:
             logical_x_real.copy_(x_real)
-
-
-__all__ = ["strsv", "ctrsv"]

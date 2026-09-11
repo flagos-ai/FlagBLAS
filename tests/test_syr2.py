@@ -438,6 +438,7 @@ def test_ssyr2_alpha_zero():
 
 @pytest.mark.ssyr2
 def test_ssyr2_n_zero():
+    # Zero-size updates are a no-op, including on the Ascend backend.
     dtype = torch.float32
     A = torch.empty((0, 1), dtype=dtype, device=flag_blas.device)
     x = torch.empty((0,), dtype=dtype, device=flag_blas.device)

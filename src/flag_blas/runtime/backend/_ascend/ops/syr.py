@@ -184,6 +184,3 @@ def csyr(
             num_warps=1,
         )
     return A
-
-
-__all__ = ["ssyr", "csyr"]

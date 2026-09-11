@@ -368,8 +368,9 @@ def _run_hpr_row_packed_case(op, dtype, uplo):
     expected += update[rows, cols]
     torch.view_as_real(expected)[diag, 1] = 0
 
-    AP = AP.to(flag_blas.device)
-    x = x.to(flag_blas.device)
+    if flag_blas.vendor_name == "ascend":
+        AP = AP.to(flag_blas.device)
+        x = x.to(flag_blas.device)
 
     op(uplo, n, alpha, x, 1, AP)
 

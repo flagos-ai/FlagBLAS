@@ -119,6 +119,3 @@ def cher(
             num_warps=1,
         )
     return A
-
-
-__all__ = ["cher"]

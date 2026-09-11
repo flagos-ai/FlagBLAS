@@ -101,7 +101,11 @@ def pytest_configure(config):
     reference = config.getoption("--ref")
     TO_CPU = reference == "cpu"
     if TO_CPU:
-        ref_backend = "SciPy (CPU, --ref cpu)"
+        ref_backend = (
+            "SciPy (CPU, --ref cpu)"
+            if flag_blas.vendor_name == "ascend"
+            else "CPU (--ref cpu)"
+        )
     elif flag_blas.vendor_name == "hygon":
         ref_backend = f"hipBLAS (--ref {reference})"
     else:

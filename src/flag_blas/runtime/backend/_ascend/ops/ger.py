@@ -109,6 +109,3 @@ def cgeru(m, n, alpha, x, incx, y, incy, A, lda):
 
 def cgerc(m, n, alpha, x, incx, y, incy, A, lda):
     _cger(m, n, alpha, x, incx, y, incy, A, lda, True)
-
-
-__all__ = ["cgeru", "cgerc"]

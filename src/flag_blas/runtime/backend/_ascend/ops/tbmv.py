@@ -181,6 +181,3 @@ def ctbmv(uplo, trans, diag, n, k, A, lda, x, incx):
             num_warps=1,
         )
     return x
-
-
-__all__ = ["stbmv", "ctbmv"]

@@ -98,6 +98,3 @@ def sspr(
         return
     with torch_device_fn.device(AP.device):
         sspr_kernel[triangular_grid(n)](AP, x, alpha, n, incx, UPLO=uplo)
-
-
-__all__ = ["sspr"]
