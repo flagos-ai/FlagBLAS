@@ -20,6 +20,7 @@ import torch
 import triton
 import triton.language as tl
 
+from flag_blas import runtime
 from flag_blas.runtime import torch_device_fn
 from flag_blas.utils import libentry
 
@@ -162,9 +163,15 @@ def _check_her_args(name, uplo, n, alpha, x, incx, A, lda, dtype, alpha_dtype):
     assert isinstance(n, int) and n >= 0, "n must be a non-negative integer"
     assert A.dtype == dtype, f"A must be {dtype} for {name}"
     assert x.dtype == dtype, f"x must be {dtype} for {name}"
-    assert (A.is_cuda and x.is_cuda) or (
-        A.device.type == "npu" and x.device.type == "npu"
-    ), "A and x must be CUDA or NPU tensors"
+    assert (
+        (A.is_cuda and x.is_cuda)
+        or (A.device.type == "npu" and x.device.type == "npu")
+        or (
+            runtime.device.vendor_name == "mthreads"
+            and A.device.type == "musa"
+            and x.device.type == "musa"
+        )
+    ), "A and x must be CUDA, NPU, or active MUSA tensors"
     assert A.is_contiguous() and x.is_contiguous(), "A and x must be contiguous"
     assert A.device == x.device, "A and x must be on the same device"
     assert A.ndim == 2, "A must be a 2-D tensor"

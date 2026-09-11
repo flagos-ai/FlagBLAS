@@ -19,6 +19,7 @@ import torch
 import triton
 import triton.language as tl
 
+from flag_blas import runtime
 from flag_blas.ops.level2._constants import (
     CUBLAS_FILL_MODE_LOWER,
     CUBLAS_FILL_MODE_UPPER,
@@ -209,7 +210,13 @@ def _check_syr_args(uplo, n, x, incx, A, lda, dtype):
     assert lda >= max(1, n)
     assert A.dtype == dtype == x.dtype
     assert A.is_contiguous() and x.is_contiguous()
-    assert A.device == x.device and (A.is_cuda or A.device.type == "npu")
+    assert A.device == x.device and (
+        A.is_cuda
+        or A.device.type == "npu"
+        or (
+            runtime.device.vendor_name == "mthreads" and A.device.type == "musa"
+        )
+    )
     if n > 0:
         assert x.numel() >= 1 + (n - 1) * incx
         assert A.numel() >= lda * n

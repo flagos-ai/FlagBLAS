@@ -44,4 +44,20 @@ cd FlagBLAS
 pip install  .
 ```
 
+在摩尔线程 GPU 上，请先准备厂商提供的 PyTorch/Triton（TorchMUSA）运行时，
+再执行以下命令，避免安装过程替换厂商版 PyTorch：
+
+```shell
+source tools/set-env.sh mthreads
+pip install -e . --no-deps --no-build-isolation
+```
+
+摩尔线程 Level 2 正确性测试默认使用同一张 MUSA GPU 上的官方 muBLAS
+作为参考后端，也可显式选择 CPU/SciPy 高精度参考：
+
+```shell
+pytest -q --ref musa tests/test_gemv.py
+pytest -q --ref cpu tests/test_gemv.py
+```
+
 本项目采用 [Apache (Version 2.0) License](./LICENSE) 授权许可。

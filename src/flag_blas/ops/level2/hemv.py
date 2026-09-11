@@ -20,6 +20,7 @@ import torch
 import triton
 import triton.language as tl
 
+from flag_blas import runtime
 from flag_blas.ops.level2._constants import (
     CUBLAS_FILL_MODE_LOWER,
     CUBLAS_FILL_MODE_UPPER,
@@ -39,6 +40,14 @@ _CHEMV_CONFIGS = [
     triton.Config({"BLOCK_SIZE": 64}, num_warps=2, num_stages=2),
     triton.Config({"BLOCK_SIZE": 64}, num_warps=4, num_stages=2),
 ]
+
+# MUSA currently generates a misaligned-address fault for the 64 x 64
+# complex64 tile. Retain the working tuning candidates on MThreads and leave
+# every other backend's configuration set unchanged.
+if runtime.device.vendor_name == "mthreads":
+    _CHEMV_CONFIGS = [
+        config for config in _CHEMV_CONFIGS if config.kwargs["BLOCK_SIZE"] < 64
+    ]
 
 _CHEMV_SMALL_CONFIGS = [
     triton.Config({"BLOCK_M": 16}, num_warps=4, num_stages=1),

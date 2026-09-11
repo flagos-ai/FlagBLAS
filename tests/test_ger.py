@@ -24,17 +24,18 @@ from .conftest import TO_CPU
 
 IS_ASCEND = flag_blas.vendor_name == "ascend"
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
-if IS_HYGON:
+if IS_HYGON or IS_MTHREADS:
     import ctypes
 
-    from .hipblas_reference import (
+    from .vendor_blas_reference import (
         HipComplex,
         HipDoubleComplex,
         check_hipblas_status,
         get_hipblas_context,
     )
-elif not IS_ASCEND:
+elif not IS_ASCEND and not IS_MTHREADS:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -198,7 +199,7 @@ def ger_reference(op_name, m, n, alpha, x, incx, y, incy, A, lda):
         return cpu_ger_reference(op_name, m, n, alpha, x, incx, y, incy, A, lda)
 
     ref_A = A.clone()
-    if IS_HYGON:
+    if IS_HYGON or IS_MTHREADS:
         hipblas_ger_reference(op_name, m, n, alpha, x, incx, y, incy, ref_A, lda)
     else:
         cublas_ger_reference(op_name, m, n, alpha, x, incx, y, incy, ref_A, lda)

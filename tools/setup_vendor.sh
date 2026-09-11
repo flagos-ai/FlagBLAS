@@ -22,6 +22,7 @@ SUPPORTED_VENDORS=(
   "iluvatar"
   "ascend"
   "hygon"
+  "mthreads"
 )
 export FLAGOS_PYPI="https://resource.flagos.net/repository/flagos-pypi-${VENDOR}/simple"
 
@@ -179,6 +180,32 @@ PYEOF
       printf '\n# Source Hygon DTK environment (required by DTK-patched PyTorch)\n[ -f "%s" ] && source "%s" || true\n' "$DTK_ENV" "$DTK_ENV" >> .venv/bin/activate
       echo "Baked DTK environment into .venv/bin/activate: $DTK_ENV"
     fi
+    ;;
+  mthreads)
+    # Moore Threads images provide the vendor PyTorch and Triton stack.  Do
+    # not let dependency resolution replace it with a generic CUDA build.
+    python - <<'PYEOF'
+import sys
+
+try:
+    import torch
+
+    musa = getattr(torch, "musa", None)
+    if musa is None or not musa.is_available():
+        raise RuntimeError("torch.musa is unavailable")
+    print("TorchMUSA detected:", torch.__version__)
+except Exception as exc:
+    print(
+        f"mthreads setup requires a working TorchMUSA runtime: {exc}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PYEOF
+    uv pip install -e . --no-deps --no-build-isolation
+    # CUDA CuPy is deliberately excluded because it conflicts with MUSA
+    # runtime libraries.  Level 2 correctness tests use SciPy as reference.
+    uv pip install pytest numpy\<2 scipy distro gitpython pyyaml coverage \
+      pytest-md-report sqlalchemy packaging pybind11
     ;;
 esac
 

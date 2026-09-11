@@ -26,9 +26,12 @@ from flag_blas.ops import CUBLAS_OP_C, CUBLAS_OP_N, CUBLAS_OP_T
 from flag_blas.utils import shape_utils
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 if IS_HYGON:
     import atexit
+elif IS_MTHREADS:
+    from benchmark.mublas_compat import cp, cublas
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
@@ -59,6 +62,10 @@ GBMV_SHAPES = [
 
 
 def load_cublas():
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -292,21 +299,26 @@ gems_zgbmv_wrapper = _gems_wrapper(flag_blas.zgbmv)
 
 def _generate_banded_AB(m, n, kl, ku, lda, dtype, device):
     """Generate equivalent row-major and column-major band storage."""
-    row_AB = torch.zeros((m, lda), dtype=dtype, device=device)
-    column_AB = torch.zeros((n, lda), dtype=dtype, device=device)
+    # Current TorchMUSA does not implement vectorized IndexPut for complex
+    # tensors.  Build the small band-storage reference on the host in that
+    # case and transfer it once; this affects only benchmark setup, not the
+    # measured BLAS call.
+    storage_device = "cpu" if IS_MTHREADS else device
+    row_AB = torch.zeros((m, lda), dtype=dtype, device=storage_device)
+    column_AB = torch.zeros((n, lda), dtype=dtype, device=storage_device)
     for d in range(-ku, kl + 1):
         j_min = max(0, -d)
         j_max = min(n, m - d)
         if j_min < j_max:
-            j_idx = torch.arange(j_min, j_max, device=device)
+            j_idx = torch.arange(j_min, j_max, device=storage_device)
             i_idx = j_idx + d
             if dtype.is_complex:
-                vals = torch.randn(len(j_idx), dtype=dtype, device=device)
+                vals = torch.randn(len(j_idx), dtype=dtype, device=storage_device)
             else:
-                vals = torch.randn(len(j_idx), dtype=dtype, device=device) * 0.1
+                vals = torch.randn(len(j_idx), dtype=dtype, device=storage_device) * 0.1
             row_AB[i_idx, kl - d] = vals
             column_AB[j_idx, ku + d] = vals
-    return row_AB.contiguous(), column_AB.contiguous()
+    return row_AB.contiguous().to(device), column_AB.contiguous().to(device)
 
 
 class GbmvBenchmark(Benchmark):
@@ -323,7 +335,7 @@ class GbmvBenchmark(Benchmark):
         self.alpha = alpha
         self.beta = beta
         self.bands = GBMV_BANDS
-        self.correctness_reference = "hipBLAS" if IS_HYGON else "cuBLAS"
+        self.correctness_reference = "hipBLAS" if IS_HYGON else ("muBLAS" if IS_MTHREADS else "cuBLAS")
 
     def set_more_metrics(self):
         return ["tflops", "gbps"]

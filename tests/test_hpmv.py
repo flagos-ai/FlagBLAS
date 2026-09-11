@@ -21,14 +21,14 @@ from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-if flag_blas.vendor_name == "hygon":
-    from .hipblas_reference import (
+if flag_blas.vendor_name in {"hygon", "mthreads"}:
+    from .vendor_blas_reference import (
         HipComplex,
         HipDoubleComplex,
         check_hipblas_status,
         get_hipblas_context,
     )
-elif flag_blas.vendor_name != "ascend":
+elif flag_blas.vendor_name not in {"ascend", "mthreads"}:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
@@ -51,7 +51,11 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if flag_blas.vendor_name in {"ascend", "hygon"} else load_cublas()
+_cublas = (
+    None
+    if flag_blas.vendor_name in {"ascend", "hygon", "mthreads"}
+    else load_cublas()
+)
 
 
 class cuComplex(ctypes.Structure):
@@ -194,7 +198,7 @@ def hpmv_reference(uplo, n, alpha, AP, x, incx, beta, y, incy):
         )
 
     ref_y = y.clone()
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         hipblas_hpmv_reference(
             column_uplo, n, alpha, column_AP, x, incx, beta, ref_y, incy
         )

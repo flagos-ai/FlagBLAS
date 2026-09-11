@@ -33,9 +33,12 @@ from flag_blas.ops import (
 from flag_blas.utils import shape_utils
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 if IS_HYGON:
     import atexit
+elif IS_MTHREADS:
+    from benchmark.mublas_compat import cp, cublas
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
@@ -56,6 +59,10 @@ TBMV_KS = [1, 4, 32, 48, 128, 512]
 
 
 def load_cublas():
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:

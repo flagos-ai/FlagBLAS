@@ -21,6 +21,7 @@ import triton.language as tl
 
 from flag_blas import runtime
 from flag_blas.runtime import torch_device_fn
+from flag_blas.runtime.device_utils import get_stream_id
 from flag_blas.utils import libentry, libtuner
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ def _tbsv_flags(device):
             return torch.full((1,), -1, dtype=torch.int32, device=device)
     except AttributeError:
         pass
-    key = (device, torch_device_fn.current_stream(device).cuda_stream)
+    key = (device, get_stream_id(torch_device_fn, device))
     entry = _TBSV_FLAG_POOL.get(key)
     if entry is None:
         pool = torch.full((_TBSV_FLAG_SLOTS * 4,), -1, dtype=torch.int32, device=device)

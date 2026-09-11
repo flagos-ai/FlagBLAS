@@ -150,11 +150,13 @@ def sger_kernel(
     cols = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     row_mask = rows < m
     col_mask = cols < n
+    safe_rows = tl.where(row_mask, rows, 0)
+    safe_cols = tl.where(col_mask, cols, 0)
 
-    x_vals = tl.load(x_ptr + rows * INCX, mask=row_mask, other=0.0)
-    y_vals = tl.load(y_ptr + cols * INCY, mask=col_mask, other=0.0)
+    x_vals = tl.load(x_ptr + safe_rows * INCX, mask=row_mask, other=0.0)
+    y_vals = tl.load(y_ptr + safe_cols * INCY, mask=col_mask, other=0.0)
 
-    a_offsets = rows[:, None] * LDA + cols[None, :]
+    a_offsets = safe_rows[:, None] * LDA + safe_cols[None, :]
     mask = row_mask[:, None] & col_mask[None, :]
     a_vals = tl.load(A_ptr + a_offsets, mask=mask, other=0.0)
     out = alpha * x_vals[:, None] * y_vals[None, :] + a_vals
@@ -189,11 +191,13 @@ def dger_kernel(
     cols = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     row_mask = rows < m
     col_mask = cols < n
+    safe_rows = tl.where(row_mask, rows, 0)
+    safe_cols = tl.where(col_mask, cols, 0)
 
-    x_vals = tl.load(x_ptr + rows * INCX, mask=row_mask, other=0.0)
-    y_vals = tl.load(y_ptr + cols * INCY, mask=col_mask, other=0.0)
+    x_vals = tl.load(x_ptr + safe_rows * INCX, mask=row_mask, other=0.0)
+    y_vals = tl.load(y_ptr + safe_cols * INCY, mask=col_mask, other=0.0)
 
-    a_offsets = rows[:, None] * LDA + cols[None, :]
+    a_offsets = safe_rows[:, None] * LDA + safe_cols[None, :]
     mask = row_mask[:, None] & col_mask[None, :]
     a_vals = tl.load(A_ptr + a_offsets, mask=mask, other=0.0)
     out = alpha * x_vals[:, None] * y_vals[None, :] + a_vals
@@ -232,9 +236,11 @@ def cger_kernel(
     cols = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     row_mask = rows < m
     col_mask = cols < n
+    safe_rows = tl.where(row_mask, rows, 0)
+    safe_cols = tl.where(col_mask, cols, 0)
 
-    x_val = tl.load(x_ptr_i64 + rows * INCX, mask=row_mask, other=0)
-    y_val = tl.load(y_ptr_i64 + cols * INCY, mask=col_mask, other=0)
+    x_val = tl.load(x_ptr_i64 + safe_rows * INCX, mask=row_mask, other=0)
+    y_val = tl.load(y_ptr_i64 + safe_cols * INCY, mask=col_mask, other=0)
     x_real = x_val.to(tl.int32).to(tl.float32, bitcast=True)
     x_imag = (x_val >> 32).to(tl.int32).to(tl.float32, bitcast=True)
     y_real = y_val.to(tl.int32).to(tl.float32, bitcast=True)
@@ -251,7 +257,7 @@ def cger_kernel(
         ax_real[:, None] * y_imag[None, :] + ax_imag[:, None] * y_real[None, :]
     )
 
-    a_offsets = rows[:, None] * LDA + cols[None, :]
+    a_offsets = safe_rows[:, None] * LDA + safe_cols[None, :]
     mask = row_mask[:, None] & col_mask[None, :]
     a_val = tl.load(A_ptr_i64 + a_offsets, mask=mask, other=0)
     a_real = a_val.to(tl.int32).to(tl.float32, bitcast=True)
@@ -299,9 +305,11 @@ def zger_kernel(
     lane_is_imag = (lanes & 1) == 1
     row_mask = rows < m
     col_mask = cols < n
+    safe_rows = tl.where(row_mask, rows, 0)
+    safe_cols = tl.where(col_mask, cols, 0)
 
-    x_offsets = rows * INCX * 2
-    y_offsets = cols * INCY * 2
+    x_offsets = safe_rows * INCX * 2
+    y_offsets = safe_cols * INCY * 2
     x_real = tl.load(x_ptr + x_offsets, mask=row_mask, other=0.0)
     x_imag = tl.load(x_ptr + x_offsets + 1, mask=row_mask, other=0.0)
     y_real = tl.load(y_ptr + y_offsets, mask=col_mask, other=0.0)
@@ -319,7 +327,7 @@ def zger_kernel(
         lane_is_imag[None, :], update_lhs + update_rhs, update_lhs - update_rhs
     )
 
-    a_offsets = rows[:, None] * LDA * 2 + cols[None, :] * 2 + (lanes & 1)[None, :]
+    a_offsets = safe_rows[:, None] * LDA * 2 + safe_cols[None, :] * 2 + (lanes & 1)[None, :]
     mask = row_mask[:, None] & col_mask[None, :]
     a_vals = tl.load(A_ptr + a_offsets, mask=mask, other=0.0)
 

@@ -227,26 +227,49 @@ def _probe_torch():
         perror(f"pytorch not installed, please fix it - {e}")
         sys.exit(-1)
 
-    try:
-        cuda_available = torch.cuda.is_available()
-        ENV_INFO["torch"]["cuda_available"] = cuda_available
-        pinfo(f"PyTorch CUDA support ... {cuda_available}")
-    except Exception:
-        ENV_INFO["torch"]["cuda_available"] = False
+    if flag_blas.vendor_name == "mthreads":
+        device_fn = flag_blas.runtime.torch_device_fn
+        try:
+            device_available = device_fn.is_available()
+            ENV_INFO["torch"]["device_available"] = device_available
+            pinfo(f"PyTorch MUSA support ... {device_available}")
+        except Exception:
+            ENV_INFO["torch"]["device_available"] = False
 
-    try:
-        dev_name = torch.cuda.get_device_name()
-        ENV_INFO["torch"]["device_name"] = dev_name
-        pinfo(f"PyTorch device name ... {dev_name}")
-    except Exception:
-        ENV_INFO["torch"]["device_name"] = "N/A"
+        try:
+            dev_name = device_fn.get_device_name()
+            ENV_INFO["torch"]["device_name"] = dev_name
+            pinfo(f"PyTorch device name ... {dev_name}")
+        except Exception:
+            ENV_INFO["torch"]["device_name"] = "N/A"
 
-    try:
-        dev_count = torch.cuda.device_count()
-        ENV_INFO["torch"]["device_count"] = dev_count
-        pinfo(f"PyTorch device count ... {dev_count}")
-    except Exception:
-        ENV_INFO["torch"]["device_count"] = 0
+        try:
+            dev_count = device_fn.device_count()
+            ENV_INFO["torch"]["device_count"] = dev_count
+            pinfo(f"PyTorch device count ... {dev_count}")
+        except Exception:
+            ENV_INFO["torch"]["device_count"] = 0
+    else:
+        try:
+            cuda_available = torch.cuda.is_available()
+            ENV_INFO["torch"]["cuda_available"] = cuda_available
+            pinfo(f"PyTorch CUDA support ... {cuda_available}")
+        except Exception:
+            ENV_INFO["torch"]["cuda_available"] = False
+
+        try:
+            dev_name = torch.cuda.get_device_name()
+            ENV_INFO["torch"]["device_name"] = dev_name
+            pinfo(f"PyTorch device name ... {dev_name}")
+        except Exception:
+            ENV_INFO["torch"]["device_name"] = "N/A"
+
+        try:
+            dev_count = torch.cuda.device_count()
+            ENV_INFO["torch"]["device_count"] = dev_count
+            pinfo(f"PyTorch device count ... {dev_count}")
+        except Exception:
+            ENV_INFO["torch"]["device_count"] = 0
 
 
 def _probe_triton():

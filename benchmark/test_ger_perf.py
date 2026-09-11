@@ -23,6 +23,7 @@ from benchmark.performance_utils import Benchmark, run_correctness_then_benchmar
 from flag_blas.utils import shape_utils
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 if IS_HYGON:
     import atexit
@@ -161,6 +162,17 @@ if IS_HYGON:
         _HIPBLAS_HANDLES.clear()
 
     atexit.register(_destroy_hipblas_handles)
+elif IS_MTHREADS:
+    from benchmark.mublas_compat import cp, cublas
+
+    GER_BENCH_OPS = {
+        "sger": (torch.float32, cublas.sger, np.float32, 1e-5),
+        "dger": (torch.float64, cublas.dger, np.float64, 1e-5),
+        "cgeru": (torch.complex64, cublas.cgeru, np.complex64, 1e-5 + 2e-5j),
+        "cgerc": (torch.complex64, cublas.cgerc, np.complex64, 1e-5 + 2e-5j),
+        "zgeru": (torch.complex128, cublas.zgeru, np.complex128, 1e-5 + 2e-5j),
+        "zgerc": (torch.complex128, cublas.zgerc, np.complex128, 1e-5 + 2e-5j),
+    }
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas

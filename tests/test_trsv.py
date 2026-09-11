@@ -18,9 +18,9 @@ from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-if flag_blas.vendor_name == "hygon":
-    from .hipblas_reference import check_hipblas_status, get_hipblas_context
-elif flag_blas.vendor_name != "ascend":
+if flag_blas.vendor_name in {"hygon", "mthreads"}:
+    from .vendor_blas_reference import check_hipblas_status, get_hipblas_context
+elif flag_blas.vendor_name not in {"ascend", "mthreads"}:
     import cupy as cp
 from flag_blas.ops import (
     CUBLAS_DIAG_NON_UNIT,
@@ -36,6 +36,7 @@ from .accuracy_utils import blas_assert_close, to_cpu_blas_tensor
 from .conftest import TO_CPU
 
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 if not IS_ASCEND:
     import ctypes
@@ -55,7 +56,11 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if flag_blas.vendor_name in {"ascend", "hygon"} else load_cublas()
+_cublas = (
+    None
+    if flag_blas.vendor_name in {"ascend", "hygon", "mthreads"}
+    else load_cublas()
+)
 
 
 def hipblas_trsv_reference(uplo, trans, diag, n, A, lda, x, incx):
@@ -163,7 +168,7 @@ def trsv_reference(uplo, trans, diag, n, A, lda, x, incx):
     if TO_CPU:
         return cpu_trsv_reference(uplo, trans, diag, n, A, lda, ref_x, incx)
 
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         hipblas_trsv_reference(uplo, trans, diag, n, A, lda, ref_x, incx)
     else:
         cublas_trsv_reference(uplo, trans, diag, n, A, lda, ref_x, incx)
@@ -281,7 +286,7 @@ COMPLEX_TRANS = [CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C]
 
 
 def trsv_randn(shape, dtype, device):
-    if IS_ASCEND and dtype == torch.complex64:
+    if (IS_ASCEND or IS_MTHREADS) and dtype == torch.complex64:
         values = torch.randn((*shape, 2), dtype=torch.float32, device=device)
         return torch.view_as_complex(values)
     return torch.randn(shape, dtype=dtype, device=device)
@@ -312,7 +317,7 @@ def make_triangular(n, lda, uplo, diag, dtype, device):
         valid = row_idx >= col_idx
     if diag == CUBLAS_DIAG_UNIT:
         valid = valid & (row_idx != col_idx)
-    if IS_ASCEND and dtype == torch.complex64:
+    if (IS_ASCEND or IS_MTHREADS) and dtype == torch.complex64:
         vals_real = torch.view_as_real(vals)
         if diag == CUBLAS_DIAG_NON_UNIT:
             diag_real = torch.diagonal(vals_real, dim1=0, dim2=1)

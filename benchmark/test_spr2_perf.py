@@ -26,6 +26,7 @@ from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 from flag_blas.utils import shape_utils
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 SPR2_SIZES = [
     64,
@@ -99,6 +100,10 @@ SPR2_SIZES = [
 
 
 def load_cublas():
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so.13"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -235,7 +240,8 @@ def _ensure_cublas():
     global _cublas, _CUBLAS_SPR2_FUNCS
     if _cublas is None:
         _cublas = load_cublas()
-        _configure_cublas_signatures()
+        if not IS_MTHREADS:
+            _configure_cublas_signatures()
         _CUBLAS_SPR2_FUNCS = {
             torch.float32: (_cublas.cublasSspr2_v2, ctypes.c_float),
             torch.float64: (_cublas.cublasDspr2_v2, ctypes.c_double),
@@ -244,6 +250,10 @@ def _ensure_cublas():
 
 
 def _get_cublas_handle():
+    if IS_MTHREADS:
+        _ensure_cublas()
+        from benchmark.mublas_compat import get_mublas_handle
+        return get_mublas_handle()
     global _cublas_handle
     if _cublas_handle is not None:
         return _cublas_handle
@@ -323,7 +333,7 @@ class Spr2Benchmark(Benchmark):
         super().__init__(*args, **kwargs)
         self.uplo = uplo
         self.alpha = alpha
-        self.correctness_reference = "hipBLAS" if IS_HYGON else "cuBLAS"
+        self.correctness_reference = "hipBLAS" if IS_HYGON else ("muBLAS" if IS_MTHREADS else "cuBLAS")
 
     def set_more_metrics(self):
         return ["tflops", "gbps"]

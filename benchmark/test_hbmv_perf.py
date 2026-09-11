@@ -25,9 +25,12 @@ from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 from flag_blas.utils import shape_utils
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 if IS_HYGON:
     import atexit
+elif IS_MTHREADS:
+    from benchmark.mublas_compat import cp, cublas
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
@@ -48,6 +51,10 @@ HBMV_KS = [0, 1, 4, 16, 64, 128, 256]
 
 
 def load_cublas():
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -284,7 +291,7 @@ class HbmvBenchmark(Benchmark):
         self.beta = beta
         self.ks = HBMV_KS
 
-        self.correctness_reference = "hipBLAS" if IS_HYGON else "cuBLAS"
+        self.correctness_reference = "hipBLAS" if IS_HYGON else ("muBLAS" if IS_MTHREADS else "cuBLAS")
 
     def set_more_metrics(self):
         return ["tflops", "gbps"]

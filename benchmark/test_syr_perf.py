@@ -49,6 +49,7 @@ SYR_SIZES = [
     4096,
 ]
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 CUBLAS_POINTER_MODE_HOST = 0
 HIPBLAS_POINTER_MODE_HOST = 0
 _HIPBLAS_LIBRARY = None
@@ -70,6 +71,10 @@ class _ComplexDouble(ctypes.Structure):
 
 
 def _load_cublas():
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     names = ["libcublas.so.13"]
     found = ctypes.util.find_library("cublas")
     if found:
@@ -130,6 +135,10 @@ def _ensure_cublas():
 
 
 def _get_cublas_handle():
+    if IS_MTHREADS:
+        _ensure_cublas()
+        from benchmark.mublas_compat import get_mublas_handle
+        return get_mublas_handle()
     global _cublas_handle
     cublas = _ensure_cublas()
     if _cublas_handle is None:
@@ -327,7 +336,7 @@ class SyrBenchmark(Benchmark):
             handle = _get_cublas_handle()
             c_func, ctor = _CUBLAS_SYR_FUNCS[cur_dtype]
             uplo_value = self.uplo
-            vendor_name = "cuBLAS"
+            vendor_name = "muBLAS" if IS_MTHREADS else "cuBLAS"
         alpha_c = _make_scalar(ctor, self.alpha)
         alpha_ptr = ctypes.byref(alpha_c)
         for shape in self.shapes:

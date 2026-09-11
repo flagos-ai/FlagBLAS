@@ -20,12 +20,13 @@ SUPPORTED_VENDORS=(
   "iluvatar"
   "ascend"
   "hygon"
+  "mthreads"
 )
 
 valid_vendor() {
   needle=$1
   for item in "${SUPPORTED_VENDORS[@]}" ; do
-    [ "$item" == "$needle" ] && return 0
+    [[ "$item" = "$needle" ]] && return 0
   done
   return 1
 }
@@ -89,6 +90,29 @@ case $VENDOR in
       done
     fi
     echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
+    ;;
+  mthreads)
+    # TorchMUSA is normally provisioned by the Moore Threads runtime image.
+    # Installations commonly use either /usr/local/musa or /opt/musa, so keep
+    # the toolkit root configurable.
+    export MUSA_HOME="${MUSA_HOME:-${MUSA_PATH:-/usr/local/musa}}"
+    export MUSA_PATH="${MUSA_PATH:-$MUSA_HOME}"
+    if [ -d "$MUSA_HOME/bin" ]; then
+      export PATH="$MUSA_HOME/bin:${PATH}"
+    fi
+    for d in "$MUSA_HOME/lib" "$MUSA_HOME/lib64"; do
+      if [ -d "$d" ]; then
+        case ":${LD_LIBRARY_PATH:-}:" in
+          *":$d:"*) ;;
+          *) export LD_LIBRARY_PATH="$d${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
+        esac
+      fi
+    done
+    # Do not export an empty visibility mask: TorchMUSA interprets it as no
+    # available devices.  Mirror CUDA visibility only when explicitly set.
+    if [[ -z "${MUSA_VISIBLE_DEVICES+x}" && -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+      export MUSA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES"
+    fi
     ;;
 esac
 

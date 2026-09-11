@@ -22,8 +22,8 @@ from scipy.linalg import blas as cpu_blas
 import flag_blas
 from flag_blas.ops import CUBLAS_OP_C, CUBLAS_OP_N, CUBLAS_OP_T
 
-if flag_blas.vendor_name == "hygon":
-    from .hipblas_reference import (
+if flag_blas.vendor_name in {"hygon", "mthreads"}:
+    from .vendor_blas_reference import (
         HipComplex,
         HipDoubleComplex,
         check_hipblas_status,
@@ -35,8 +35,9 @@ from .conftest import TO_CPU
 
 IS_ASCEND = flag_blas.vendor_name == "ascend"
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
-if not IS_ASCEND and not IS_HYGON:
+if not IS_ASCEND and not IS_HYGON and not IS_MTHREADS:
     import cupy as cp
 
 
@@ -54,7 +55,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if IS_ASCEND or IS_HYGON else load_cublas()
+_cublas = None if IS_ASCEND or IS_HYGON or IS_MTHREADS else load_cublas()
 
 
 class cuComplex(ctypes.Structure):
@@ -194,11 +195,8 @@ def cpu_gbmv_reference(trans, m, n, kl, ku, alpha, AB, lda, x, incx, beta, y, in
         ref_y = torch.empty(y.shape, dtype=ref_dtype)
     else:
         ref_y = to_cpu_blas_tensor(y)
-    if IS_ASCEND:
-        ref_AB = row_to_column_band(to_cpu_blas_tensor(AB), m, n, kl, ku, lda)
-    else:
-        column_AB = row_to_column_band(AB, m, n, kl, ku, lda)
-        ref_AB = to_cpu_blas_tensor(column_AB)
+    column_AB = row_to_column_band(AB, m, n, kl, ku, lda)
+    ref_AB = to_cpu_blas_tensor(column_AB)
     ref_x = to_cpu_blas_tensor(x)
     func = cpu_blas.zgbmv if ref_AB.dtype.is_complex else cpu_blas.dgbmv
 
@@ -267,7 +265,7 @@ def gbmv_reference(trans, m, n, kl, ku, alpha, AB, lda, x, incx, beta, y, incy):
         )
 
     ref_y = y.clone()
-    if IS_HYGON:
+    if IS_HYGON or IS_MTHREADS:
         hipblas_gbmv_reference(
             trans, m, n, kl, ku, alpha, AB, lda, x, incx, beta, ref_y, incy
         )
@@ -308,7 +306,7 @@ STRIDES = [(1, 1), (2, 1), (1, 2), (2, 2)]
 
 
 def randn_tensor(shape, dtype, device):
-    if IS_ASCEND and dtype == torch.complex64:
+    if (IS_ASCEND or IS_MTHREADS) and dtype == torch.complex64:
         if isinstance(shape, int):
             shape = (shape,)
         real = torch.randn((*shape, 2), dtype=torch.float32, device=device)
@@ -318,18 +316,26 @@ def randn_tensor(shape, dtype, device):
 
 def row_to_column_band(AB, m, n, kl, ku, lda):
     column_AB = torch.zeros((n, lda), dtype=AB.dtype, device=AB.device)
+    column_storage = (
+        torch.view_as_real(column_AB)
+        if IS_MTHREADS and AB.dtype.is_complex
+        else column_AB
+    )
+    source_storage = (
+        torch.view_as_real(AB) if IS_MTHREADS and AB.dtype.is_complex else AB
+    )
     for d in range(-ku, kl + 1):
         j_min = max(0, -d)
         j_max = min(n, m - d)
         if j_min < j_max:
             j_idx = torch.arange(j_min, j_max, device=AB.device)
             i_idx = j_idx + d
-            column_AB[j_idx, ku + d] = AB[i_idx, kl - d]
+            column_storage[j_idx, ku + d] = source_storage[i_idx, kl - d]
     return column_AB
 
 
 def create_banded_data(m, n, kl, ku, lda, dtype, device):
-    if dtype == torch.complex64 and IS_ASCEND:
+    if dtype == torch.complex64 and (IS_ASCEND or IS_MTHREADS):
         AB_real = torch.zeros((m, lda, 2), dtype=torch.float32, device=device)
         for d in range(-ku, kl + 1):
             j_min = max(0, -d)
