@@ -20,6 +20,7 @@ SUPPORTED_VENDORS=(
   "iluvatar"
   "ascend"
   "hygon"
+  "mthreads"
 )
 
 declare -A PYTHON_SUPPORTED=(
@@ -27,6 +28,7 @@ declare -A PYTHON_SUPPORTED=(
   ["iluvatar"]="3.12"
   ["ascend"]="3.11"
   ["hygon"]="3.10"
+  ["mthreads"]="3.10"
 )
 
 RED='\033[0;31m'

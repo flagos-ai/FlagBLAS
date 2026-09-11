@@ -12,11 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cupy as cp
 import numpy as np
 import pytest
 import torch
-from cupy_backends.cuda.libs import cublas
 from scipy.linalg import blas
 
 import flag_blas
@@ -24,6 +22,19 @@ from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 
 from . import accuracy_utils as utils
 from .conftest import TO_CPU
+
+# cuPy/cuBLAS are only available on CUDA-capable vendors; on other backends the
+# reference falls back to a torch.matmul-based implementation (muBLAS fp16 GEMM
+# is unreliable on the MThreads MUSA driver, so it is not used here).
+try:
+    import cupy as cp
+    from cupy_backends.cuda.libs import cublas
+
+    HAS_CUBLAS = True
+except ImportError:
+    cp = None
+    cublas = None
+    HAS_CUBLAS = False
 
 CUDA_R_32F = 0
 CUDA_R_16F = 2
@@ -36,33 +47,57 @@ def cublas_hgemm_reference(
     if m == 0 or n == 0:
         return
 
-    handle = cp.cuda.device.get_cublas_handle()
-    cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+    if HAS_CUBLAS:
+        handle = cp.cuda.device.get_cublas_handle()
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
 
-    alpha_np = np.array([alpha], dtype=np.float32)
-    beta_np = np.array([beta], dtype=np.float32)
+        alpha_np = np.array([alpha], dtype=np.float32)
+        beta_np = np.array([beta], dtype=np.float32)
 
-    cublas.gemmEx(
-        handle,
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha_np.ctypes.data,
-        A.data_ptr(),
-        CUDA_R_16F,
-        lda,
-        B.data_ptr(),
-        CUDA_R_16F,
-        ldb,
-        beta_np.ctypes.data,
-        C.data_ptr(),
-        CUDA_R_16F,
-        ldc,
-        CUDA_R_32F,
-        0,
+        cublas.gemmEx(
+            handle,
+            transa,
+            transb,
+            m,
+            n,
+            k,
+            alpha_np.ctypes.data,
+            A.data_ptr(),
+            CUDA_R_16F,
+            lda,
+            B.data_ptr(),
+            CUDA_R_16F,
+            ldb,
+            beta_np.ctypes.data,
+            C.data_ptr(),
+            CUDA_R_16F,
+            ldc,
+            CUDA_R_32F,
+            0,
+        )
+        return
+
+    # torch.matmul fallback: rebuild row-major views from the column-major
+    # (cuBLAS-layout) inputs. ``A``/``B``/``C`` are stored with column-major
+    # strides (shape ``(m, k)`` with stride ``(1, m)`` etc.), so a transposed
+    # operand is obtained by viewing the *other* physical layout.
+    if transa == CUBLAS_OP_N:
+        A_row = A.contiguous()
+    else:
+        A_row = A.t().contiguous()
+    if transb == CUBLAS_OP_N:
+        B_row = B.contiguous()
+    else:
+        B_row = B.t().contiguous()
+    C_row = C.contiguous()
+    C_row.copy_(
+        (
+            alpha * torch.matmul(A_row.float(), B_row.float())
+            + beta * C_row.float()
+        ).to(torch.float16)
     )
+    # 就地写回列主序 C：测试逻辑依赖 reference 修改 C_col（C 即 C_col）。
+    C.copy_(C_row)
 
 
 @pytest.mark.hgemm
