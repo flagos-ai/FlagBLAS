@@ -174,6 +174,3 @@ def chemv(
         chemv_kernel[_triangular_grid(n)](
             A_real, x_real, y_real, ar, ai, n, lda, incx, incy, UPLO=uplo
         )
-
-
-__all__ = ["chemv"]

@@ -925,6 +925,3 @@ def sgemv(
             )
 
     _launch_on_tensor_device(A, launch)
-
-
-__all__ = ["sgemv", "cgemv"]

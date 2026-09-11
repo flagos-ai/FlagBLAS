@@ -112,6 +112,3 @@ def ctpsv(uplo, trans, diag, n, AP, x, incx):
             CONJ=conj,
         )
     return x
-
-
-__all__ = ["stpsv", "ctpsv"]

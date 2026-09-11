@@ -243,8 +243,7 @@ def scipy_ztpsv_reference(n, AP, x, incx, uplo, trans, diag):
 
 def _run(op, cpu_ref, gpu_ref, dtype, uplo, trans, diag, n, incx=1):
     if (
-        flag_blas.vendor_name == "ascend"
-        and dtype in (torch.float64, torch.complex128)
+        dtype in (torch.float64, torch.complex128)
         and not flag_blas.runtime.device.support_fp64
     ):
         pytest.skip("fp64 is not supported on this device")
@@ -493,7 +492,8 @@ def test_tpsv_n_zero_is_noop(op, dtype):
 @pytest.mark.parametrize("uplo", [CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER])
 def test_tpsv_unit_diag_ignores_stored_diagonal(op, dtype, uplo):
     if (
-        dtype in (torch.float64, torch.complex128)
+        flag_blas.vendor_name == "ascend"
+        and dtype in (torch.float64, torch.complex128)
         and not flag_blas.runtime.device.support_fp64
     ):
         pytest.skip("fp64 is not supported on this device")

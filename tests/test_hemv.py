@@ -226,6 +226,7 @@ STRIDES = [(1, 1), (2, 1), (1, 2), (2, 2)]
 
 def hemv_randn(*shape, dtype, device):
     if flag_blas.vendor_name == "ascend" and dtype == torch.complex64:
+        # Build complex inputs from real-valued random tensors on Ascend.
         normalized = (
             tuple(shape[0])
             if len(shape) == 1 and isinstance(shape[0], (tuple, torch.Size))

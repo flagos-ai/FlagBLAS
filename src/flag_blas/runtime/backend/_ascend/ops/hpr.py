@@ -114,6 +114,3 @@ def chpr(
             num_warps=1,
         )
     return AP
-
-
-__all__ = ["chpr"]

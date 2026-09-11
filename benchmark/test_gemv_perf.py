@@ -26,6 +26,11 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
 
+pytestmark = pytest.mark.skipif(
+    IS_ASCEND,
+    reason="GEMV vendor-reference benchmarks are unavailable on Ascend",
+)
+
 if IS_HYGON:
     import atexit
     import ctypes

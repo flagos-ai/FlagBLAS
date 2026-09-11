@@ -315,6 +315,7 @@ STRIDES = [(1, 1), (2, 1), (1, 2), (2, 2)]
 
 def her2_randn(*shape, dtype, device):
     if flag_blas.vendor_name == "ascend" and dtype == torch.complex64:
+        # Build complex inputs from real-valued random tensors on Ascend.
         values = torch.randn((*shape, 2), dtype=torch.float32, device=device)
         return torch.view_as_complex(values)
     return torch.randn(shape, dtype=dtype, device=device)

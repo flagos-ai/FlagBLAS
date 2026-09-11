@@ -47,6 +47,3 @@ def ctbsv(uplo, trans, diag, n, k, A, lda, x, incx):
             UNIT=int(diag == CUBLAS_DIAG_UNIT),
             CONJ=conj,
         )
-
-
-__all__ = ["stbsv", "ctbsv"]
