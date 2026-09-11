@@ -189,6 +189,11 @@ def _row_major_diag_offsets(n, uplo, device):
     return rows * (rows + 3) // 2
 
 
+def check_fp64_support():
+    if not getattr(flag_blas.runtime.device, "support_fp64", True):
+        pytest.skip("fp64 is not supported on this device")
+
+
 def _make_case(n, dtype, uplo, diag, incx, device):
     torch.manual_seed(n + 17 * int(uplo) + 31 * int(diag) + 43 * int(incx))
     build_device = (
@@ -242,11 +247,8 @@ def scipy_ztpsv_reference(n, AP, x, incx, uplo, trans, diag):
 
 
 def _run(op, cpu_ref, gpu_ref, dtype, uplo, trans, diag, n, incx=1):
-    if (
-        dtype in (torch.float64, torch.complex128)
-        and not flag_blas.runtime.device.support_fp64
-    ):
-        pytest.skip("fp64 is not supported on this device")
+    if dtype in (torch.float64, torch.complex128):
+        check_fp64_support()
     device = flag_blas.device
     AP, x = _make_case(n, dtype, uplo, diag, incx, device)
     y = x.clone()
@@ -472,6 +474,8 @@ TPSV_VARIANTS = [
 
 @pytest.mark.parametrize("op,dtype", TPSV_VARIANTS)
 def test_tpsv_n_zero_is_noop(op, dtype):
+    if dtype in (torch.float64, torch.complex128):
+        check_fp64_support()
     AP = torch.empty(0, dtype=dtype, device=flag_blas.device)
     x = torch.empty(0, dtype=dtype, device=flag_blas.device)
 
@@ -491,12 +495,8 @@ def test_tpsv_n_zero_is_noop(op, dtype):
 @pytest.mark.parametrize("op,dtype", TPSV_VARIANTS)
 @pytest.mark.parametrize("uplo", [CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER])
 def test_tpsv_unit_diag_ignores_stored_diagonal(op, dtype, uplo):
-    if (
-        flag_blas.vendor_name == "ascend"
-        and dtype in (torch.float64, torch.complex128)
-        and not flag_blas.runtime.device.support_fp64
-    ):
-        pytest.skip("fp64 is not supported on this device")
+    if dtype in (torch.float64, torch.complex128):
+        check_fp64_support()
     n = 9
     AP, x = _make_case(n, dtype, uplo, CUBLAS_DIAG_UNIT, 1, flag_blas.device)
     build_device = (
@@ -524,6 +524,8 @@ def test_tpsv_unit_diag_ignores_stored_diagonal(op, dtype, uplo):
 
 @pytest.mark.parametrize("op,dtype", TPSV_VARIANTS)
 def test_tpsv_rejects_noncontiguous_packed_storage(op, dtype):
+    if dtype in (torch.float64, torch.complex128):
+        check_fp64_support()
     n = 8
     packed_len = n * (n + 1) // 2
     if flag_blas.vendor_name == "ascend":

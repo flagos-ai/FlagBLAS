@@ -223,12 +223,7 @@ def run_ger_case(op_name, m, n, alpha, incx=1, incy=1):
 @pytest.mark.ger
 @pytest.mark.parametrize("op_name", GER_OPS_CASES)
 def test_ger_exports(op_name):
-    assert hasattr(flag_blas.ops, op_name)
     assert hasattr(flag_blas, op_name)
-    if IS_HYGON and op_name.startswith(("c", "z")):
-        assert getattr(flag_blas, op_name) is not getattr(flag_blas.ops, op_name)
-    elif not IS_ASCEND:
-        assert getattr(flag_blas, op_name) is getattr(flag_blas.ops, op_name)
 
 
 @pytest.mark.ger

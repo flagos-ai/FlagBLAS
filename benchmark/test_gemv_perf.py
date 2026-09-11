@@ -1230,6 +1230,8 @@ class Fp8GemvBenchmark(Benchmark):
 
 @pytest.mark.fp8gemv
 def test_perf_fp8_gemv_e4m3_vs_sgemv_trans():
+    if flag_blas.vendor_name == "iluvatar":
+        pytest.skip("FP8 GEMV vendor baseline is unavailable on Iluvatar")
     if IS_HYGON:
         pytest.skip("FP8 GEMV cuBLAS baseline is unavailable on Hygon")
     bench = Fp8GemvBenchmark(
@@ -1245,6 +1247,8 @@ def test_perf_fp8_gemv_e4m3_vs_sgemv_trans():
 
 @pytest.mark.fp8gemv
 def test_perf_fp8_gemv_e5m2_vs_sgemv_trans():
+    if flag_blas.vendor_name == "iluvatar":
+        pytest.skip("FP8 GEMV vendor baseline is unavailable on Iluvatar")
     if IS_HYGON:
         pytest.skip("FP8 GEMV cuBLAS baseline is unavailable on Hygon")
     bench = Fp8GemvBenchmark(
