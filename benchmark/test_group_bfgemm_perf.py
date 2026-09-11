@@ -11,6 +11,7 @@ from benchmark.performance_utils import Benchmark
 from flag_blas.utils import shape_utils
 
 IS_ASCEND = flag_blas.device == "npu"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 if IS_ASCEND:
     if not hasattr(torch, "npu") or not torch.npu.is_available():
@@ -21,6 +22,30 @@ if IS_ASCEND:
     from flag_blas.runtime.backend._ascend.ops.group_gemm import (
         grouped_bfgemm_kernel,
         grouped_bfgemm_n_chunk_kernel,
+    )
+elif IS_MTHREADS:
+    if not hasattr(torch, "musa") or not torch.musa.is_available():
+        pytest.skip(
+            "requires FlagBLAS with an available MUSA backend",
+            allow_module_level=True,
+        )
+    import triton
+    from triton.tools.tensor_descriptor import TensorDescriptor
+    from mate.gemm import ragged_m_moe_gemm_16bit
+    from flag_blas.runtime.backend._mthreads.ops.group_gemm import (
+        GROUP_BFGEMM_LLC_OPTIONS,
+        grouped_bfgemm_tma_kernel,
+        grouped_bfgemm_tma_m256_kernel,
+        grouped_bfgemm_tma_m256_k64_kernel,
+        grouped_bfgemm_tma_schedule_m256_kernel,
+        grouped_bfgemm_tma_schedule_m256_n128_kernel,
+        grouped_bfgemm_tma_expert_m256_kernel,
+        grouped_bfgemm_schedule_offsets_kernel,
+        grouped_bfgemm_schedule_chunk_offsets_kernel,
+        grouped_bfgemm_schedule_fill_kernel,
+        grouped_bfgemm_pack_a_kernel,
+        grouped_bfgemm_tle_ws_kernel,
+        grouped_bfgemm_tle_ws_n192_kernel,
     )
 else:
     if flag_blas.device != "cuda":
@@ -40,7 +65,7 @@ else:
     )
 
 
-if not IS_ASCEND:
+if not IS_ASCEND and not IS_MTHREADS:
 
     def load_cublas():
         lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
@@ -102,7 +127,7 @@ if not IS_ASCEND:
         )
 
     cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
-else:
+elif IS_ASCEND:
 
     def load_opapi():
         lib_names = [
@@ -765,9 +790,240 @@ def ascend_gems_group_gemm_wrapper(
         return group_out
 
 
+def mthreads_group_gemm(
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    flag_group_list,
+    flag_out,
+    group_size,
+    M,
+    N,
+    K,
+    **kwargs,
+):
+    return ragged_m_moe_gemm_16bit(
+        group_A,
+        group_B,
+        group_list,
+        group_out,
+        gemm_mode="per_expert",
+        major_a_mode="K",
+        major_b_mode="N",
+    )
+
+
+def mthreads_gems_group_gemm_wrapper(
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    flag_group_list,
+    flag_out,
+    group_size,
+    M,
+    N,
+    K,
+    num_aicores,
+    a_desc,
+    b_desc,
+    b_n64_desc,
+    packed_a_desc,
+    b_row_starts,
+    c_row_ends,
+    c_row_starts,
+    total_blocks,
+    max_blocks,
+    schedule_blocks,
+    schedule_block_m,
+    **kwargs,
+):
+    if K >= 64 and (N % 256 == 0 or N in (192, 384)) and 16 <= group_size <= 128:
+        block_n = 256
+        block_k = 32
+        if N == 192:
+            pipeline_stages = 6
+        elif N == 384:
+            pipeline_stages = 5
+        elif (K == 768 and group_size >= 32) or (K == 512 and 32 <= group_size <= 64):
+            pipeline_stages = 4
+        elif K in (384, 512, 768):
+            pipeline_stages = 3
+        elif K == 192:
+            pipeline_stages = 6
+        else:
+            pipeline_stages = 4
+        if K == 2048 and N == 1536 and (group_size >= 64 or group_size == 16):
+            panel_width = 6
+        elif K == 192 and N >= 4096:
+            panel_width = 16
+        elif K <= 192 or (group_size <= 17 and K == 4096 and N >= 3072):
+            panel_width = 8
+        elif K <= 768 or (group_size <= 17 and N >= 4096) or (K == 2048 and N == 1024 and group_size >= 64):
+            panel_width = 4
+        elif K == 2048 and N == 768:
+            panel_width = 3
+        else:
+            panel_width = 2
+        consumer_warps = 16
+        if N == 192:
+            grouped_bfgemm_tle_ws_n192_kernel[(schedule_blocks,)](M, K, packed_a_desc, b_desc, b_n64_desc, flag_out, b_row_starts, c_row_ends, c_row_starts, schedule_blocks, BLOCK_M=schedule_block_m, BLOCK_K=block_k, PIPELINE_STAGES=pipeline_stages, num_warps=consumer_warps, num_stages=pipeline_stages)
+        else:
+            max_tiles = schedule_blocks * triton.cdiv(N, block_n)
+            grouped_bfgemm_tle_ws_kernel[(max_tiles,)](M, N, K, packed_a_desc, b_desc, flag_group_list, flag_out, group_size, b_row_starts, c_row_ends, c_row_starts, schedule_blocks, BLOCK_M=schedule_block_m, BLOCK_N=block_n, BLOCK_K=block_k, PANEL_WIDTH=panel_width, PIPELINE_STAGES=pipeline_stages, num_warps=consumer_warps, num_stages=pipeline_stages)
+    elif group_size <= 17:
+        tiles_per_expert = triton.cdiv(M, group_size * 256)
+        grouped_bfgemm_tma_expert_m256_kernel[(group_size * tiles_per_expert * triton.cdiv(N, 256),)](M, N, K, a_desc, b_desc, flag_group_list, flag_out, group_size, BLOCK_N=256, BLOCK_K=64, num_warps=16, num_stages=3, enable_backend_opt=True, llc_options=GROUP_BFGEMM_LLC_OPTIONS)
+    elif group_size == 512 and K >= 64 and N >= 128:
+        if N == 128:
+            grouped_bfgemm_tma_schedule_m256_n128_kernel[(num_aicores,)](M, N, K, a_desc, b_desc, flag_out, b_row_starts, c_row_ends, c_row_starts, schedule_blocks, num_warps=8, num_stages=3, enable_backend_opt=True, llc_options=GROUP_BFGEMM_LLC_OPTIONS)
+        else:
+            grouped_bfgemm_tma_schedule_m256_kernel[(num_aicores,)](M, N, K, a_desc, b_desc, flag_out, b_row_starts, c_row_ends, c_row_starts, schedule_blocks, num_warps=16, num_stages=2 if K == 64 else 3, enable_backend_opt=True, llc_options=GROUP_BFGEMM_LLC_OPTIONS)
+    elif K == 64 and N >= 128 and group_size >= 32:
+        grouped_bfgemm_tma_m256_k64_kernel[(num_aicores,)](M, N, K, a_desc, b_desc, flag_group_list, flag_out, group_size, num_warps=32, num_stages=1, enable_backend_opt=True, llc_options=GROUP_BFGEMM_LLC_OPTIONS)
+    elif K >= 64 and N >= 128 and (group_size >= 32 or K <= 768):
+        grouped_bfgemm_tma_m256_kernel[(num_aicores,)](M, N, K, a_desc, b_desc, flag_group_list, flag_out, group_size)
+    else:
+        grouped_bfgemm_tma_kernel[(num_aicores,)](
+            M,
+            N,
+            K,
+            a_desc,
+            b_desc,
+            flag_group_list,
+            flag_out,
+            group_size,
+        )
+    return flag_out
+
+
+class MThreadsGroupGemmBenchmark(GroupGemmBenchmark):
+    correctness_reference = "MATE ragged_m_moe_gemm_16bit"
+
+    def set_more_metrics(self):
+        return ["tflops", "gbps"]
+
+    def get_input_iter(self, cur_dtype) -> Generator:
+        random.seed(SEED)
+        num_aicores = torch.musa.get_device_properties(
+            self.device
+        ).multi_processor_count
+        for k, e, n in self.shapes:
+            m_list = [random.randint(1, 4096) for _ in range(e)]
+            total_M = sum(m_list)
+            group_A = torch.randn(total_M, k, dtype=cur_dtype, device=self.device)
+            group_B = torch.randn(e, k, n, dtype=cur_dtype, device=self.device)
+            group_list = torch.tensor(m_list, dtype=torch.int32, device=self.device)
+            flag_group_list = group_list.cumsum(0, dtype=torch.int32)
+            group_out = torch.empty(total_M, n, dtype=cur_dtype, device=self.device)
+            flag_out = torch.empty_like(group_out)
+            dummy_block = [1, 1]
+            a_desc = TensorDescriptor(
+                group_A,
+                group_A.shape,
+                group_A.stride(),
+                dummy_block,
+            )
+            b_desc = TensorDescriptor(
+                group_B,
+                [e * k, n],
+                [group_B.stride(1), group_B.stride(2)],
+                dummy_block,
+            )
+            b_n64_desc = TensorDescriptor(
+                group_B,
+                [e * k, n],
+                [group_B.stride(1), group_B.stride(2)],
+                dummy_block,
+            )
+            block_m = 256
+            max_blocks = triton.cdiv(total_M, block_m) + e - 1
+            schedule_blocks = sum(triton.cdiv(m, block_m) for m in m_list)
+            block_e = 128
+            num_chunks = triton.cdiv(e, block_e)
+            group_block_offsets = torch.empty(e, dtype=torch.int32, device=self.device)
+            block_chunk_counts = torch.empty(num_chunks, dtype=torch.int32, device=self.device)
+            block_chunk_offsets = torch.empty(num_chunks, dtype=torch.int32, device=self.device)
+            b_row_starts = torch.empty(max_blocks, dtype=torch.int32, device=self.device)
+            c_row_ends = torch.empty(max_blocks, dtype=torch.int32, device=self.device)
+            c_row_starts = torch.empty(max_blocks, dtype=torch.int32, device=self.device)
+            total_blocks = torch.empty((), dtype=torch.int32, device=self.device)
+            packed_A = torch.empty((max_blocks * block_m, k), dtype=cur_dtype, device=self.device)
+            packed_a_desc = TensorDescriptor(packed_A, packed_A.shape, packed_A.stride(), dummy_block)
+            grouped_bfgemm_schedule_offsets_kernel[(num_chunks,)](flag_group_list, group_block_offsets, block_chunk_counts, e, BLOCK_E=block_e, BLOCK_M=block_m, num_warps=1)
+            grouped_bfgemm_schedule_chunk_offsets_kernel[(1,)](block_chunk_counts, block_chunk_offsets, total_blocks, num_chunks, BLOCK_C=triton.next_power_of_2(num_chunks), num_warps=1)
+            grouped_bfgemm_schedule_fill_kernel[(e,)](flag_group_list, group_block_offsets, block_chunk_offsets, b_row_starts, c_row_ends, c_row_starts, k, e, BLOCK_E=block_e, BLOCK_M=block_m, num_warps=1)
+            grouped_bfgemm_pack_a_kernel[(schedule_blocks, triton.cdiv(k, 64))](group_A, packed_A, c_row_starts, total_blocks, total_M, k, BLOCK_M=block_m, BLOCK_K=64, num_warps=8)
+            if k >= 64 and (n % 256 == 0 or n in (192, 384)) and 16 <= e <= 128:
+                packed_a_desc.block_shape = [block_m, 32]
+                if n == 192:
+                    b_desc.block_shape = [32, 128]
+                    b_n64_desc.block_shape = [32, 64]
+                else:
+                    b_desc.block_shape = [32, 256]
+            elif e <= 17:
+                a_desc.block_shape = [128, 64]
+                b_desc.block_shape = [64, 256]
+            elif e == 512 and k >= 64 and n >= 128:
+                a_desc.block_shape = [128, 64]
+                b_desc.block_shape = [64, 128 if n == 128 else 256]
+            elif k == 64 and n >= 128 and e >= 32:
+                a_desc.block_shape = [128, 64]
+                b_desc.block_shape = [64, 256]
+
+            yield group_A, group_B, group_list, group_out, {
+                "flag_group_list": flag_group_list,
+                "flag_out": flag_out,
+                "group_size": e,
+                "M": total_M,
+                "N": n,
+                "K": k,
+                "num_aicores": num_aicores,
+                "a_desc": a_desc,
+                "b_desc": b_desc,
+                "b_n64_desc": b_n64_desc,
+                "packed_a_desc": packed_a_desc,
+                "b_row_starts": b_row_starts,
+                "c_row_ends": c_row_ends,
+                "c_row_starts": c_row_starts,
+                "total_blocks": total_blocks,
+                "max_blocks": max_blocks,
+                "schedule_blocks": schedule_blocks,
+                "schedule_block_m": block_m,
+            }
+
+    def get_tflops(self, op, *args, **kwargs):
+        group_A, group_B = args[0], args[1]
+        return 2 * group_A.shape[0] * group_B.shape[1] * group_B.shape[2]
+
+    def get_gbps(self, args, latency):
+        group_A, group_B, _, group_out = args[:4]
+        io_amount = (
+            shape_utils.size_in_bytes(group_A)
+            + shape_utils.size_in_bytes(group_B)
+            + 2 * shape_utils.size_in_bytes(group_out)
+        )
+        return io_amount * 1e-9 / (latency * 1e-3)
+
+
 @pytest.mark.group_gemm
 def test_perf_group_gemm_bf16():
-    if IS_ASCEND:
+    if IS_MTHREADS:
+        bench = MThreadsGroupGemmBenchmark(
+            op_name="group_gemm",
+            torch_op=mthreads_group_gemm,
+            gems_op=mthreads_gems_group_gemm_wrapper,
+            dtypes=[torch.bfloat16],
+        )
+        bench.init_user_config()
+        for cur_dtype in bench.to_bench_dtypes:
+            for A, B, group_list, group_out, kwargs in bench.get_input_iter(cur_dtype):
+                torch_result = mthreads_group_gemm(A, B, group_list, group_out, **kwargs)
+                gems_result = mthreads_gems_group_gemm_wrapper(A, B, group_list, group_out, **kwargs)
+                bench.validate_results(torch_result, gems_result, 1, tolerance=1e-2)
+        bench.run()
+    elif IS_ASCEND:
         bench = AscendGroupGemmBenchmark(
             op_name="group_gemm",
             torch_op=aclnn_group_gemm,

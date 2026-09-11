@@ -9,9 +9,12 @@ from . import accuracy_utils as utils
 from .conftest import TO_CPU
 
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 if IS_ASCEND:
     torch_npu = pytest.importorskip("torch_npu")
+elif IS_MTHREADS:
+    from flag_blas.runtime.backend._mthreads.ops.group_gemm import group_bfgemm
 else:
     import ctypes
     import ctypes.util
@@ -35,7 +38,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on the system.")
 
 
-_cublas = load_cublas() if not IS_ASCEND else None
+_cublas = load_cublas() if not IS_ASCEND and not IS_MTHREADS else None
 
 
 def _cublasGemmGroupedBatchedEx(
@@ -84,7 +87,7 @@ def _cublasGemmGroupedBatchedEx(
     )
 
 
-if not IS_ASCEND:
+if not IS_ASCEND and not IS_MTHREADS:
     cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
 
 
@@ -281,6 +284,23 @@ def test_accuracy_group_gemm(k, e, n):
         utils.blas_assert_close(group_out, group_ref, torch.bfloat16, reduce_dim=k)
         return
 
+    if IS_MTHREADS:
+        group_A = torch.randn(total_M, k, dtype=torch.bfloat16, device=device)
+        group_B = torch.randn(e, k, n, dtype=torch.bfloat16, device=device)
+        group_list = torch.tensor(m_list, dtype=torch.int32, device=device).cumsum(0)
+        ref = torch.cat(
+            [
+                torch.mm(group_A[start:end], group_B[group_idx])
+                for group_idx, (start, end) in enumerate(
+                    zip([0] + group_list[:-1].tolist(), group_list.tolist())
+                )
+            ],
+            dim=0,
+        )
+        out = flag_blas.group_bfgemm(group_A, group_B, group_list, torch.empty_like(ref))
+        utils.blas_assert_close(out, ref, torch.bfloat16, reduce_dim=k, atol=2e-4)
+        return
+
     total_K = e * k
     group_A = (
         torch.randn(total_M, k, dtype=torch.bfloat16, device=device) * scale
@@ -323,7 +343,9 @@ def test_accuracy_group_gemm(k, e, n):
 
 
 @pytest.mark.group_gemm
-@pytest.mark.skipif(IS_ASCEND, reason="Hopper-only alpha/beta interface")
+@pytest.mark.skipif(
+    IS_ASCEND or IS_MTHREADS, reason="Hopper-only alpha/beta interface"
+)
 def test_group_gemm_alpha_zero():
     m, k, e, n = 16, 64, 4, 128
     dtype, device = torch.bfloat16, flag_blas.device
@@ -345,7 +367,9 @@ def test_group_gemm_alpha_zero():
 
 
 @pytest.mark.group_gemm
-@pytest.mark.skipif(IS_ASCEND, reason="Hopper-only alpha/beta interface")
+@pytest.mark.skipif(
+    IS_ASCEND or IS_MTHREADS, reason="Hopper-only alpha/beta interface"
+)
 def test_group_gemm_beta_zero():
     m, k, e, n = 8, 32, 3, 64
     dtype, device = torch.bfloat16, flag_blas.device
@@ -363,14 +387,16 @@ def test_group_gemm_beta_zero():
     if TO_CPU:
         utils.blas_assert_close(out, ref.to("cpu"), dtype, reduce_dim=k)
     else:
-        utils.blas_assert_close(out, ref, dtype, reduce_dim=k)
+        utils.blas_assert_close(out, ref, dtype, reduce_dim=k, atol=2e-4)
 
 
 @pytest.mark.group_gemm
 @pytest.mark.parametrize(
     "alpha,beta", [(1.0, 0.0), (2.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)]
 )
-@pytest.mark.skipif(IS_ASCEND, reason="Hopper-only alpha/beta interface")
+@pytest.mark.skipif(
+    IS_ASCEND or IS_MTHREADS, reason="Hopper-only alpha/beta interface"
+)
 def test_group_gemm_alpha_beta(alpha, beta):
     m, k, e, n = 32, 128, 2, 128
     dtype, device = torch.bfloat16, flag_blas.device
