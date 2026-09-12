@@ -3,86 +3,187 @@ import ctypes.util
 import random
 from typing import Generator
 
-import cupy as cp
 import pytest
 import torch
-from cupy_backends.cuda.libs import cublas
 
 import flag_blas
 from benchmark.performance_utils import Benchmark
-from flag_blas.ops import CUBLAS_OP_N
 from flag_blas.utils import shape_utils
 
+IS_ASCEND = flag_blas.device == "npu"
 
-def load_cublas():
-    lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
-    found_path = ctypes.util.find_library("cublas")
-    if found_path:
-        lib_names.insert(0, found_path)
-    for name in lib_names:
-        try:
-            return ctypes.cdll.LoadLibrary(name)
-        except OSError:
-            continue
-    raise RuntimeError("Unable to find libcublas.so on the system.")
+if IS_ASCEND:
+    if not hasattr(torch, "npu") or not torch.npu.is_available():
+        pytest.skip(
+            "requires FlagBLAS with an available NPU backend",
+            allow_module_level=True,
+        )
+    torch.npu.matmul.allow_hf32 = True
+    torch.npu.matmul.cube_math_type = torch.npu.CubeMathType.USE_HF32
+    if (
+        not torch.npu.matmul.allow_hf32
+        or torch.npu.matmul.cube_math_type != torch.npu.CubeMathType.USE_HF32
+    ):
+        raise RuntimeError("Failed to enable Ascend HF32 matmul mode.")
+    from flag_blas.runtime.backend._ascend.ops.group_gemm import grouped_tf32gemm_kernel
+else:
+    if flag_blas.device != "cuda":
+        pytest.skip(
+            "requires FlagBLAS with an available CUDA or NPU backend",
+            allow_module_level=True,
+        )
+    import cupy as cp
+    from cupy_backends.cuda.libs import cublas
 
-
-_cublas = load_cublas()
-
-
-def _cublasGemmGroupedBatchedEx(
-    handle,
-    transa,
-    transb,
-    m_arr,
-    n_arr,
-    k_arr,
-    alpha,
-    a_array,
-    a_type,
-    lda,
-    b_array,
-    b_type,
-    ldb,
-    beta,
-    c_array,
-    c_type,
-    ldc,
-    group_count,
-    group_size,
-    compute_type,
-):
-    return _cublas.cublasGemmGroupedBatchedEx(
-        ctypes.c_void_p(handle),
-        ctypes.c_void_p(transa.data_ptr()),
-        ctypes.c_void_p(transb.data_ptr()),
-        ctypes.c_void_p(m_arr.data_ptr()),
-        ctypes.c_void_p(n_arr.data_ptr()),
-        ctypes.c_void_p(k_arr.data_ptr()),
-        ctypes.c_void_p(alpha),
-        ctypes.c_void_p(a_array),
-        ctypes.c_int(a_type),
-        ctypes.c_void_p(lda.data_ptr()),
-        ctypes.c_void_p(b_array),
-        ctypes.c_int(b_type),
-        ctypes.c_void_p(ldb.data_ptr()),
-        ctypes.c_void_p(beta),
-        ctypes.c_void_p(c_array),
-        ctypes.c_int(c_type),
-        ctypes.c_void_p(ldc.data_ptr()),
-        ctypes.c_int(group_count),
-        ctypes.c_void_p(group_size.data_ptr()),
-        ctypes.c_int(compute_type),
+    from flag_blas.ops import CUBLAS_OP_N
+    from flag_blas.runtime.backend._nvidia.hopper.ops.group_gemm import (
+        grouped_tf32gemm_kernel,
+        grouped_tf32gemm_small_m_tma_kernel,
+        grouped_tf32gemm_tma_kernel,
+        supports_tma,
     )
 
 
-cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
+if not IS_ASCEND:
+
+    def load_cublas():
+        lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
+        found_path = ctypes.util.find_library("cublas")
+        if found_path:
+            lib_names.insert(0, found_path)
+        for name in lib_names:
+            try:
+                return ctypes.cdll.LoadLibrary(name)
+            except OSError:
+                continue
+        raise RuntimeError("Unable to find libcublas.so on the system.")
+
+    _cublas = load_cublas()
+
+    def _cublasGemmGroupedBatchedEx(
+        handle,
+        transa,
+        transb,
+        m_arr,
+        n_arr,
+        k_arr,
+        alpha,
+        a_array,
+        a_type,
+        lda,
+        b_array,
+        b_type,
+        ldb,
+        beta,
+        c_array,
+        c_type,
+        ldc,
+        group_count,
+        group_size,
+        compute_type,
+    ):
+        return _cublas.cublasGemmGroupedBatchedEx(
+            ctypes.c_void_p(handle),
+            ctypes.c_void_p(transa.data_ptr()),
+            ctypes.c_void_p(transb.data_ptr()),
+            ctypes.c_void_p(m_arr.data_ptr()),
+            ctypes.c_void_p(n_arr.data_ptr()),
+            ctypes.c_void_p(k_arr.data_ptr()),
+            ctypes.c_void_p(alpha),
+            ctypes.c_void_p(a_array),
+            ctypes.c_int(a_type),
+            ctypes.c_void_p(lda.data_ptr()),
+            ctypes.c_void_p(b_array),
+            ctypes.c_int(b_type),
+            ctypes.c_void_p(ldb.data_ptr()),
+            ctypes.c_void_p(beta),
+            ctypes.c_void_p(c_array),
+            ctypes.c_int(c_type),
+            ctypes.c_void_p(ldc.data_ptr()),
+            ctypes.c_int(group_count),
+            ctypes.c_void_p(group_size.data_ptr()),
+            ctypes.c_int(compute_type),
+        )
+
+    cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
 
 
 SEED = 50
 CUDA_R_32F = 0
 CUBLAS_COMPUTE_32F_FAST_TF32 = 77
 CUBLAS_COMPUTE_32F = 68
+ACL_FLOAT = 0
+ACL_INT64 = 9
+ACL_FORMAT_ND = 2
+
+if IS_ASCEND:
+
+    def load_opapi():
+        lib_names = [
+            "/usr/local/Ascend/cann-9.0.0/aarch64-linux/lib64/libopapi.so",
+            "libopapi.so",
+        ]
+        found_path = ctypes.util.find_library("opapi")
+        if found_path:
+            lib_names.insert(0, found_path)
+        for name in lib_names:
+            try:
+                return ctypes.cdll.LoadLibrary(name)
+            except OSError:
+                continue
+        raise RuntimeError("Unable to find libopapi.so on the system.")
+
+    _opapi = load_opapi()
+    _ACL_PTR = ctypes.c_void_p
+    _ACL_INT64_PTR = ctypes.POINTER(ctypes.c_int64)
+    _opapi.aclCreateTensor.argtypes = [
+        _ACL_INT64_PTR,
+        ctypes.c_uint64,
+        ctypes.c_int,
+        _ACL_INT64_PTR,
+        ctypes.c_int64,
+        ctypes.c_int,
+        _ACL_INT64_PTR,
+        ctypes.c_uint64,
+        _ACL_PTR,
+    ]
+    _opapi.aclCreateTensor.restype = _ACL_PTR
+    _opapi.aclCreateTensorList.argtypes = [ctypes.POINTER(_ACL_PTR), ctypes.c_uint64]
+    _opapi.aclCreateTensorList.restype = _ACL_PTR
+    _opapi.aclSetAclOpExecutorRepeatable.argtypes = [_ACL_PTR]
+    _opapi.aclSetAclOpExecutorRepeatable.restype = ctypes.c_int
+    _opapi.aclnnGroupedMatmulV5GetWorkspaceSize.argtypes = [
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        ctypes.c_int64,
+        ctypes.c_int64,
+        ctypes.c_int64,
+        ctypes.c_int64,
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        _ACL_PTR,
+        ctypes.POINTER(ctypes.c_uint64),
+        ctypes.POINTER(_ACL_PTR),
+    ]
+    _opapi.aclnnGroupedMatmulV5GetWorkspaceSize.restype = ctypes.c_int
+    _opapi.aclnnGroupedMatmulV5.argtypes = [
+        _ACL_PTR,
+        ctypes.c_uint64,
+        _ACL_PTR,
+        _ACL_PTR,
+    ]
+    _opapi.aclnnGroupedMatmulV5.restype = ctypes.c_int
 
 
 def cublas_group_gemm(
@@ -194,8 +295,19 @@ def gems_group_gemm_wrapper(
     beta,
     **kwargs,
 ):
-    return flag_blas.group_tf32gemm(
-        out_flag,
+    num_sms = torch.cuda.get_device_properties("cuda").multi_processor_count
+    tma_available = supports_tma(out_flag.device)
+    if tma_available and kwargs.get("use_small_m", False):
+        kernel = grouped_tf32gemm_small_m_tma_kernel
+    elif tma_available:
+        kernel = grouped_tf32gemm_tma_kernel
+    else:
+        kernel = grouped_tf32gemm_kernel
+
+    kernel[(num_sms,)](
+        M,
+        N,
+        K,
         a_flag,
         b_flag,
         c_flag,
@@ -207,13 +319,10 @@ def gems_group_gemm_wrapper(
         ldb_flag,
         ldc_flag,
         group_size,
-        M,
-        N,
-        K,
         alpha=alpha,
         beta=beta,
-        use_small_m=kwargs.get("use_small_m", False),
     )
+    return out_flag
 
 
 class GroupGemmBenchmark(Benchmark):
@@ -432,19 +541,242 @@ class GroupGemmBenchmark(Benchmark):
             )
 
 
+class AscendGroupGemmBenchmark(GroupGemmBenchmark):
+    def set_more_metrics(self):
+        return ["tflops", "gbps"]
+
+    def get_input_iter(self, cur_dtype) -> Generator:
+        random.seed(SEED)
+        for k, e, n in self.shapes:
+            m_list = [random.randint(1, 4096) for _ in range(e)]
+            M = sum(m_list)
+            group_A = torch.randn((M, k), dtype=cur_dtype, device=self.device)
+            group_B = torch.randn((e, k, n), dtype=cur_dtype, device=self.device)
+            group_list = torch.tensor(
+                m_list, dtype=torch.int64, device=self.device
+            ).cumsum(0)
+            out_aclnn = torch.empty((M, n), dtype=cur_dtype, device=self.device)
+            group_out = torch.empty_like(out_aclnn)
+
+            acl_tensors = []
+            acl_tensor_meta = []
+            for tensor in (group_A, group_B, group_list, out_aclnn):
+                dims = (ctypes.c_int64 * tensor.dim())(*tensor.shape)
+                strides = (ctypes.c_int64 * tensor.dim())(*tensor.stride())
+                acl_dtype = ACL_INT64 if tensor.dtype == torch.int64 else ACL_FLOAT
+                acl_tensor = _opapi.aclCreateTensor(
+                    dims,
+                    tensor.dim(),
+                    acl_dtype,
+                    strides,
+                    tensor.storage_offset(),
+                    ACL_FORMAT_ND,
+                    dims,
+                    tensor.dim(),
+                    _ACL_PTR(tensor.data_ptr()),
+                )
+                if not acl_tensor:
+                    raise RuntimeError("aclCreateTensor failed.")
+                acl_tensors.append(acl_tensor)
+                acl_tensor_meta.append((dims, strides))
+
+            acl_tensor_lists = []
+            acl_tensor_list_meta = []
+            for tensor_idx in (0, 1, 3):
+                tensor_array = (_ACL_PTR * 1)(acl_tensors[tensor_idx])
+                tensor_list = _opapi.aclCreateTensorList(tensor_array, 1)
+                if not tensor_list:
+                    raise RuntimeError("aclCreateTensorList failed.")
+                acl_tensor_lists.append(tensor_list)
+                acl_tensor_list_meta.append(tensor_array)
+
+            aclnn_workspace_size = ctypes.c_uint64()
+            aclnn_executor = _ACL_PTR()
+            status = _opapi.aclnnGroupedMatmulV5GetWorkspaceSize(
+                acl_tensor_lists[0],
+                acl_tensor_lists[1],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                acl_tensors[2],
+                None,
+                None,
+                None,
+                3,
+                0,
+                0,
+                0,
+                None,
+                acl_tensor_lists[2],
+                None,
+                None,
+                ctypes.byref(aclnn_workspace_size),
+                ctypes.byref(aclnn_executor),
+            )
+            if status != 0:
+                raise RuntimeError(
+                    "aclnnGroupedMatmulV5GetWorkspaceSize failed with "
+                    f"status {status}."
+                )
+            status = _opapi.aclSetAclOpExecutorRepeatable(aclnn_executor)
+            if status != 0:
+                raise RuntimeError(
+                    f"aclSetAclOpExecutorRepeatable failed with status {status}."
+                )
+            aclnn_workspace = torch.empty(
+                aclnn_workspace_size.value,
+                dtype=torch.uint8,
+                device=self.device,
+            )
+            aclnn_workspace_ptr = (
+                _ACL_PTR(aclnn_workspace.data_ptr())
+                if aclnn_workspace_size.value
+                else None
+            )
+            num_aicores = (
+                torch.npu.get_device_properties("npu").multi_processor_count // 2
+            )
+            yield group_A, group_B, group_list, {
+                "group_out": group_out,
+                "group_size": e,
+                "M": M,
+                "N": n,
+                "K": k,
+                "num_aicores": num_aicores,
+                "aclnn_workspace_ptr": aclnn_workspace_ptr,
+                "aclnn_workspace_size": aclnn_workspace_size.value,
+                "aclnn_executor": aclnn_executor,
+                "group_out_aclnn": out_aclnn,
+            }
+
+    def get_tflops(self, op, *args, **kwargs):
+        group_A, group_B = args[0], args[1]
+        return 2 * group_A.shape[0] * group_B.shape[1] * group_B.shape[2]
+
+    def get_gbps(self, args, latency):
+        group_A, group_B, group_list = args[0], args[1], args[2]
+        output_size = group_A.shape[0] * group_B.shape[2] * group_A.element_size()
+        io_amount = (
+            shape_utils.size_in_bytes(group_A)
+            + shape_utils.size_in_bytes(group_B)
+            + shape_utils.size_in_bytes(group_list)
+            + output_size
+        )
+        return io_amount * 1e-9 / (latency * 1e-3)
+
+    def validate_results(self, torch_result, gems_result, reduce_dim, tolerance=1e-3):
+        torch_cpu = torch_result.cpu()
+        gems_cpu = gems_result.cpu()
+        try:
+            flag_blas.testing.assert_close(
+                gems_cpu,
+                torch_cpu,
+                torch_cpu.dtype,
+                equal_nan=False,
+                reduce_dim=reduce_dim,
+                atol=tolerance,
+            )
+        except AssertionError:
+            max_abs_diff = torch.max(torch.abs(torch_cpu - gems_cpu))
+            max_rel_diff = torch.max(
+                torch.abs((torch_cpu - gems_cpu) / (torch.abs(torch_cpu) + 1e-9))
+            )
+            raise AssertionError(
+                f"Results differ beyond tolerance {tolerance}:\n"
+                f"Max absolute difference: {max_abs_diff}\n"
+                f"Max relative difference: {max_rel_diff}\n"
+                f"Shape: {torch_cpu.shape}"
+            )
+
+
+def aclnn_group_gemm(
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    group_size,
+    M,
+    N,
+    K,
+    num_aicores,
+    aclnn_workspace_ptr,
+    aclnn_workspace_size,
+    aclnn_executor,
+    group_out_aclnn,
+    **kwargs,
+):
+    status = _opapi.aclnnGroupedMatmulV5(
+        aclnn_workspace_ptr,
+        aclnn_workspace_size,
+        aclnn_executor,
+        torch.npu.current_stream()._as_parameter_,
+    )
+    if status != 0:
+        raise RuntimeError(f"aclnnGroupedMatmulV5 failed with status {status}.")
+    return group_out_aclnn
+
+
+def ascend_gems_group_gemm_wrapper(
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    group_size,
+    M,
+    N,
+    K,
+    num_aicores,
+    aclnn_workspace_ptr,
+    aclnn_workspace_size,
+    aclnn_executor,
+    group_out_aclnn,
+    **kwargs,
+):
+    grouped_tf32gemm_kernel[(num_aicores,)](
+        M,
+        N,
+        K,
+        group_A,
+        group_B,
+        group_list,
+        group_out,
+        group_size,
+        sync_solver=False,
+    )
+    return group_out
+
+
 @pytest.mark.group_gemm
 def test_perf_group_gemm_tf32():
-    bench = GroupGemmBenchmark(
-        op_name="group_gemm",
-        torch_op=cublas_group_gemm,
-        gems_op=gems_group_gemm_wrapper,
-        dtypes=[torch.float32],
-    )
-    bench.init_user_config()
-    for cur_dtype in bench.to_bench_dtypes:
-        for A, B, C, offs, kwargs in bench.get_input_iter(cur_dtype):
-            torch_result = cublas_group_gemm(A, B, C.clone(), offs, **kwargs)
-            gems_result = gems_group_gemm_wrapper(A, B, C.clone(), offs, **kwargs)
-            k = kwargs.get("K", 0)
-            bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
-    bench.run()
+    if IS_ASCEND:
+        bench = AscendGroupGemmBenchmark(
+            op_name="group_gemm",
+            torch_op=aclnn_group_gemm,
+            gems_op=ascend_gems_group_gemm_wrapper,
+            dtypes=[torch.float32],
+        )
+        bench.init_user_config()
+        for cur_dtype in bench.to_bench_dtypes:
+            for A, B, group_list, kwargs in bench.get_input_iter(cur_dtype):
+                torch_result = aclnn_group_gemm(A, B, group_list, **kwargs)
+                gems_result = ascend_gems_group_gemm_wrapper(A, B, group_list, **kwargs)
+                bench.validate_results(torch_result, gems_result, 1, tolerance=1e-3)
+        bench.run()
+    else:
+        bench = GroupGemmBenchmark(
+            op_name="group_gemm",
+            torch_op=cublas_group_gemm,
+            gems_op=gems_group_gemm_wrapper,
+            dtypes=[torch.float32],
+        )
+        bench.init_user_config()
+        for cur_dtype in bench.to_bench_dtypes:
+            for A, B, C, offs, kwargs in bench.get_input_iter(cur_dtype):
+                torch_result = cublas_group_gemm(A, B, C.clone(), offs, **kwargs)
+                gems_result = gems_group_gemm_wrapper(A, B, C.clone(), offs, **kwargs)
+                k = kwargs.get("K", 0)
+                bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
+        bench.run()
