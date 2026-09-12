@@ -26,6 +26,7 @@ from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 from flag_blas.utils import shape_utils
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 SYR2_SIZES = [
     64,
@@ -99,6 +100,10 @@ SYR2_SIZES = [
 
 
 def load_cublas():
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so.13"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -237,12 +242,22 @@ def _ensure_cublas():
     global _cublas, _CUBLAS_SYR2_FUNCS
     if _cublas is None:
         _cublas = load_cublas()
-        _configure_cublas_signatures()
+        if not IS_MTHREADS:
+            _configure_cublas_signatures()
         _CUBLAS_SYR2_FUNCS = {
             torch.float32: (_cublas.cublasSsyr2_v2, ctypes.c_float, False),
             torch.float64: (_cublas.cublasDsyr2_v2, ctypes.c_double, False),
         }
     return _cublas
+
+
+def _get_cublas_handle():
+    """Return the active muBLAS handle for the MUSA reference path."""
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import get_mublas_handle
+
+        return get_mublas_handle()
+    raise RuntimeError("_get_cublas_handle is only used for the MUSA path")
 
 
 def _make_scalar(ctor, is_complex, value):
@@ -333,7 +348,7 @@ class Syr2Benchmark(Benchmark):
         super().__init__(*args, **kwargs)
         self.uplo = uplo
         self.alpha = alpha
-        self.correctness_reference = "hipBLAS" if IS_HYGON else "cuBLAS"
+        self.correctness_reference = "hipBLAS" if IS_HYGON else ("muBLAS" if IS_MTHREADS else "cuBLAS")
 
     def set_more_metrics(self):
         return ["tflops", "gbps"]
@@ -360,6 +375,12 @@ class Syr2Benchmark(Benchmark):
             c_func, ctor = _resolve_hipblas_syr2(library, cur_dtype)
             hip_uplo = 121 if self.uplo == CUBLAS_FILL_MODE_UPPER else 122
             is_complex = False
+        elif IS_MTHREADS:
+            _ensure_cublas()
+            handle = _get_cublas_handle()
+            if cur_dtype not in _CUBLAS_SYR2_FUNCS:
+                raise ValueError(f"Unsupported dtype: {cur_dtype}")
+            c_func, ctor, is_complex = _CUBLAS_SYR2_FUNCS[cur_dtype]
         else:
             cublas = _ensure_cublas()
             handle = ctypes.c_void_p()

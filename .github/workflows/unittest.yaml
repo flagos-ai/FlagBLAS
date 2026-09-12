@@ -133,3 +133,22 @@ jobs:
       gpu_check_script: 'tools/check_hygon_gpu.sh'
       pr_id: ${{ needs.preprocess.outputs.pr_id }}
       changed_files: ${{ join(needs.preprocess.outputs.changed_files, ' ') }}
+
+  test-mthreads:
+    needs: preprocess
+    # On PRs, run only for shared code, tests, or Moore Threads changes.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      contains(needs.preprocess.outputs.labels, 'tests') ||
+      contains(needs.preprocess.outputs.labels, 'ops') ||
+      contains(needs.preprocess.outputs.labels, 'core') ||
+      contains(needs.preprocess.outputs.labels, 'benchmark') ||
+      contains(needs.preprocess.outputs.labels, 'vendor/MThreads')
+    uses: ./.github/workflows/backend-test.yaml
+    with:
+      vendor: 'mthreads'
+      runner_label: 'mthreads'
+      gpu_check_script: 'tools/check_mthreads_gpu.sh'
+      pr_id: ${{ needs.preprocess.outputs.pr_id }}
+      changed_files: ${{ join(needs.preprocess.outputs.changed_files, ' ') }}

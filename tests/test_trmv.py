@@ -21,9 +21,9 @@ from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-if flag_blas.vendor_name == "hygon":
-    from .hipblas_reference import check_hipblas_status, get_hipblas_context
-elif flag_blas.vendor_name != "ascend":
+if flag_blas.vendor_name in {"hygon", "mthreads"}:
+    from .vendor_blas_reference import check_hipblas_status, get_hipblas_context
+elif flag_blas.vendor_name not in {"ascend", "mthreads"}:
     import cupy as cp
 from flag_blas.ops import (
     CUBLAS_DIAG_NON_UNIT,
@@ -52,7 +52,11 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if flag_blas.vendor_name in {"ascend", "hygon"} else load_cublas()
+_cublas = (
+    None
+    if flag_blas.vendor_name in {"ascend", "hygon", "mthreads"}
+    else load_cublas()
+)
 
 
 def row_to_column_full(A, n, lda):
@@ -168,7 +172,7 @@ def trmv_reference(uplo, trans, diag, n, A, lda, x, incx):
         return cpu_trmv_reference(uplo, trans, diag, n, A, lda, x, incx)
 
     ref_x = x.clone()
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         hipblas_trmv_reference(uplo, trans, diag, n, A, lda, ref_x, incx)
     else:
         cublas_trmv_reference(uplo, trans, diag, n, A, lda, ref_x, incx)

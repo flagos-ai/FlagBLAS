@@ -30,6 +30,7 @@ from flag_blas.ops.level2._constants import (
     CUBLAS_OP_T,
 )
 from flag_blas.runtime import torch_device_fn
+from flag_blas.runtime.device_utils import get_stream_id
 from flag_blas.utils import libentry, libtuner
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ def _trsv_flags(device):
             return torch.full((1,), -1, dtype=torch.int32, device=device)
     except AttributeError:
         pass
-    key = (device, torch_device_fn.current_stream(device).cuda_stream)
+    key = (device, get_stream_id(torch_device_fn, device))
     ent = _TRSV_FLAG_POOL.get(key)
     if ent is None:
         pool = torch.empty(_TRSV_FLAG_SLOTS * 4, dtype=torch.int32, device=device)

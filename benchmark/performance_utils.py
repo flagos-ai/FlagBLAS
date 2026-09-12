@@ -329,17 +329,22 @@ class Benchmark:
             end = time.time()
             latency = (end - start) / Config.repetition * 1000
         elif Config.mode == BenchMode.KERNEL:
-            do_bench = (
-                triton.musa_testing.do_bench
-                if device == "musa"
-                else triton.testing.do_bench
-            )
+            # Newer Triton-MUSA exposes the standard benchmark helper with a
+            # device_type selector; older vendor builds may still provide the
+            # legacy ``triton.musa_testing`` namespace.
+            if device == "musa" and hasattr(triton, "musa_testing"):
+                do_bench = triton.musa_testing.do_bench
+                bench_kwargs = {}
+            else:
+                do_bench = triton.testing.do_bench
+                bench_kwargs = {"device_type": device} if device == "musa" else {}
             latency = do_bench(
                 fn,
                 warmup=Config.warm_up,
                 rep=Config.repetition,
                 return_mode="median",
                 grad_to_none=xs if self.is_backward else None,
+                **bench_kwargs,
             )
         elif Config.mode == BenchMode.WRAPPER:
             for i in range(Config.warm_up):

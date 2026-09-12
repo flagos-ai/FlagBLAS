@@ -33,6 +33,7 @@ from flag_blas.ops import (
 from flag_blas.utils import shape_utils
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 STBSV_SIZES = [
     256,
@@ -49,6 +50,10 @@ STBSV_KS = [1, 4, 16, 64, 256]
 
 
 def load_cublas():
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -66,6 +71,9 @@ _cublas_handle = None
 
 
 def _get_cublas_handle():
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import get_mublas_handle
+        return get_mublas_handle()
     global _cublas_handle
     if _cublas_handle is None:
         handle = ctypes.c_void_p()

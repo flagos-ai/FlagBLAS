@@ -20,6 +20,7 @@ SUPPORTED_VENDORS=(
   "iluvatar"
   "ascend"
   "hygon"
+  "mthreads"
 )
 
 declare -A PYTHON_SUPPORTED=(
@@ -27,6 +28,7 @@ declare -A PYTHON_SUPPORTED=(
   ["iluvatar"]="3.12"
   ["ascend"]="3.11"
   ["hygon"]="3.10"
+  ["mthreads"]="3.10"
 )
 
 RED='\033[0;31m'
@@ -57,6 +59,13 @@ printf "Checking vendor ... ${VENDOR} $GREEN[OK]$NC\n"
 # Source environment setup
 source tools/set-env.sh "$VENDOR"
 
+# TorchMUSA is supplied with the Moore Threads runtime image and is tied to
+# that image's Python installation.  Preserve its interpreter before creating
+# the virtual environment below.
+if [ "$VENDOR" == "mthreads" ]; then
+  MTHREADS_PYTHON=$(command -v python)
+fi
+
 # Detect or install uv (FlagGems-style: standalone binary, no pip required)
 UV_VERSION="0.11.22"
 UV_MIRROR="https://resource.flagos.net/repository/flagos-filestore/utils"
@@ -82,7 +91,11 @@ fi
 # so setup does not depend on any preinstalled system Python / pyenv.
 expected_version=${PYTHON_SUPPORTED[$VENDOR]}
 printf "Installing Python ${expected_version} ... "
-uv python install "${expected_version}" --python-preference only-managed -q
+if [ "$VENDOR" == "mthreads" ]; then
+  python -c "import sys; assert sys.version_info[:2] == (${expected_version/./, })"
+else
+  uv python install "${expected_version}" --python-preference only-managed -q
+fi
 if [ "$?" != 0 ]; then
   printf "$RED[FAILED]$NC\n"
   exit 1
@@ -93,7 +106,11 @@ printf "$GREEN[OK]$NC\n"
 printf "Installing FlagBLAS for ${VENDOR}\n"
 
 printf "Creating virtual environment ... "
-uv venv .venv --python "${expected_version}" --python-preference only-managed -q -c
+if [ "$VENDOR" == "mthreads" ]; then
+  uv venv .venv --python "$MTHREADS_PYTHON" --system-site-packages -q -c
+else
+  uv venv .venv --python "${expected_version}" --python-preference only-managed -q -c
+fi
 if [ "$?" != 0 ]; then
   printf "$RED[FAILED]$NC\n"
   exit 1

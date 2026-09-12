@@ -43,6 +43,9 @@ def pytest_addoption(parser):
     if flag_blas.vendor_name == "ascend":
         reference_choices = ["cpu"]
         default_reference = "cpu"
+    elif flag_blas.vendor_name == "mthreads":
+        reference_choices = [device, "cpu"]
+        default_reference = device
     else:
         reference_choices = [device, "cpu"]
         default_reference = device
@@ -103,11 +106,13 @@ def pytest_configure(config):
     if TO_CPU:
         ref_backend = (
             "SciPy (CPU, --ref cpu)"
-            if flag_blas.vendor_name == "ascend"
+            if flag_blas.vendor_name in {"ascend", "mthreads"}
             else "CPU (--ref cpu)"
         )
     elif flag_blas.vendor_name == "hygon":
         ref_backend = f"hipBLAS (--ref {reference})"
+    elif flag_blas.vendor_name == "mthreads":
+        ref_backend = f"muBLAS (--ref {reference})"
     else:
         ref_backend = f"{device} (--ref {device})"
     print(f"[correctness] reference backend: {ref_backend}", flush=True)

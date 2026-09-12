@@ -21,8 +21,7 @@ from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-if flag_blas.vendor_name != "ascend":
-    from .hipblas_reference import check_hipblas_status, get_hipblas_context
+from .vendor_blas_reference import check_hipblas_status, get_hipblas_context
 from flag_blas.ops import (
     CUBLAS_DIAG_NON_UNIT,
     CUBLAS_DIAG_UNIT,
@@ -51,7 +50,9 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if flag_blas.vendor_name in {"ascend", "hygon"} else load_cublas()
+_cublas = (
+    None if flag_blas.vendor_name in {"ascend", "hygon", "mthreads"} else load_cublas()
+)
 
 
 def row_to_column_band(A, n, k, lda, uplo):
@@ -66,9 +67,14 @@ def row_to_column_band(A, n, k, lda, uplo):
         columns = rows + bands - k
     column_bands = (k - bands).expand(n, k + 1)
     valid = (columns >= 0) & (columns < n)
-    column_A[columns.expand(n, k + 1)[valid], column_bands[valid]] = A[:, : k + 1][
-        valid
-    ]
+    dst_rows = columns.expand(n, k + 1)[valid]
+    dst_cols = column_bands[valid]
+    if flag_blas.vendor_name == "mthreads" and A.dtype.is_complex:
+        column_real = torch.view_as_real(column_A)
+        source_real = torch.view_as_real(A[:, : k + 1])
+        column_real[dst_rows, dst_cols] = source_real[valid]
+    else:
+        column_A[dst_rows, dst_cols] = A[:, : k + 1][valid]
     return column_A.contiguous()
 
 
@@ -199,7 +205,7 @@ def tbsv_reference(uplo, trans, diag, n, k, A, lda, x, incx):
         return cpu_tbsv_reference(uplo, trans, diag, n, k, A, lda, x, incx)
 
     ref_x = x.clone()
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         hipblas_tbsv_reference(uplo, trans, diag, n, k, A, lda, ref_x, incx)
     else:
         cublas_tbsv_reference(uplo, trans, diag, n, k, A, lda, ref_x, incx)

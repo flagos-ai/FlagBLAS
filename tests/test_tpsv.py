@@ -7,8 +7,7 @@ from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-if flag_blas.vendor_name != "ascend":
-    from .hipblas_reference import check_hipblas_status, get_hipblas_context
+from .vendor_blas_reference import check_hipblas_status, get_hipblas_context
 from flag_blas.ops import (
     CUBLAS_DIAG_NON_UNIT,
     CUBLAS_DIAG_UNIT,
@@ -45,7 +44,9 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if flag_blas.vendor_name in {"ascend", "hygon"} else load_cublas()
+_cublas = (
+    None if flag_blas.vendor_name in {"ascend", "hygon", "mthreads"} else load_cublas()
+)
 
 
 def _cublas_tpsv(fn, fn_name, uplo, trans, diag, n, AP, x, incx):
@@ -119,7 +120,7 @@ def hipblas_tpsv_reference(uplo, trans, diag, n, AP, x, incx):
 
 
 def cublas_stpsv_reference(uplo, trans, diag, n, AP, x, incx):
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         return hipblas_tpsv_reference(uplo, trans, diag, n, AP, x, incx)
     return _cublas_tpsv(
         _cublas.cublasStpsv_v2,
@@ -135,7 +136,7 @@ def cublas_stpsv_reference(uplo, trans, diag, n, AP, x, incx):
 
 
 def cublas_dtpsv_reference(uplo, trans, diag, n, AP, x, incx):
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         return hipblas_tpsv_reference(uplo, trans, diag, n, AP, x, incx)
     return _cublas_tpsv(
         _cublas.cublasDtpsv_v2,
@@ -151,7 +152,7 @@ def cublas_dtpsv_reference(uplo, trans, diag, n, AP, x, incx):
 
 
 def cublas_ctpsv_reference(uplo, trans, diag, n, AP, x, incx):
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         return hipblas_tpsv_reference(uplo, trans, diag, n, AP, x, incx)
     return _cublas_tpsv(
         _cublas.cublasCtpsv_v2,
@@ -167,7 +168,7 @@ def cublas_ctpsv_reference(uplo, trans, diag, n, AP, x, incx):
 
 
 def cublas_ztpsv_reference(uplo, trans, diag, n, AP, x, incx):
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         return hipblas_tpsv_reference(uplo, trans, diag, n, AP, x, incx)
     return _cublas_tpsv(
         _cublas.cublasZtpsv_v2,

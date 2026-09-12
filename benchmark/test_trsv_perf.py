@@ -22,9 +22,12 @@ import torch
 import flag_blas
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 if IS_HYGON:
     import atexit
+elif IS_MTHREADS:
+    from benchmark.mublas_compat import cp, cublas
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
@@ -48,6 +51,10 @@ TRSV_SIZES = [64, 256, 512, 1024, 2048, 4096, 8192]
 
 
 def load_cublas():
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -283,7 +290,7 @@ class TrsvBenchmark(Benchmark):
         self.diag = diag
 
     def set_more_metrics(self):
-        self.correctness_reference = "hipBLAS" if IS_HYGON else "cuBLAS"
+        self.correctness_reference = "hipBLAS" if IS_HYGON else ("muBLAS" if IS_MTHREADS else "cuBLAS")
         return ["tflops", "gbps"]
 
     def set_more_shapes(self):

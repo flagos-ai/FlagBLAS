@@ -21,14 +21,14 @@ from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-if flag_blas.vendor_name == "hygon":
-    from .hipblas_reference import (
+if flag_blas.vendor_name in {"hygon", "mthreads"}:
+    from .vendor_blas_reference import (
         HipComplex,
         HipDoubleComplex,
         check_hipblas_status,
         get_hipblas_context,
     )
-elif flag_blas.vendor_name != "ascend":
+elif flag_blas.vendor_name not in {"ascend", "mthreads"}:
     import cupy as cp
 
 from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
@@ -51,7 +51,11 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if flag_blas.vendor_name in {"ascend", "hygon"} else load_cublas()
+_cublas = (
+    None
+    if flag_blas.vendor_name in {"ascend", "hygon", "mthreads"}
+    else load_cublas()
+)
 
 
 class cuComplex(ctypes.Structure):
@@ -244,7 +248,7 @@ def symv_reference(uplo, n, alpha, A, lda, x, incx, beta, y, incy):
         return cpu_symv_reference(uplo, n, alpha, A, lda, x, incx, beta, y, incy)
 
     ref_y = y.clone()
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         hipblas_symv_reference(uplo, n, alpha, A, lda, x, incx, beta, ref_y, incy)
     else:
         cublas_symv_reference(uplo, n, alpha, A, lda, x, incx, beta, ref_y, incy)
@@ -291,7 +295,7 @@ STRIDES = [(1, 1), (2, 1), (1, 2), (2, 2)]
 
 
 def symv_randn(*shape, dtype, device):
-    if flag_blas.vendor_name == "ascend" and dtype == torch.complex64:
+    if flag_blas.vendor_name in ("ascend", "mthreads") and dtype == torch.complex64:
         normalized = (
             tuple(shape[0])
             if len(shape) == 1 and isinstance(shape[0], (tuple, torch.Size))
@@ -667,7 +671,7 @@ def test_symv_ignored_triangle(dtype, op, alpha, beta, uplo):
     tri_upper = torch.triu_indices(n, n, offset=1, device=flag_blas.device)
     tri_lower = torch.tril_indices(n, n, offset=-1, device=flag_blas.device)
     dirty_index = tri_lower if uplo == CUBLAS_FILL_MODE_UPPER else tri_upper
-    if flag_blas.vendor_name == "ascend" and dtype.is_complex:
+    if flag_blas.vendor_name in ("ascend", "mthreads") and dtype.is_complex:
         dirty_parts = torch.view_as_real(A_dirty)
         dirty_parts[dirty_index[0], dirty_index[1], 0] = float("nan")
         dirty_parts[dirty_index[0], dirty_index[1], 1] = float("nan")

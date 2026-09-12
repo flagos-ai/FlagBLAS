@@ -22,8 +22,8 @@ from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-if flag_blas.vendor_name == "hygon":
-    from .hipblas_reference import check_hipblas_status, get_hipblas_context
+if flag_blas.vendor_name in {"hygon", "mthreads"}:
+    from .vendor_blas_reference import check_hipblas_status, get_hipblas_context
 
 from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 
@@ -250,7 +250,7 @@ def _hipblas_syr_reference(name, uplo, n, alpha, x, incx, A, lda):
 def _reference(name, uplo, n, alpha, x, incx, A, lda):
     if TO_CPU:
         return _cpu_ref(name, uplo, n, alpha, x, incx, A, lda)
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         return _hipblas_syr_reference(name, uplo, n, alpha, x, incx, A, lda)
     return _cublas_ref(name, uplo, n, alpha, x, incx, A, lda)
 

@@ -26,6 +26,7 @@ from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 from flag_blas.utils import shape_utils
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 
 HER_SIZES = [
     64,
@@ -54,6 +55,10 @@ CUBLAS_POINTER_MODE_HOST = 0
 
 
 def load_cublas():
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so.13"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -105,7 +110,8 @@ def _ensure_cublas():
     global _cublas, _CUBLAS_HER_FUNCS
     if _cublas is None:
         _cublas = load_cublas()
-        _configure_cublas_signatures()
+        if not IS_MTHREADS:
+            _configure_cublas_signatures()
         _CUBLAS_HER_FUNCS = {
             torch.complex64: (_cublas.cublasCher_v2, ctypes.c_float),
             torch.complex128: (_cublas.cublasZher_v2, ctypes.c_double),
@@ -114,6 +120,10 @@ def _ensure_cublas():
 
 
 def _get_cublas_handle():
+    if IS_MTHREADS:
+        _ensure_cublas()
+        from benchmark.mublas_compat import get_mublas_handle
+        return get_mublas_handle()
     global _cublas_handle
     _ensure_cublas()
     if _cublas_handle is None:
@@ -315,7 +325,7 @@ class HerBenchmark(Benchmark):
             handle = _get_cublas_handle()
             c_func, ctor = _CUBLAS_HER_FUNCS[cur_dtype]
             uplo_value = self.uplo
-            vendor_name = "cuBLAS"
+            vendor_name = "muBLAS" if IS_MTHREADS else "cuBLAS"
         alpha_c = ctor(self.alpha)
         alpha_ptr = ctypes.byref(alpha_c)
         for shape in self.shapes:

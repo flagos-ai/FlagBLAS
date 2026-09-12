@@ -25,8 +25,8 @@ from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 from .accuracy_utils import blas_assert_close, to_cpu_blas_tensor, to_reference
 from .conftest import TO_CPU
 
-if flag_blas.vendor_name == "hygon":
-    from .hipblas_reference import check_hipblas_status, get_hipblas_context
+if flag_blas.vendor_name in {"hygon", "mthreads"}:
+    from .vendor_blas_reference import check_hipblas_status, get_hipblas_context
 
 
 def load_cublas():
@@ -187,7 +187,7 @@ def hpr_reference(uplo, n, alpha, x, incx, AP):
     if TO_CPU:
         return cpu_hpr_reference(reference_uplo, n, alpha, reference_x, incx, AP)
     ref_AP = AP.clone()
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         hipblas_hpr_reference(reference_uplo, n, alpha, reference_x, incx, ref_AP)
     else:
         cublas_hpr_reference(reference_uplo, n, alpha, reference_x, incx, ref_AP)
@@ -339,7 +339,11 @@ def _run_hpr_row_packed_case(op, dtype, uplo):
         check_fp64_support()
     n = 3
     alpha = 0.75
-    build_device = "cpu" if flag_blas.vendor_name == "ascend" else flag_blas.device
+    build_device = (
+        "cpu"
+        if flag_blas.vendor_name in ("ascend", "mthreads")
+        else flag_blas.device
+    )
     AP = torch.tensor(
         [
             1.0 + 0.0j,
@@ -368,9 +372,11 @@ def _run_hpr_row_packed_case(op, dtype, uplo):
     expected += update[rows, cols]
     torch.view_as_real(expected)[diag, 1] = 0
 
-    if flag_blas.vendor_name == "ascend":
+    if flag_blas.vendor_name in ("ascend", "mthreads"):
         AP = AP.to(flag_blas.device)
         x = x.to(flag_blas.device)
+        if flag_blas.vendor_name == "mthreads":
+            expected = expected.to(flag_blas.device)
 
     op(uplo, n, alpha, x, 1, AP)
 

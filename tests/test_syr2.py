@@ -25,8 +25,8 @@ from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 from .accuracy_utils import blas_assert_close, to_cpu_blas_tensor, to_reference
 from .conftest import TO_CPU
 
-if flag_blas.vendor_name == "hygon":
-    from .hipblas_reference import check_hipblas_status, get_hipblas_context
+if flag_blas.vendor_name in {"hygon", "mthreads"}:
+    from .vendor_blas_reference import check_hipblas_status, get_hipblas_context
 
 
 def load_cublas():
@@ -219,7 +219,7 @@ def syr2_reference(uplo, n, alpha, x, incx, y, incy, A, lda):
         return cpu_syr2_reference(uplo, n, alpha, x, incx, y, incy, A, lda)
 
     ref_A = A.clone()
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         hipblas_syr2_reference(uplo, n, alpha, x, incx, y, incy, ref_A, lda)
     else:
         cublas_syr2_reference(uplo, n, alpha, x, incx, y, incy, ref_A, lda)

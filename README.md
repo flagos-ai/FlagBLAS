@@ -28,4 +28,22 @@ cd FlagBLAS
 pip install  .
 ```
 
+For Moore Threads GPUs, prepare the vendor PyTorch/Triton (TorchMUSA) stack
+first. Then install without dependency resolution so the vendor runtime is not
+replaced by a generic CUDA build:
+
+```shell
+source tools/set-env.sh mthreads
+pip install -e . --no-deps --no-build-isolation
+```
+
+Moore Threads Level 2 correctness tests use the vendor muBLAS library on the
+same MUSA GPU by default. A high-precision CPU/SciPy reference remains
+available explicitly:
+
+```shell
+pytest -q --ref musa tests/test_gemv.py
+pytest -q --ref cpu tests/test_gemv.py
+```
+
 This project is licensed under the [Apache (Version 2.0) License](./LICENSE).

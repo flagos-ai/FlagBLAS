@@ -22,8 +22,8 @@ from scipy.linalg import blas as cpu_blas
 import flag_blas
 from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 
-if flag_blas.vendor_name == "hygon":
-    from .hipblas_reference import (
+if flag_blas.vendor_name in {"hygon", "mthreads"}:
+    from .vendor_blas_reference import (
         HipComplex,
         HipDoubleComplex,
         check_hipblas_status,
@@ -224,7 +224,7 @@ def hpr2_reference(uplo, n, alpha, x, incx, y, incy, AP):
     if TO_CPU:
         return cpu_hpr2_reference(uplo, n, alpha, x, incx, y, incy, AP)
     ref_AP = AP.clone()
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         hipblas_hpr2_reference(uplo, n, alpha, x, incx, y, incy, ref_AP)
     else:
         cublas_hpr2_reference(uplo, n, alpha, x, incx, y, incy, ref_AP)
@@ -358,7 +358,11 @@ def _run_hpr2_row_packed_case(op, dtype, uplo):
         check_fp64_support()
     n = 3
     alpha = 0.75 - 0.5j
-    build_device = "cpu" if flag_blas.vendor_name == "ascend" else flag_blas.device
+    build_device = (
+        "cpu"
+        if flag_blas.vendor_name in ("ascend", "mthreads")
+        else flag_blas.device
+    )
     AP = torch.tensor(
         [
             1.0 + 0.0j,
@@ -390,10 +394,12 @@ def _run_hpr2_row_packed_case(op, dtype, uplo):
         rows, cols = torch.tril_indices(n, n, device=build_device)
     expected += update[rows, cols]
     torch.view_as_real(expected)[rows == cols, 1] = 0.0
-    if flag_blas.vendor_name == "ascend":
+    if flag_blas.vendor_name in ("ascend", "mthreads"):
         AP = AP.to(flag_blas.device)
         x = x.to(flag_blas.device)
         y = y.to(flag_blas.device)
+        if flag_blas.vendor_name == "mthreads":
+            expected = expected.to(flag_blas.device)
     op(uplo, n, alpha, x, 1, y, 1, AP)
     blas_assert_close(AP, to_reference(expected), dtype, reduce_dim=2)
 

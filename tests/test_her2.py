@@ -22,8 +22,8 @@ from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-if flag_blas.vendor_name == "hygon":
-    from .hipblas_reference import (
+if flag_blas.vendor_name in {"hygon", "mthreads"}:
+    from .vendor_blas_reference import (
         HipComplex,
         HipDoubleComplex,
         check_hipblas_status,
@@ -228,7 +228,7 @@ def her2_reference(uplo, n, alpha, x, incx, y, incy, A, lda):
     if TO_CPU:
         return cpu_her2_reference(uplo, n, alpha, x, incx, y, incy, A, lda)
     ref_A = A.clone()
-    if flag_blas.vendor_name == "hygon":
+    if flag_blas.vendor_name in {"hygon", "mthreads"}:
         hipblas_her2_reference(uplo, n, alpha, x, incx, y, incy, ref_A, lda)
     else:
         cublas_her2_reference(uplo, n, alpha, x, incx, y, incy, ref_A, lda)

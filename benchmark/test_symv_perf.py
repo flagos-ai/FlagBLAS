@@ -24,8 +24,13 @@ from benchmark.performance_utils import Benchmark, run_correctness_then_benchmar
 from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
 from flag_blas.utils import shape_utils
 
-if flag_blas.vendor_name == "hygon":
+IS_HYGON = flag_blas.vendor_name == "hygon"
+IS_MTHREADS = flag_blas.vendor_name == "mthreads"
+
+if IS_HYGON:
     import atexit
+elif IS_MTHREADS:
+    from benchmark.mublas_compat import cp, cublas
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
@@ -55,6 +60,10 @@ SYMV_SIZES = [
 
 
 def load_cublas():
+    if IS_MTHREADS:
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -67,7 +76,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if flag_blas.vendor_name == "hygon" else load_cublas()
+_cublas = None if IS_HYGON else load_cublas()
 
 
 class cuComplex(ctypes.Structure):
