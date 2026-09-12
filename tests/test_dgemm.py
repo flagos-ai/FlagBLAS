@@ -11,6 +11,11 @@ from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 from . import accuracy_utils as utils
 from .conftest import TO_CPU
 
+pytestmark = pytest.mark.skipif(
+    flag_blas.vendor_name == "iluvatar",
+    reason="dgemm is not supported on Iluvatar",
+)
+
 DGEMM_SHAPES = [(32, 32, 32), (64, 64, 64), (127, 65, 33)]
 
 

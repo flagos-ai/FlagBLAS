@@ -22,6 +22,10 @@ from .tpmv import ctpmv
 from .tpsv import ctpsv, dtpsv, stpsv, ztpsv
 from .trmv import ctrmv, strmv
 from .trsv import ctrsv, strsv
+from .bfgemm import bfgemm
+from .cgemm import cgemm
+from .hgemm import hgemm
+from .sgemm import sgemm
 
 __all__ = [
     "sgemv",
@@ -48,4 +52,8 @@ __all__ = [
     "dnrm2",
     "scnrm2",
     "dznrm2",
+    "sgemm",
+    "hgemm",
+    "bfgemm",
+    "cgemm",
 ]

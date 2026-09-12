@@ -24,6 +24,11 @@ from benchmark.conftest import Config
 from benchmark.gemm_perf_common import GemmBenchmark
 from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 
+pytestmark = pytest.mark.skipif(
+    flag_blas.vendor_name == "iluvatar",
+    reason="dgemm is not supported on Iluvatar",
+)
+
 
 def cublas_dgemm(
     A_col,
