@@ -6,7 +6,7 @@
 # user-side pip install incantation.
 %global __requires_exclude ^python3(\.[0-9]+)?dist\((torch)\)$
 Name:           python3-flag-blas
-Version:        0.1.0
+Version:        0.3.0
 Release:        1%{?dist}
 Summary:        FlagBLAS — linear-algebra kernels for FlagOS
 
@@ -46,5 +46,8 @@ PYTHONDONTWRITEBYTECODE=1 \
 %license LICENSE
 
 %changelog
+* Fri Sep 18 2026 FlagOS Contributors <contact@flagos.io> - 0.3.0-1
+- Align the packaging baseline with the 0.3.0 release line.
+
 * Wed May 13 2026 FlagOS Contributors <contact@flagos.io> - 0.1.0-1
 - Initial RPM packaging.
