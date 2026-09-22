@@ -1,0 +1,23 @@
+Source: flag-blas
+Section: python
+Priority: optional
+Maintainer: FlagOS Contributors <contact@flagos.io>
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               python3-all,
+               python3-setuptools,
+               python3-wheel,
+               pybuild-plugin-pyproject
+Standards-Version: 4.6.2
+Homepage: https://github.com/flagos-ai/FlagBLAS
+Vcs-Browser: https://github.com/flagos-ai/FlagBLAS
+Vcs-Git: https://github.com/flagos-ai/FlagBLAS.git
+Rules-Requires-Root: no
+
+Package: python3-flag-blas
+Architecture: all
+Depends: python3:any, ${misc:Depends}, python3-yaml, python3-sqlalchemy, python3-packaging, python3-pybind11
+# python3-torch is intentionally NOT declared. The distro 'python3-torch' is
+# CPU-only; users install matching CUDA torch via pip — see packaging/INSTALL.md.
+Description: FlagBLAS — linear-algebra kernels for FlagOS
+ GEMM and related BLAS-level operators implemented in Triton, targeting FlagOS multi-vendor accelerators.

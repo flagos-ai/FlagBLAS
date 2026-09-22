@@ -1,0 +1,11 @@
+flag-blas (0.3.0-1) unstable; urgency=medium
+
+  * Align the packaging baseline with the 0.3.0 release line.
+
+ -- FlagOS Contributors <contact@flagos.io>  Thu, 17 Sep 2026 17:27:48 +0900
+
+flag-blas (0.1.0-1) unstable; urgency=medium
+
+  * Initial Debian packaging.
+
+ -- FlagOS Contributors <contact@flagos.io>  Tue, 12 May 2026 12:00:00 +0000
