@@ -69,7 +69,11 @@ PYTHONDONTWRITEBYTECODE=1 \
 %else
 %files
 %{python3_sitelib}/flag_blas/
-%{python3_sitelib}/flag_blas-%{version}.dist-info/
+# Globbed, not %%{version}: the dist-info directory is named for the version
+# in pyproject.toml, which need not equal this spec's Version -- a release
+# pipeline may stamp one and not the other. Binding them made the build
+# fail with "Directory not found".
+%{python3_sitelib}/flag_blas-*.dist-info/
 %endif
 %license LICENSE
 
