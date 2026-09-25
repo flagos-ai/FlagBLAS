@@ -42,19 +42,10 @@ recordLogger = logging.getLogger("flag_blas_benchmark")
 recordLogger.propagate = False
 
 _THEAD_COMPLEX_L2_SUFFIXES = {
-    "gbmv",
-    "gemv",
-    "gerc",
-    "geru",
     "hbmv",
     "hemv",
-    "her",
-    "her2",
     "hpmv",
-    "hpr",
-    "hpr2",
     "symv",
-    "syr",
     "syr2",
     "tbmv",
     "tbsv",

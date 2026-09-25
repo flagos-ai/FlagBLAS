@@ -19,15 +19,16 @@ from typing import Generator
 
 import pytest
 import torch
-from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
-from flag_blas.utils import shape_utils
 
 import flag_blas
 from benchmark.performance_utils import run_correctness_then_benchmark
+from flag_blas.ops import CUBLAS_FILL_MODE_LOWER, CUBLAS_FILL_MODE_UPPER
+from flag_blas.utils import shape_utils
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -378,13 +379,14 @@ class Hpr2Benchmark(Benchmark):
             self.shape_desc = self.DEFAULT_SHAPE_DESC
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
+        if IS_ASCEND or IS_THEAD_EQUIVALENT:
+            make_randn = ascend_randn if IS_ASCEND else torch.randn
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
                 yield (
-                    ascend_randn(n * (n + 1) // 2, dtype=cur_dtype, device=self.device),
-                    ascend_randn(n, dtype=cur_dtype, device=self.device),
-                    ascend_randn(n, dtype=cur_dtype, device=self.device),
+                    make_randn(n * (n + 1) // 2, dtype=cur_dtype, device=self.device),
+                    make_randn(n, dtype=cur_dtype, device=self.device),
+                    make_randn(n, dtype=cur_dtype, device=self.device),
                     {
                         "uplo": self.uplo,
                         "n": n,
@@ -489,6 +491,17 @@ class Hpr2Benchmark(Benchmark):
         return (ref_AP, x, y), ref_kwargs, (AP.clone(), x, y), kwargs
 
 
+def _run_hpr2_benchmark(bench):
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_hpr2
+
+        run_thead_hpr2(bench)
+    elif IS_ASCEND:
+        bench.run()
+    else:
+        run_correctness_then_benchmark(bench)
+
+
 @pytest.mark.chpr2
 def test_perf_chpr2():
     bench = Hpr2Benchmark(
@@ -498,10 +511,7 @@ def test_perf_chpr2():
         dtypes=[torch.complex64],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hpr2_benchmark(bench)
 
 
 @pytest.mark.chpr2
@@ -513,10 +523,7 @@ def test_perf_chpr2_upper():
         dtypes=[torch.complex64],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hpr2_benchmark(bench)
 
 
 @pytest.mark.zhpr2
@@ -530,10 +537,7 @@ def test_perf_zhpr2():
         dtypes=[torch.complex128],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hpr2_benchmark(bench)
 
 
 @pytest.mark.zhpr2
@@ -547,7 +551,4 @@ def test_perf_zhpr2_upper():
         dtypes=[torch.complex128],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hpr2_benchmark(bench)

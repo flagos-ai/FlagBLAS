@@ -28,6 +28,7 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -130,6 +131,7 @@ def _get_cublas_handle():
     if IS_MTHREADS:
         _ensure_cublas()
         from benchmark.mublas_compat import get_mublas_handle
+
         return get_mublas_handle()
     global _cublas_handle
     _ensure_cublas()
@@ -326,12 +328,13 @@ class HerBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
+        if IS_ASCEND or IS_THEAD_EQUIVALENT:
+            make_randn = ascend_randn if IS_ASCEND else torch.randn
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
                 lda = n
-                A = ascend_randn((n, lda), dtype=cur_dtype, device=self.device)
-                x = ascend_randn(n, dtype=cur_dtype, device=self.device)
+                A = make_randn((n, lda), dtype=cur_dtype, device=self.device)
+                x = make_randn(n, dtype=cur_dtype, device=self.device)
                 # Match the saved HER inputs without complex NPU arithmetic.
                 torch.view_as_real(A)[..., 1].diagonal().zero_()
                 yield A, x, {
@@ -421,7 +424,11 @@ def _run_her(op_name, dtype, uplo):
         dtypes=[dtype],
         uplo=uplo,
     )
-    if IS_ASCEND:
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_her
+
+        run_thead_her(bench)
+    elif IS_ASCEND:
         # Correctness uses tests/test_her.py with --ref cpu; this path only
         # times FlagBLAS and compares with saved H100 cuBLAS measurements.
         bench.run()

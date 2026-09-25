@@ -1,22 +1,76 @@
 {
-  "vector": {
-    "h100_theoretical": 67,
-    "ascend_measured": 7.24042878,
-    "unit": "TFLOPS"
+  "ascend": {
+    "vector": {
+      "h100_theoretical": 67,
+      "ascend_measured": 7.24042878,
+      "unit": "TFLOPS"
+    },
+    "tensor_fp16": {
+      "h100_theoretical": 989.5,
+      "ascend_measured": 223.64525945622123,
+      "unit": "TFLOPS"
+    },
+    "tensor_bf16": {
+      "h100_theoretical": 989.5,
+      "ascend_measured": 227.75127747515842,
+      "unit": "TFLOPS"
+    },
+    "memory": {
+      "h100_theoretical": 3.35,
+      "ascend_measured": 1.5295359800119765,
+      "unit": "TB/s"
+    }
   },
-  "tensor_fp16": {
-    "h100_theoretical": 989.5,
-    "ascend_measured": 223.64525945622123,
-    "unit": "TFLOPS"
-  },
-  "tensor_bf16": {
-    "h100_theoretical": 989.5,
-    "ascend_measured": 227.75127747515842,
-    "unit": "TFLOPS"
-  },
-  "memory": {
-    "h100_theoretical": 3.35,
-    "ascend_measured": 1.5295359800119765,
-    "unit": "TB/s"
+  "thead": {
+    "device": "PPU-ZW810E",
+    "calibration_date": "2026-09-23",
+    "method": "Triton streaming copy or FP32/FP64 vector FMA; triton.testing.do_bench median, warmup=40 ms, rep=100 ms; maximum of tested block/warp configurations",
+    "memory": {
+      "h100_theoretical": 3.35,
+      "thead_measured": 2.059186,
+      "thead_vendor_theoretical": 2.765,
+      "unit": "TB/s",
+      "validation_card1_measured": 2.060134,
+      "official_source": "https://help.aliyun.com/zh/document_detail/2864586.html",
+      "torch_copy_attained": 2.022875,
+      "best_streaming_over_nominal": 0.7450755877034358
+    },
+    "vector_fp32": {
+      "h100_theoretical": 67.0,
+      "thead_measured": 24.248912,
+      "unit": "TFLOPS",
+      "validation_card1_measured": 24.227028,
+      "thead_nominal": null
+    },
+    "vector_fp64": {
+      "h100_theoretical": 34.0,
+      "thead_measured": 5.82037,
+      "unit": "TFLOPS",
+      "validation_card1_measured": 5.82037,
+      "thead_nominal": null
+    },
+    "tensor_fp16": {
+      "h100_theoretical_dense": 989.5,
+      "thead_measured_gemm": 135.735138,
+      "unit": "TFLOPS",
+      "scoring": "not used for c/zgemv",
+      "thead_nominal": null,
+      "validation_card0_measured_gemm": 135.72174,
+      "validation_card1_measured_gemm": 135.735138,
+      "h100_dense_derived_from_sparse_spec": true
+    },
+    "tensor_bf16": {
+      "h100_theoretical_dense": 989.5,
+      "thead_measured_gemm": 135.708664,
+      "unit": "TFLOPS",
+      "scoring": "not used for c/zgemv",
+      "thead_nominal": null,
+      "validation_card0_measured_gemm": 135.708664,
+      "validation_card1_measured_gemm": 135.537032,
+      "h100_dense_derived_from_sparse_spec": true
+    },
+    "tensor_method": "torch.mm 8192x8192 via HGGC, 2*N^3 FLOPs; Triton timer median warmup=40 ms rep=100 ms; output finite; supplementary only",
+    "score_basis": "Memory GEMV uses both nominal bandwidth values; vector diagnostic uses measured PPU rates because no reliable vendor nominal vector FLOPS source was found.",
+    "h100_official_source": "https://www.nvidia.com/en-eu/data-center/h100/"
   }
 }
