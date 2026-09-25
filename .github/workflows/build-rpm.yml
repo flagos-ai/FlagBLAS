@@ -6,10 +6,10 @@ on:
       - 'v*'
   pull_request:
     branches: [master]
+    # Only what changes the package: a package built on a source PR is
+    # published nowhere. Release tags above still build.
     paths:
       - 'packaging/rpm/**'
-      - 'src/**'
-      - 'pyproject.toml'
       - '.github/workflows/build-rpm.yml'
   workflow_dispatch:
 

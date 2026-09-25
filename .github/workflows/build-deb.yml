@@ -6,10 +6,10 @@ on:
       - 'v*'
   pull_request:
     branches: [master]
+    # Only what changes the package: a package built on a source PR is
+    # published nowhere. Release tags above still build.
     paths:
       - 'packaging/debian/**'
-      - 'src/**'
-      - 'pyproject.toml'
       - '.github/workflows/build-deb.yml'
   workflow_dispatch:
 
