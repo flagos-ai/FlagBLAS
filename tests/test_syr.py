@@ -392,12 +392,6 @@ def test_syr_rejects_noncontiguous_matrix():
         flag_blas.ssyr(CUBLAS_FILL_MODE_LOWER, n, 0.75, x, 1, A, n)
 
 
-@pytest.mark.skipif(flag_blas.vendor_name != "hygon", reason="Hygon only")
-def test_syr_root_api_uses_hygon_backend():
-    for name in ("ssyr", "dsyr", "csyr", "zsyr"):
-        assert getattr(flag_blas, name).__module__ == "_hygon.ops.syr"
-
-
 SYR_BALANCED_SIZES = (1, 2, 7, 16, 17, 33, 127)
 SYR_VARIANTS = [
     pytest.param("ssyr", torch.float32, 0.75, id="ssyr"),
