@@ -370,6 +370,18 @@ def get_effective_bands(m, n, kl, ku):
     return actual_kl, actual_ku, is_truncated
 
 
+def _gbmv_accuracy_cases():
+    for kl, ku in GBMV_BANDS:
+        for m, n in GBMV_SHAPES:
+            _, _, is_truncated = get_effective_bands(m, n, kl, ku)
+            if is_truncated and max(kl, ku) > max(m, n):
+                continue
+            yield pytest.param(m, n, kl, ku, id=f"{kl}-{ku}-{m}-{n}")
+
+
+GBMV_ACCURACY_CASES = tuple(_gbmv_accuracy_cases())
+
+
 def gbmv_reduce_dim(trans, m, n, kl, ku):
     band_width = kl + ku + 1
     input_len = n if trans == CUBLAS_OP_N else m
@@ -441,14 +453,11 @@ def test_cpu_gbmv_band_reference(trans, dtype, alpha, beta):
 
 
 @pytest.mark.sgbmv
-@pytest.mark.parametrize("m,n", GBMV_SHAPES)
-@pytest.mark.parametrize("kl,ku", GBMV_BANDS)
+@pytest.mark.parametrize("m,n,kl,ku", GBMV_ACCURACY_CASES)
 @pytest.mark.parametrize("trans", [CUBLAS_OP_N, CUBLAS_OP_T])
 @pytest.mark.parametrize("beta", [0.0, 0.5])
 def test_accuracy_sgbmv(m, n, kl, ku, trans, beta):
-    actual_kl, actual_ku, is_truncated = get_effective_bands(m, n, kl, ku)
-    if is_truncated and max(kl, ku) > max(m, n):
-        pytest.skip("Skipping redundant wide-band test.")
+    actual_kl, actual_ku, _ = get_effective_bands(m, n, kl, ku)
 
     dtype, alpha = torch.float32, 1.5
     lda = actual_kl + actual_ku + 1 + 2
@@ -538,15 +547,12 @@ def test_sgbmv_beta_zero():
 
 
 @pytest.mark.dgbmv
-@pytest.mark.parametrize("m,n", GBMV_SHAPES)
-@pytest.mark.parametrize("kl,ku", GBMV_BANDS)
+@pytest.mark.parametrize("m,n,kl,ku", GBMV_ACCURACY_CASES)
 @pytest.mark.parametrize("trans", [CUBLAS_OP_N, CUBLAS_OP_T])
 @pytest.mark.parametrize("beta", [0.0, 0.5])
 def test_accuracy_dgbmv(m, n, kl, ku, trans, beta):
     check_fp64_support()
-    actual_kl, actual_ku, is_truncated = get_effective_bands(m, n, kl, ku)
-    if is_truncated and max(kl, ku) > max(m, n):
-        pytest.skip("Skipping redundant wide-band test.")
+    actual_kl, actual_ku, _ = get_effective_bands(m, n, kl, ku)
 
     dtype, alpha = torch.float64, 1.5
     lda = actual_kl + actual_ku + 1
@@ -639,14 +645,11 @@ def test_dgbmv_beta_zero():
 
 
 @pytest.mark.cgbmv
-@pytest.mark.parametrize("m,n", GBMV_SHAPES)
-@pytest.mark.parametrize("kl,ku", GBMV_BANDS)
+@pytest.mark.parametrize("m,n,kl,ku", GBMV_ACCURACY_CASES)
 @pytest.mark.parametrize("trans", [CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C])
 @pytest.mark.parametrize("beta", [0.0j, 0.5 + 0.25j])
 def test_accuracy_cgbmv(m, n, kl, ku, trans, beta):
-    actual_kl, actual_ku, is_truncated = get_effective_bands(m, n, kl, ku)
-    if is_truncated and max(kl, ku) > max(m, n):
-        pytest.skip("Skipping redundant wide-band test.")
+    actual_kl, actual_ku, _ = get_effective_bands(m, n, kl, ku)
 
     dtype, alpha = torch.complex64, 1.5 + 0.5j
     lda = actual_kl + actual_ku + 1
@@ -742,15 +745,12 @@ def test_cgbmv_beta_zero():
 
 
 @pytest.mark.zgbmv
-@pytest.mark.parametrize("m,n", GBMV_SHAPES)
-@pytest.mark.parametrize("kl,ku", GBMV_BANDS)
+@pytest.mark.parametrize("m,n,kl,ku", GBMV_ACCURACY_CASES)
 @pytest.mark.parametrize("trans", [CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C])
 @pytest.mark.parametrize("beta", [0.0j, 0.5 + 0.25j])
 def test_accuracy_zgbmv(m, n, kl, ku, trans, beta):
     check_fp64_support()
-    actual_kl, actual_ku, is_truncated = get_effective_bands(m, n, kl, ku)
-    if is_truncated and max(kl, ku) > max(m, n):
-        pytest.skip("Skipping redundant wide-band test.")
+    actual_kl, actual_ku, _ = get_effective_bands(m, n, kl, ku)
 
     dtype, alpha = torch.complex128, 1.5 + 0.5j
     lda = actual_kl + actual_ku + 1
