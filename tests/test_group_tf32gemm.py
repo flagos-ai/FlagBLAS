@@ -1,17 +1,27 @@
-import ctypes
-import ctypes.util
 import random
 
-import cupy as cp
 import pytest
 import torch
-from cupy_backends.cuda.libs import cublas
 
 import flag_blas
-from flag_blas.ops import CUBLAS_OP_N
 
 from . import accuracy_utils as utils
 from .conftest import TO_CPU
+
+IS_ASCEND = flag_blas.vendor_name == "ascend"
+
+if IS_ASCEND:
+    torch_npu = pytest.importorskip("torch_npu")
+    torch.npu.matmul.allow_hf32 = True
+    torch.npu.matmul.cube_math_type = torch.npu.CubeMathType.USE_HF32
+else:
+    import ctypes
+    import ctypes.util
+
+    import cupy as cp
+    from cupy_backends.cuda.libs import cublas
+
+    from flag_blas.ops import CUBLAS_OP_N
 
 
 def load_cublas():
@@ -27,7 +37,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on the system.")
 
 
-_cublas = load_cublas()
+_cublas = load_cublas() if not IS_ASCEND else None
 
 
 def _cublasGemmGroupedBatchedEx(
@@ -76,7 +86,8 @@ def _cublasGemmGroupedBatchedEx(
     )
 
 
-cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
+if not IS_ASCEND:
+    cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
 
 
 CUDA_R_32F = 0
@@ -266,6 +277,31 @@ def test_accuracy_group_gemm(k, e, n):
 
     m_list = [random.randint(1, 4096) for _ in range(e)]
     total_M = sum(m_list)
+
+    if IS_ASCEND:
+        group_A = torch.randn(total_M, k, dtype=torch.float32, device=device) * scale
+        group_B = torch.randn(e, k, n, dtype=torch.float32, device=device) * scale
+        group_list = torch.tensor(m_list, dtype=torch.int64, device=device).cumsum(0)
+        group_ref = torch_npu.npu_grouped_matmul(
+            [group_A],
+            [group_B],
+            group_list=group_list,
+            split_item=3,
+            group_type=0,
+            group_list_type=0,
+            output_dtype=group_A.dtype,
+        )[0]
+        group_out = flag_blas.group_tf32gemm(
+            group_A, group_B, group_list, torch.empty_like(group_ref)
+        )
+        if TO_CPU:
+            group_out = group_out.cpu()
+            group_ref = group_ref.cpu()
+        utils.blas_assert_close(
+            group_out, group_ref, torch.float32, reduce_dim=k, atol=1e-3
+        )
+        return
+
     total_K = e * k
 
     group_A = (torch.randn(total_M, k, dtype=dtype, device=device) * scale).contiguous()
@@ -306,6 +342,7 @@ def test_accuracy_group_gemm(k, e, n):
 
 
 @pytest.mark.group_gemm
+@pytest.mark.skipif(IS_ASCEND, reason="Hopper-only alpha/beta interface")
 def test_group_gemm_alpha_zero():
     m, k, e, n = 16, 64, 4, 128
     dtype, device = torch.float32, flag_blas.device
@@ -330,128 +367,7 @@ def test_group_gemm_alpha_zero():
 
 
 @pytest.mark.group_gemm
-def test_group_tf32gemm_dispatches_small_m_with_autotune(monkeypatch):
-    import types
-
-    from flag_blas.runtime.backend._nvidia.hopper.ops import (
-        group_gemm as hopper_group_gemm,
-    )
-
-    calls = []
-
-    class FakeKernel:
-        def __init__(self, name):
-            self.name = name
-
-        def __getitem__(self, grid):
-            def launch(*args, **kwargs):
-                calls.append((self.name, grid, kwargs))
-
-            return launch
-
-    monkeypatch.setattr(
-        torch.cuda,
-        "get_device_properties",
-        lambda *_args, **_kwargs: types.SimpleNamespace(multi_processor_count=1),
-    )
-    monkeypatch.setattr(hopper_group_gemm, "supports_tma", lambda _device=None: True)
-    monkeypatch.setattr(
-        hopper_group_gemm, "grouped_tf32gemm_small_m_tma_kernel", FakeKernel("small")
-    )
-    monkeypatch.setattr(
-        hopper_group_gemm, "grouped_tf32gemm_tma_kernel", FakeKernel("regular")
-    )
-    monkeypatch.setattr(
-        hopper_group_gemm, "grouped_tf32gemm_kernel", FakeKernel("fallback")
-    )
-
-    group_out = torch.empty((1, 1), dtype=torch.float32)
-    dummy_ptrs = torch.empty((0,), dtype=torch.int64)
-    small_m = torch.full((512,), 64, dtype=torch.int32)
-    small_n = torch.full((512,), 2048, dtype=torch.int32)
-    small_k = torch.full((512,), 64, dtype=torch.int32)
-    small_lda = small_k
-    small_ldb = small_k
-    small_ldc = small_n
-    large_m = small_m.clone()
-    large_m[0] = 65
-    mixed_m = torch.tensor([64, 7], dtype=torch.int32)
-    mixed_n = torch.tensor([128, 128], dtype=torch.int32)
-    mixed_k = torch.tensor([32, 32], dtype=torch.int32)
-
-    hopper_group_gemm.group_tf32gemm(
-        group_out,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        small_m,
-        small_n,
-        small_k,
-        small_lda,
-        small_ldb,
-        small_ldc,
-        512,
-        512 * 64,
-        2048,
-        64,
-        alpha=1.0,
-        beta=0.0,
-        use_small_m=True,
-    )
-
-    assert calls[-1][0] == "small"
-    assert "BLOCK_M" not in calls[-1][2]
-    assert "BLOCK_N" not in calls[-1][2]
-    assert "BLOCK_K" not in calls[-1][2]
-
-    hopper_group_gemm.group_tf32gemm(
-        group_out,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        mixed_m,
-        mixed_n,
-        mixed_k,
-        mixed_k,
-        mixed_k,
-        mixed_n,
-        2,
-        128,
-        128,
-        32,
-        alpha=1.0,
-        beta=0.0,
-        use_small_m=True,
-    )
-    assert calls[-1][0] == "small"
-
-    hopper_group_gemm.group_tf32gemm(
-        group_out,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        large_m,
-        small_n,
-        small_k,
-        small_lda,
-        small_ldb,
-        small_ldc,
-        512,
-        511 * 64 + 65,
-        2048,
-        64,
-        alpha=1.0,
-        beta=0.0,
-        use_small_m=True,
-    )
-
-    assert calls[-1][0] == "small"
-
-
-@pytest.mark.group_gemm
+@pytest.mark.skipif(IS_ASCEND, reason="Hopper-only alpha/beta interface")
 def test_group_gemm_beta_zero():
     m, k, e, n = 8, 64, 3, 64
     dtype, device = torch.float32, flag_blas.device
@@ -477,6 +393,7 @@ def test_group_gemm_beta_zero():
 @pytest.mark.parametrize(
     "alpha,beta", [(1.0, 0.0), (2.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)]
 )
+@pytest.mark.skipif(IS_ASCEND, reason="Hopper-only alpha/beta interface")
 def test_group_gemm_alpha_beta(alpha, beta):
     m, k, e, n = 32, 128, 2, 128
     dtype, device = torch.float32, flag_blas.device

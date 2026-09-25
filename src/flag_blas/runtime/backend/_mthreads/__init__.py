@@ -14,7 +14,6 @@
 
 from backend_utils import VendorInfoBase
 
-
 vendor_info = VendorInfoBase(
     vendor_name="mthreads",
     device_name="musa",

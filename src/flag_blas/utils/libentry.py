@@ -731,7 +731,28 @@ class LibEntry(triton.KernelInterface):
                 spec_args.append(val)
                 k_args[p.name] = val
 
-        entry_key = self.key(spec_args, dns_args, const_args)
+        # Launch params (num_warps / num_stages / num_ctas / maxnreg) change
+        # codegen (warp count, pipeline stages, CTA layout) and register
+        # allocation, but they reach run() via kwargs and are NOT part of
+        # spec_args / dns_args / const_args.
+        #
+        # If they are left out of the cache key, the first compile of a given
+        # (args + constexprs) signature silently pins the launch params for
+        # every later call that shares the signature: a call requesting
+        # different num_warps / num_stages / maxnreg would reuse the first
+        # compiled kernel instead of recompiling, so the requested config is
+        # ignored (wrong codegen/regalloc, misleading perf numbers).
+        #
+        # Appending the requested launch params to the key lets each
+        # (signature, launch params) combination compile independently.  Calls
+        # that omit them produce None entries, which still collide with other
+        # default-config calls exactly as before.
+        entry_key = self.key(spec_args, dns_args, const_args) + (
+            kwargs.get("num_warps"),
+            kwargs.get("num_stages"),
+            kwargs.get("num_ctas"),
+            kwargs.get("maxnreg"),
+        )
         device = torch_device_fn.current_device()
         cache = self.kernel_cache[device]
         while entry_key not in cache:

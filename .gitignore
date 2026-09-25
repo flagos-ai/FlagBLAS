@@ -31,4 +31,9 @@ tests/*.json
 # should NOT be excluded as they contain compiler settings and other important
 # information for Eclipse / Flash Builder.
 logs/
+benchmark/profile_results/
 docs/
+!docs/
+docs/*
+!docs/mthreads_hopper_groupgemm_research.md
+!docs/mthreads_groupgemm_optimization_log.md

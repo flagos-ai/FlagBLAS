@@ -4294,3 +4294,112 @@ kron:
   warps:
   - 4
   - 8
+
+group_bfgemm_tail:
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [8]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 32, BLOCK_N: 256, BLOCK_K: 32}
+      - {BLOCK_M: 32, BLOCK_N: 256, BLOCK_K: 64}
+      - {BLOCK_M: 64, BLOCK_N: 256, BLOCK_K: 32}
+    stages: [1, 2]
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [16]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 32, BLOCK_N: 256, BLOCK_K: 128}
+      - {BLOCK_M: 64, BLOCK_N: 256, BLOCK_K: 128}
+    stages: [1, 2]
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [8]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 32, BLOCK_N: 128, BLOCK_K: 128}
+    stages: [1]
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [4]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 32, BLOCK_N: 64, BLOCK_K: 32}
+    stages: [1, 2]
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [4]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64}
+    stages: [2]
+
+group_bfgemm:
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [16]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, NUM_WM: 16, PIPE_STAGES: 2}
+      - {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, NUM_WM: 8, PIPE_STAGES: 2}
+      - {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, NUM_WM: 32, PIPE_STAGES: 2}
+      - {BLOCK_M: 128, BLOCK_N: 512, BLOCK_K: 32, NUM_WM: 2, PIPE_STAGES: 1}
+      - {BLOCK_M: 128, BLOCK_N: 512, BLOCK_K: 32, NUM_WM: 4, PIPE_STAGES: 1}
+    stages: [2]
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [16]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, NUM_WM: 4, PIPE_STAGES: 4}
+      - {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, NUM_WM: 16, PIPE_STAGES: 2}
+    stages: [1]
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [16]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, NUM_WM: 4, PIPE_STAGES: 1}
+      - {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, NUM_WM: 32, PIPE_STAGES: 2}
+    stages: [2, 3]
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [16]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, NUM_WM: 8, PIPE_STAGES: 1}
+    stages: [3]
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [16]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, NUM_WM: 16, PIPE_STAGES: 2}
+    stages: [1, 3]
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [4]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 4, PIPE_STAGES: 1}
+    stages: [2, 3]
+  - gen: true
+    param_map:
+      META: blocks
+      num_warps: [8]
+      num_stages: stages
+    blocks:
+      - {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 16, PIPE_STAGES: 1}
+    stages: [2]

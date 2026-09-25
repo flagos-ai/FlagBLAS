@@ -20,11 +20,18 @@ import warnings
 
 import torch
 
-from flag_blas import testing  # noqa: F401
-from flag_blas import runtime
-from flag_blas.config import aten_patch_list, resolve_user_setting
-from flag_blas.ops import *  # noqa: F401,F403
-from flag_blas.runtime.register import Register
+from flag_blas import _triton_compat
+
+# Make triton.jit tolerate vendor-only keyword arguments (e.g. ppu_hint) when
+# the active Triton build (such as FlagTree's) does not support them. Must run
+# before any kernel module using such keywords is imported.
+_triton_compat.patch_triton_jit()
+
+from flag_blas import runtime  # noqa: E402
+from flag_blas import testing  # noqa: F401,E402
+from flag_blas.config import aten_patch_list, resolve_user_setting  # noqa: E402
+from flag_blas.ops import *  # noqa: F401,F403,E402
+from flag_blas.runtime.register import Register  # noqa: E402
 
 device = runtime.device.name
 vendor_name = runtime.device.vendor_name

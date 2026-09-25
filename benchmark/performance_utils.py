@@ -237,9 +237,13 @@ class Benchmark:
                 and Config.bench_level == BenchLevel.CORE
                 and not Config.query
                 and os.path.realpath(shape_file_path)
-                == os.path.realpath(os.path.join(os.path.dirname(__file__), "core_shapes.yaml"))
+                == os.path.realpath(
+                    os.path.join(os.path.dirname(__file__), "core_shapes.yaml")
+                )
             ):
-                overlay_path = os.path.join(os.path.dirname(__file__), "core_shapes_ascend_l2.yaml")
+                overlay_path = os.path.join(
+                    os.path.dirname(__file__), "core_shapes_ascend_l2.yaml"
+                )
                 with open(overlay_path, "r") as overlay_file:
                     overlay = yaml.safe_load(overlay_file) or {}
                 keys = [self.op_name]
@@ -374,7 +378,10 @@ class Benchmark:
                 **bench_kwargs,
             )
             if vendor_name == "ascend" and self.op_name.split("_", 1)[0] in {
-                "sgemv", "cgemv", "hgemv", "bfgemv"
+                "sgemv",
+                "cgemv",
+                "hgemv",
+                "bfgemv",
             }:
                 # Triton estimates the repeat count before warming the device.
                 # Cold startup can leave a GEMV shape with only 1-3 samples.
