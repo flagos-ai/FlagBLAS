@@ -51,6 +51,7 @@ SYR_SIZES = [
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -146,6 +147,7 @@ def _get_cublas_handle():
     if IS_MTHREADS:
         _ensure_cublas()
         from benchmark.mublas_compat import get_mublas_handle
+
         return get_mublas_handle()
     global _cublas_handle
     cublas = _ensure_cublas()
@@ -338,13 +340,14 @@ class SyrBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
+        if IS_ASCEND or (IS_THEAD_EQUIVALENT and cur_dtype.is_complex):
+            make_randn = ascend_randn if IS_ASCEND else torch.randn
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
                 lda = n
                 yield (
-                    ascend_randn((n, lda), dtype=cur_dtype, device=self.device),
-                    ascend_randn(n, dtype=cur_dtype, device=self.device),
+                    make_randn((n, lda), dtype=cur_dtype, device=self.device),
+                    make_randn(n, dtype=cur_dtype, device=self.device),
                     {
                         "uplo": self.uplo,
                         "n": n,
@@ -439,7 +442,11 @@ def _run_syr(op_name, dtype, uplo, alpha):
         uplo=uplo,
         alpha=alpha,
     )
-    if IS_ASCEND:
+    if IS_THEAD_EQUIVALENT and dtype.is_complex:
+        from benchmark.thead_l2_reference import run_thead_syr
+
+        run_thead_syr(bench)
+    elif IS_ASCEND:
         # Correctness uses tests/test_syr.py with --ref cpu; this path only
         # times FlagBLAS and compares with saved H100 cuBLAS measurements.
         bench.run()

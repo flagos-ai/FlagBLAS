@@ -22,7 +22,7 @@ import torch
 import triton
 
 import flag_blas
-from benchmark.attri_util import BenchMode, BenchmarkMetrics, BenchmarkResult
+from benchmark.attri_util import BenchmarkMetrics, BenchmarkResult, BenchMode
 from benchmark.conftest import Config, emit_record_logger
 from benchmark.level2_metrics import level2_workload
 from benchmark.performance_utils import Benchmark
@@ -83,7 +83,7 @@ class AscendL2Reference:
             self.cases[key] = row
         self.calibration = json.loads(
             (project / "benchmark/baselines/hardware.json").read_text()
-        )
+        )["ascend"]
         # Tensor entries are explanatory scenarios, not the default L2 scoring basis.
         if self.bottleneck not in ("memory", "vector"):
             raise ValueError("L2 supports memory or vector assumptions")
@@ -138,7 +138,7 @@ class AscendL2Reference:
             print(
                 f"[conversion] scenario={name}: K={resource['h100_theoretical']:.9g} / "
                 f"{resource['ascend_measured']:.12g} {resource['unit']} = {factor:.12g}; "
-                f"time_ratio_limit=K/{self.threshold:g}={factor/self.threshold:.12g} "
+                f"time_ratio_limit=K/{self.threshold:g}={factor / self.threshold:.12g} "
                 "(conditional scenario, not measured case bottleneck)"
             )
         print(
@@ -147,7 +147,7 @@ class AscendL2Reference:
         print(
             f"[conversion] raw_speedup=T_NV/T_Ascend; speedup=K*raw_speedup; "
             f"PASS iff speedup > {self.threshold:g}; "
-            f"equivalently T_Ascend < {self.factor/self.threshold:.12g} * T_NV"
+            f"equivalently T_Ascend < {self.factor / self.threshold:.12g} * T_NV"
         )
         print(
             "[conversion] Torch Latency/GBPS are raw H100 cuBLAS values; "

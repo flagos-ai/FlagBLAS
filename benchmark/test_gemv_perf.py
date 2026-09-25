@@ -14,18 +14,19 @@
 
 from typing import Generator
 
-import flag_blas
 import numpy as np
 import pytest
 import torch
+
+import flag_blas
+from benchmark.performance_utils import run_correctness_then_benchmark
 from flag_blas.ops import CUBLAS_OP_C, CUBLAS_OP_N, CUBLAS_OP_T
 from flag_blas.utils import shape_utils
-
-from benchmark.performance_utils import run_correctness_then_benchmark
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 
 if IS_ASCEND:
@@ -756,6 +757,8 @@ class GemvBenchmark(Benchmark):
             hip_trans = _HIPBLAS_GEMV_OPERATIONS[self.trans]
             alpha_ptr = _make_hipblas_scalar(scalar_type, self.alpha)
             beta_ptr = _make_hipblas_scalar(scalar_type, self.beta)
+        elif IS_THEAD_EQUIVALENT and cur_dtype.is_complex:
+            handle = alpha_ptr = beta_ptr = None
         else:
             handle = cp.cuda.device.get_cublas_handle()
             cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
@@ -892,6 +895,17 @@ def test_perf_dgemv_trans():
         run_correctness_then_benchmark(bench)
 
 
+def _run_complex_gemv(bench):
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_gemv
+
+        run_thead_gemv(bench)
+    elif IS_ASCEND:
+        bench.run()
+    else:
+        run_correctness_then_benchmark(bench)
+
+
 @pytest.mark.cgemv
 def test_perf_cgemv():
     bench = GemvBenchmark(
@@ -903,10 +917,7 @@ def test_perf_cgemv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_complex_gemv(bench)
 
 
 @pytest.mark.cgemv
@@ -920,10 +931,7 @@ def test_perf_cgemv_trans():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_complex_gemv(bench)
 
 
 @pytest.mark.cgemv
@@ -937,10 +945,7 @@ def test_perf_cgemv_conj():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_complex_gemv(bench)
 
 
 @pytest.mark.zgemv
@@ -956,10 +961,7 @@ def test_perf_zgemv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_complex_gemv(bench)
 
 
 @pytest.mark.zgemv
@@ -975,10 +977,7 @@ def test_perf_zgemv_trans():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_complex_gemv(bench)
 
 
 @pytest.mark.zgemv
@@ -994,10 +993,7 @@ def test_perf_zgemv_conj():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_complex_gemv(bench)
 
 
 class HalfGemvBenchmark(GemvBenchmark):

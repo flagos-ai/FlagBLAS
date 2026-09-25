@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Filter T-Head Level-2 benchmarks to nodes with an official reference."""
+"""Filter T-Head Level-2 benchmarks to supported reference modes."""
 
 
 _L2_PERF_FILES = {
@@ -47,6 +47,15 @@ def keep_thead_l2_perf_node(nodeid: str) -> bool:
     filename = path.rsplit("/", 1)[-1]
     if filename not in _L2_PERF_FILES:
         return True
+    if filename == "test_gbmv_perf.py":
+        return test_name.startswith(
+            (
+                "test_perf_sgbmv",
+                "test_perf_dgbmv",
+                "test_perf_cgbmv",
+                "test_perf_zgbmv",
+            )
+        )
     if filename == "test_gemv_perf.py":
         return test_name.startswith(
             (
@@ -54,16 +63,33 @@ def keep_thead_l2_perf_node(nodeid: str) -> bool:
                 "test_perf_dgemv",
                 "test_perf_hgemv",
                 "test_perf_bfgemv",
+                "test_perf_cgemv",
+                "test_perf_zgemv",
             )
         )
     if filename == "test_ger_perf.py":
-        return test_name in {"test_perf_sger", "test_perf_dger"}
+        return test_name in {
+            "test_perf_sger",
+            "test_perf_dger",
+            "test_perf_cgeru",
+            "test_perf_cgerc",
+            "test_perf_zgeru",
+            "test_perf_zgerc",
+        }
+    if filename == "test_hpr_perf.py":
+        return test_name.startswith(("test_perf_chpr", "test_perf_zhpr"))
+    if filename == "test_hpr2_perf.py":
+        return test_name.startswith(("test_perf_chpr2", "test_perf_zhpr2"))
+    if filename == "test_her_perf.py":
+        return test_name.startswith(("test_perf_her[cher-", "test_perf_her[zher-"))
+    if filename == "test_her2_perf.py":
+        return test_name.startswith(("test_perf_cher2", "test_perf_zher2"))
     if filename == "test_spr_perf.py":
         return test_name.startswith(("test_perf_sspr", "test_perf_dspr"))
     if filename == "test_spr2_perf.py":
         return test_name.startswith(("test_perf_sspr2", "test_perf_dspr2"))
     if filename == "test_syr_perf.py":
-        return "[ssyr-" in test_name or "[dsyr-" in test_name
+        return any(f"[{op}-" in test_name for op in ("ssyr", "dsyr", "csyr", "zsyr"))
     if filename == "test_syr2_perf.py":
         return test_name.startswith(("test_perf_ssyr2", "test_perf_dsyr2"))
     return False

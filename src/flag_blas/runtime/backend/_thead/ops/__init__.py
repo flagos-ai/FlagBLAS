@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .gemv import bfgemv, dgemv, hgemv, sgemv
+from .gemv import bfgemv, cgemv, dgemv, hgemv, sgemv, zgemv
 from .ger import dger, sger
 from .hemv import chemv
 from .spr import dspr, sspr
@@ -28,6 +28,8 @@ __all__ = [
     "dgemv",
     "hgemv",
     "bfgemv",
+    "zgemv",
+    "cgemv",
     "sger",
     "dger",
     "chemv",
