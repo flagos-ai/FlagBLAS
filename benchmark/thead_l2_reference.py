@@ -9,7 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Saved H100 cuBLAS timings for T-Head GEMV/GBMV without an HGGC reference.
+"""Saved H100 cuBLAS timings for T-Head Level 2 equivalent benchmarks.
 
 Score = (H100 resource peak / PPU resource capacity) *
         (H100 cuBLAS latency / PPU FlagBLAS latency).
@@ -43,6 +43,18 @@ _THEAD_GEMV_OPS = {
     "zgemv_conj",
 }
 _THEAD_GBMV_OPS = {"sgbmv", "dgbmv", "cgbmv", "zgbmv"}
+_THEAD_SYMV_OPS = {"ssymv", "dsymv", "csymv", "zsymv"}
+_THEAD_SBMV_OPS = {"ssbmv", "dsbmv"}
+_THEAD_HBMV_OPS = {"chbmv", "zhbmv"}
+_THEAD_SPMV_OPS = {"sspmv", "dspmv"}
+_THEAD_HPMV_OPS = {"chpmv", "zhpmv"}
+_THEAD_TRSV_OPS = {"strsv", "dtrsv", "ctrsv", "ztrsv"}
+_THEAD_TBSV_OPS = {"stbsv", "dtbsv", "ctbsv", "ztbsv"}
+_THEAD_TPSV_OPS = {"stpsv", "dtpsv", "ctpsv", "ztpsv"}
+_THEAD_HEMV_OPS = {"chemv", "zhemv"}
+_THEAD_TRMV_OPS = {"strmv", "dtrmv", "ctrmv", "ztrmv"}
+_THEAD_TBMV_OPS = {"stbmv", "dtbmv", "ctbmv", "ztbmv"}
+_THEAD_TPMV_OPS = {"stpmv", "dtpmv", "ctpmv", "ztpmv"}
 _THEAD_HPR_OPS = {"chpr", "zhpr"}
 _THEAD_HPR2_OPS = {"chpr2", "zhpr2"}
 _THEAD_HER_OPS = {"cher", "zher"}
@@ -221,6 +233,343 @@ class THeadGbmvReference(THeadGemvReference):
         key = self._key(row)
         if key not in self.cases:
             raise ValueError(f"Missing exact H100 GBMV baseline case: {key}")
+        return self.cases[key]
+
+
+class THeadSymvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for all four SYMV dtypes."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_SYMV_OPS, reference_label="s/d/c/zsymv")
+
+    @staticmethod
+    def _key(row):
+        def scalar(value):
+            return tuple(value) if isinstance(value, list) else value
+
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], uplo, row["lda"],
+            row["incx"], row["incy"], scalar(row["alpha"]), scalar(row["beta"]),
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in (
+                "n", "uplo", "lda", "incx", "incy"
+            )},
+            "alpha": _scalar(kwargs["alpha"]),
+            "beta": _scalar(kwargs["beta"]),
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 SYMV baseline case: {key}")
+        return self.cases[key]
+
+class THeadSbmvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for real row-banded SBMV."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_SBMV_OPS, reference_label="s/dsbmv")
+
+    @staticmethod
+    def _key(row):
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], row["k"], uplo,
+            row["lda"], row["incx"], row["incy"], row["alpha"], row["beta"],
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in (
+                "n", "k", "uplo", "lda", "incx", "incy", "alpha", "beta"
+            )},
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 SBMV baseline case: {key}")
+        return self.cases[key]
+
+class THeadHbmvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for complex row-banded HBMV."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_HBMV_OPS, reference_label="c/zhbmv")
+
+    @staticmethod
+    def _key(row):
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], row["k"], uplo,
+            row["lda"], row["incx"], row["incy"],
+            tuple(row["alpha"]), tuple(row["beta"]),
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in (
+                "n", "k", "uplo", "lda", "incx", "incy"
+            )},
+            "alpha": _scalar(complex(kwargs["alpha"])),
+            "beta": _scalar(complex(kwargs["beta"])),
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 HBMV baseline case: {key}")
+        return self.cases[key]
+
+class THeadSpmvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for real row-packed SPMV."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_SPMV_OPS, reference_label="s/dspmv")
+
+    @staticmethod
+    def _key(row):
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], uplo,
+            row["incx"], row["incy"], row["alpha"], row["beta"],
+            row["packed_layout"],
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in (
+                "n", "uplo", "incx", "incy", "alpha", "beta", "packed_layout"
+            )},
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 SPMV baseline case: {key}")
+        return self.cases[key]
+
+class THeadHpmvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for complex row-packed HPMV."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_HPMV_OPS, reference_label="c/zhpmv")
+
+    @staticmethod
+    def _key(row):
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], uplo,
+            row["incx"], row["incy"], tuple(row["alpha"]), tuple(row["beta"]),
+            row["packed_layout"],
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in (
+                "n", "uplo", "incx", "incy", "packed_layout"
+            )},
+            "alpha": _scalar(complex(kwargs["alpha"])),
+            "beta": _scalar(complex(kwargs["beta"])),
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 HPMV baseline case: {key}")
+        return self.cases[key]
+
+class THeadTrsvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for all four row-major TRSV dtypes."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_TRSV_OPS, reference_label="s/d/c/ztrsv")
+
+    @staticmethod
+    def _key(row):
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], uplo,
+            row["trans"], row["diag"], row["lda"], row["incx"],
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in (
+                "n", "uplo", "trans", "diag", "lda", "incx"
+            )},
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 TRSV baseline case: {key}")
+        return self.cases[key]
+
+class THeadTbsvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for all four row-banded TBSV dtypes."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_TBSV_OPS, reference_label="s/d/c/ztbsv")
+
+    @staticmethod
+    def _key(row):
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], row["k"], uplo,
+            row["trans"], row["diag"], row["lda"], row["incx"],
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in (
+                "n", "k", "uplo", "trans", "diag", "lda", "incx"
+            )},
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 TBSV baseline case: {key}")
+        return self.cases[key]
+
+class THeadTpsvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for all four row-packed TPSV dtypes."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_TPSV_OPS, reference_label="s/d/c/ztpsv")
+
+    @staticmethod
+    def _key(row):
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], uplo,
+            row["trans"], row["diag"], row["incx"],
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in ("n", "uplo", "trans", "diag", "incx")},
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 TPSV baseline case: {key}")
+        return self.cases[key]
+
+class THeadHemvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for complex row-major full HEMV."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_HEMV_OPS, reference_label="c/zhemv")
+
+    @staticmethod
+    def _key(row):
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], uplo, row["lda"],
+            row["incx"], row["incy"], tuple(row["alpha"]), tuple(row["beta"]),
+            row["matrix_layout"],
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in (
+                "n", "uplo", "lda", "incx", "incy", "matrix_layout"
+            )},
+            "alpha": _scalar(complex(kwargs["alpha"])),
+            "beta": _scalar(complex(kwargs["beta"])),
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 HEMV baseline case: {key}")
+        return self.cases[key]
+
+class THeadTrmvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for all four row-major TRMV dtypes."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_TRMV_OPS, reference_label="s/d/c/ztrmv")
+
+    @staticmethod
+    def _key(row):
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], uplo,
+            row["trans"], row["diag"], row["lda"], row["incx"],
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in (
+                "n", "uplo", "trans", "diag", "lda", "incx"
+            )},
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 TRMV baseline case: {key}")
+        return self.cases[key]
+
+
+class THeadTbmvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for all four row-banded TBMV dtypes."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_TBMV_OPS, reference_label="s/d/c/ztbmv")
+
+    @staticmethod
+    def _key(row):
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], row["k"], uplo,
+            row["trans"], row["diag"], row["lda"], row["incx"],
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in (
+                "n", "k", "uplo", "trans", "diag", "lda", "incx"
+            )},
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 TBMV baseline case: {key}")
+        return self.cases[key]
+
+class THeadTpmvReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for all four row-packed TPMV dtypes."""
+
+    def __init__(self):
+        super().__init__(ops=_THEAD_TPMV_OPS, reference_label="s/d/c/ztpmv")
+
+    @staticmethod
+    def _key(row):
+        uplo = {"lower": 0, "upper": 1}.get(row["uplo"], row["uplo"])
+        return (
+            row["op"], row["dtype"], row["n"], uplo,
+            row["trans"], row["diag"], row["incx"],
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = {
+            "op": op,
+            "dtype": str(dtype),
+            **{name: kwargs[name] for name in ("n", "uplo", "trans", "diag", "incx")},
+        }
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 TPMV baseline case: {key}")
         return self.cases[key]
 
 
@@ -602,6 +951,80 @@ def run_thead_gbmv(bench):
         emit_record_logger(result.to_json())
     gc.collect()
     flag_blas.runtime.torch_device_fn.empty_cache()
+
+
+def run_thead_symv(bench):
+    return _run_thead_l2(
+        bench, "symv", THeadSymvReference,
+        ("n", "uplo", "lda", "incx", "incy", "alpha", "beta"),
+    )
+
+def run_thead_sbmv(bench):
+    return _run_thead_l2(
+        bench, "sbmv", THeadSbmvReference,
+        ("n", "k", "uplo", "lda", "incx", "incy", "alpha", "beta"),
+    )
+
+def run_thead_hbmv(bench):
+    return _run_thead_l2(
+        bench, "hbmv", THeadHbmvReference,
+        ("n", "k", "uplo", "lda", "incx", "incy", "alpha", "beta"),
+    )
+
+def run_thead_spmv(bench):
+    return _run_thead_l2(
+        bench, "spmv", THeadSpmvReference,
+        ("n", "uplo", "incx", "incy", "alpha", "beta", "packed_layout"),
+    )
+
+def run_thead_hpmv(bench):
+    return _run_thead_l2(
+        bench, "hpmv", THeadHpmvReference,
+        ("n", "uplo", "incx", "incy", "alpha", "beta", "packed_layout"),
+    )
+
+def run_thead_trsv(bench):
+    return _run_thead_l2(
+        bench, "trsv", THeadTrsvReference,
+        ("n", "uplo", "trans", "diag", "lda", "incx"),
+    )
+
+def run_thead_tbsv(bench):
+    return _run_thead_l2(
+        bench, "tbsv", THeadTbsvReference,
+        ("n", "k", "uplo", "trans", "diag", "lda", "incx"),
+    )
+
+def run_thead_tpsv(bench):
+    return _run_thead_l2(
+        bench, "tpsv", THeadTpsvReference,
+        ("n", "uplo", "trans", "diag", "incx"),
+    )
+
+def run_thead_hemv(bench):
+    return _run_thead_l2(
+        bench, "hemv", THeadHemvReference,
+        ("n", "uplo", "lda", "incx", "incy", "alpha", "beta", "matrix_layout"),
+    )
+
+def run_thead_trmv(bench):
+    return _run_thead_l2(
+        bench, "trmv", THeadTrmvReference,
+        ("n", "uplo", "trans", "diag", "lda", "incx"),
+    )
+
+
+def run_thead_tbmv(bench):
+    return _run_thead_l2(
+        bench, "tbmv", THeadTbmvReference,
+        ("n", "k", "uplo", "trans", "diag", "lda", "incx"),
+    )
+
+def run_thead_tpmv(bench):
+    return _run_thead_l2(
+        bench, "tpmv", THeadTpmvReference,
+        ("n", "uplo", "trans", "diag", "incx"),
+    )
 
 
 def run_thead_hpr(bench):

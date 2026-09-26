@@ -13,13 +13,15 @@
 # limitations under the License.
 
 from .gemv import bfgemv, cgemv, dgemv, hgemv, sgemv, zgemv
-from .ger import dger, sger
-from .hemv import chemv
+from .ger import dger, sger, zgerc, zgeru
+from .hemv import chemv, zhemv
+from .spmv import dspmv, sspmv
 from .spr import dspr, sspr
 from .spr2 import dspr2, sspr2
 from .syr import dsyr, ssyr
 from .syr2 import dsyr2, ssyr2
 from .tbsv import ctbsv, dtbsv, stbsv, ztbsv
+from .tpmv import dtpmv
 from .tpsv import ctpsv, dtpsv, stpsv, ztpsv
 from .trsv import ctrsv, dtrsv, strsv, ztrsv
 
@@ -32,7 +34,12 @@ __all__ = [
     "cgemv",
     "sger",
     "dger",
+    "zgeru",
+    "zgerc",
     "chemv",
+    "zhemv",
+    "sspmv",
+    "dspmv",
     "sspr",
     "dspr",
     "sspr2",
@@ -45,6 +52,7 @@ __all__ = [
     "dtbsv",
     "ctbsv",
     "ztbsv",
+    "dtpmv",
     "stpsv",
     "dtpsv",
     "ctpsv",

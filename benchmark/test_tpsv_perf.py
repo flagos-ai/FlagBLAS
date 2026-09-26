@@ -21,6 +21,7 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -71,11 +72,11 @@ def _load_cublas():
     raise RuntimeError("Unable to find libcublas.so")
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else _load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else _load_cublas()
 _cublas_handle = None
 _CUBLAS_TPSV_FUNCS = (
     {}
-    if IS_HYGON or IS_ASCEND
+    if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT
     else {
         torch.float32: _cublas.cublasStpsv_v2,
         torch.float64: _cublas.cublasDtpsv_v2,
@@ -290,7 +291,7 @@ class TpsvBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
+        if IS_ASCEND or IS_THEAD_EQUIVALENT:
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
                 AP, x = _make_case(n, cur_dtype, self.uplo, self.diag, self.device)
@@ -404,7 +405,11 @@ def _run_tpsv(op_name, dtype, uplo, trans, diag=CUBLAS_DIAG_NON_UNIT):
         trans=trans,
         diag=diag,
     )
-    if IS_ASCEND:
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_tpsv
+
+        run_thead_tpsv(bench)
+    elif IS_ASCEND:
         # Correctness is covered separately by tests/test_tpsv.py; this path
         # times FlagBLAS against the saved H100 cuBLAS reference only.
         bench.run()

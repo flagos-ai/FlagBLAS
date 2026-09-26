@@ -27,6 +27,7 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -35,7 +36,7 @@ elif IS_HYGON:
     import atexit
 elif IS_MTHREADS:
     from benchmark.mublas_compat import cp, cublas
-else:
+elif not IS_THEAD_EQUIVALENT:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -71,7 +72,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else load_cublas()
 
 
 class cuComplex(ctypes.Structure):
@@ -84,7 +85,7 @@ class cuDoubleComplex(ctypes.Structure):
 
 _CUBLAS_HPMV_FUNCS = (
     {}
-    if IS_HYGON or IS_ASCEND
+    if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT
     else {
         torch.complex64: (_cublas.cublasChpmv_v2, cuComplex),
         torch.complex128: (_cublas.cublasZhpmv_v2, cuDoubleComplex),
@@ -279,17 +280,18 @@ class HpmvBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
+        if IS_ASCEND or IS_THEAD_EQUIVALENT:
+            make_randn = ascend_randn if IS_ASCEND else torch.randn
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
                 yield (
-                    ascend_randn(
+                    make_randn(
                         n * (n + 1) // 2,
                         dtype=cur_dtype,
                         device=self.device,
                     ),
-                    ascend_randn(n, dtype=cur_dtype, device=self.device),
-                    ascend_randn(n, dtype=cur_dtype, device=self.device),
+                    make_randn(n, dtype=cur_dtype, device=self.device),
+                    make_randn(n, dtype=cur_dtype, device=self.device),
                     {
                         "uplo": self.uplo,
                         "n": n,
@@ -395,6 +397,19 @@ class HpmvBenchmark(Benchmark):
         return ref_args, ref_kwargs, blas_args, kwargs
 
 
+def _run_hpmv_benchmark(bench):
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_hpmv
+
+        run_thead_hpmv(bench)
+    elif IS_ASCEND:
+        # Correctness is covered separately by tests/test_hpmv.py. This path
+        # times FlagBLAS and compares with saved H100 cuBLAS measurements.
+        bench.run()
+    else:
+        run_correctness_then_benchmark(bench)
+
+
 @pytest.mark.chpmv
 def test_perf_chpmv():
     bench = HpmvBenchmark(
@@ -406,12 +421,7 @@ def test_perf_chpmv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        # Correctness is covered separately by tests/test_hpmv.py. This path
-        # times FlagBLAS and compares with saved H100 cuBLAS measurements.
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hpmv_benchmark(bench)
 
 
 @pytest.mark.chpmv
@@ -425,10 +435,7 @@ def test_perf_chpmv_upper():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hpmv_benchmark(bench)
 
 
 @pytest.mark.zhpmv
@@ -444,10 +451,7 @@ def test_perf_zhpmv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hpmv_benchmark(bench)
 
 
 @pytest.mark.zhpmv
@@ -463,7 +467,4 @@ def test_perf_zhpmv_upper():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hpmv_benchmark(bench)

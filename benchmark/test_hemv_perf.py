@@ -24,6 +24,7 @@ import flag_blas
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -32,7 +33,7 @@ elif IS_HYGON:
     import atexit
 elif IS_MTHREADS:
     from benchmark.mublas_compat import cp, cublas
-else:
+elif not IS_THEAD_EQUIVALENT:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -80,7 +81,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else load_cublas()
 
 
 class cuComplex(ctypes.Structure):
@@ -93,7 +94,7 @@ class cuDoubleComplex(ctypes.Structure):
 
 _CUBLAS_HEMV_FUNCS = (
     {}
-    if IS_HYGON or IS_ASCEND
+    if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT
     else {
         torch.complex64: (_cublas.cublasChemv_v2, cuComplex),
         torch.complex128: (_cublas.cublasZhemv_v2, cuDoubleComplex),
@@ -291,13 +292,14 @@ class HemvBenchmark(Benchmark):
             self.shape_desc = self.DEFAULT_SHAPE_DESC
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
+        if IS_ASCEND or IS_THEAD_EQUIVALENT:
+            make_randn = ascend_randn if IS_ASCEND else torch.randn
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
                 yield (
-                    ascend_randn((n, n), dtype=cur_dtype, device=self.device),
-                    ascend_randn(n, dtype=cur_dtype, device=self.device),
-                    ascend_randn(n, dtype=cur_dtype, device=self.device),
+                    make_randn((n, n), dtype=cur_dtype, device=self.device),
+                    make_randn(n, dtype=cur_dtype, device=self.device),
+                    make_randn(n, dtype=cur_dtype, device=self.device),
                     {
                         "uplo": self.uplo,
                         "n": n,
@@ -408,6 +410,17 @@ class HemvBenchmark(Benchmark):
         return ref_args, ref_kwargs, blas_args, kwargs
 
 
+def _run_hemv_benchmark(bench):
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_hemv
+
+        run_thead_hemv(bench)
+    elif IS_ASCEND:
+        bench.run()
+    else:
+        run_correctness_then_benchmark(bench)
+
+
 @pytest.mark.chemv
 def test_perf_chemv():
     bench = HemvBenchmark(
@@ -419,10 +432,7 @@ def test_perf_chemv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hemv_benchmark(bench)
 
 
 @pytest.mark.chemv
@@ -436,10 +446,7 @@ def test_perf_chemv_upper():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hemv_benchmark(bench)
 
 
 @pytest.mark.zhemv
@@ -455,10 +462,7 @@ def test_perf_zhemv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hemv_benchmark(bench)
 
 
 @pytest.mark.zhemv
@@ -474,7 +478,4 @@ def test_perf_zhemv_upper():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hemv_benchmark(bench)

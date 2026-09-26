@@ -27,6 +27,7 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -35,7 +36,7 @@ elif IS_HYGON:
     import atexit
 elif IS_MTHREADS:
     from benchmark.mublas_compat import cp, cublas
-else:
+elif not IS_THEAD_EQUIVALENT:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -74,7 +75,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else load_cublas()
 
 
 class cuComplex(ctypes.Structure):
@@ -87,7 +88,7 @@ class cuDoubleComplex(ctypes.Structure):
 
 _CUBLAS_HBMV_FUNCS = (
     {}
-    if IS_HYGON or IS_ASCEND
+    if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT
     else {
         torch.complex64: (_cublas.cublasChbmv_v2, cuComplex),
         torch.complex128: (_cublas.cublasZhbmv_v2, cuDoubleComplex),
@@ -314,7 +315,8 @@ class HbmvBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
+        if IS_ASCEND or IS_THEAD_EQUIVALENT:
+            make_randn = ascend_randn if IS_ASCEND else torch.randn
             seen = set()
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
@@ -325,13 +327,13 @@ class HbmvBenchmark(Benchmark):
                         continue
                     seen.add(key)
                     lda = k + 1
-                    A = ascend_randn((n, lda), dtype=cur_dtype, device=self.device)
+                    A = make_randn((n, lda), dtype=cur_dtype, device=self.device)
                     diag_col = 0 if self.uplo == CUBLAS_FILL_MODE_UPPER else k
                     torch.view_as_real(A)[:, diag_col, 1].zero_()
                     yield (
                         A,
-                        ascend_randn(n, dtype=cur_dtype, device=self.device),
-                        ascend_randn(n, dtype=cur_dtype, device=self.device),
+                        make_randn(n, dtype=cur_dtype, device=self.device),
+                        make_randn(n, dtype=cur_dtype, device=self.device),
                         {
                             "uplo": self.uplo,
                             "n": n,
@@ -457,6 +459,19 @@ class HbmvBenchmark(Benchmark):
         return ref_args, ref_kwargs, blas_args, kwargs
 
 
+def _run_hbmv_benchmark(bench):
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_hbmv
+
+        run_thead_hbmv(bench)
+    elif IS_ASCEND:
+        # Correctness is covered separately by tests/test_hbmv.py. This path
+        # times FlagBLAS and compares with saved H100 cuBLAS measurements.
+        bench.run()
+    else:
+        run_correctness_then_benchmark(bench)
+
+
 @pytest.mark.chbmv
 def test_perf_chbmv():
     bench = HbmvBenchmark(
@@ -466,12 +481,7 @@ def test_perf_chbmv():
         dtypes=[torch.complex64],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    if IS_ASCEND:
-        # Correctness is covered separately by tests/test_hbmv.py. This path
-        # times FlagBLAS and compares with saved H100 cuBLAS measurements.
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hbmv_benchmark(bench)
 
 
 @pytest.mark.chbmv
@@ -483,10 +493,7 @@ def test_perf_chbmv_upper():
         dtypes=[torch.complex64],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hbmv_benchmark(bench)
 
 
 @pytest.mark.zhbmv
@@ -500,10 +507,7 @@ def test_perf_zhbmv():
         dtypes=[torch.complex128],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hbmv_benchmark(bench)
 
 
 @pytest.mark.zhbmv
@@ -517,7 +521,4 @@ def test_perf_zhbmv_upper():
         dtypes=[torch.complex128],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_hbmv_benchmark(bench)

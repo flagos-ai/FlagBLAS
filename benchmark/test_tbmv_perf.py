@@ -35,6 +35,7 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -46,7 +47,7 @@ if IS_HYGON:
     import atexit
 elif IS_MTHREADS:
     from benchmark.mublas_compat import cp, cublas
-elif not IS_ASCEND:
+elif not (IS_ASCEND or IS_THEAD_EQUIVALENT):
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -175,11 +176,11 @@ if IS_HYGON:
     atexit.register(_destroy_hipblas_handles)
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else load_cublas()
 
 _CUBLAS_TBMV_FUNCS = (
     {}
-    if IS_HYGON or IS_ASCEND
+    if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT
     else {
         torch.float32: _cublas.cublasStbmv_v2,
         torch.float64: _cublas.cublasDtbmv_v2,
@@ -253,7 +254,7 @@ def _generate_triangular_banded(n, k, lda, uplo, dtype, device):
     A = torch.zeros((n, lda), dtype=dtype, device=build_device)
     column_A = (
         None
-        if IS_ASCEND
+        if IS_ASCEND or IS_THEAD_EQUIVALENT
         else torch.zeros((n, lda), dtype=dtype, device=build_device)
     )
     randn = ascend_randn if IS_ASCEND else torch.randn
@@ -268,7 +269,7 @@ def _generate_triangular_banded(n, k, lda, uplo, dtype, device):
             A[d:, k - d] = vals
             if column_A is not None:
                 column_A[:count, d] = vals
-    if IS_ASCEND:
+    if IS_ASCEND or IS_THEAD_EQUIVALENT:
         return A.to(device).contiguous(), None
     return A.contiguous(), column_A.contiguous()
 
@@ -319,7 +320,7 @@ class TbmvBenchmark(Benchmark):
             hip_uplo = 121 if self.uplo == CUBLAS_FILL_MODE_UPPER else 122
             hip_trans = 111 + self.trans
             hip_diag = 131 + self.diag
-        elif not IS_ASCEND:
+        elif not (IS_ASCEND or IS_THEAD_EQUIVALENT):
             handle = cp.cuda.device.get_cublas_handle()
             cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
 
@@ -345,7 +346,7 @@ class TbmvBenchmark(Benchmark):
                 )
                 randn = ascend_randn if IS_ASCEND else torch.randn
                 x = randn(n, dtype=cur_dtype, device=self.device)
-                if IS_ASCEND:
+                if IS_ASCEND or IS_THEAD_EQUIVALENT:
                     yield A, x, {
                         "uplo": self.uplo,
                         "trans": self.trans,
@@ -440,7 +441,11 @@ class TbmvBenchmark(Benchmark):
 
 
 def run_correctness_then_benchmark(bench):
-    if IS_ASCEND:
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_tbmv
+
+        run_thead_tbmv(bench)
+    elif IS_ASCEND:
         # Correctness is covered separately by tests/test_tbmv.py; this path
         # times FlagBLAS against the saved H100 cuBLAS reference only.
         bench.run()
