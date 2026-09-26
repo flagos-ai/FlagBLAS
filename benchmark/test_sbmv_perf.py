@@ -27,6 +27,7 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -34,7 +35,7 @@ elif IS_HYGON:
     import atexit
 elif IS_MTHREADS:
     from benchmark.mublas_compat import cp, cublas
-else:
+elif not IS_THEAD_EQUIVALENT:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -180,11 +181,11 @@ if IS_HYGON:
     atexit.register(_destroy_hipblas_handles)
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else load_cublas()
 
 _CUBLAS_SBMV_FUNCS = (
     {}
-    if IS_HYGON or IS_ASCEND
+    if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT
     else {
         torch.float32: (_cublas.cublasSsbmv_v2, ctypes.c_float),
         torch.float64: (_cublas.cublasDsbmv_v2, ctypes.c_double),
@@ -303,7 +304,7 @@ class SbmvBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
+        if IS_ASCEND or IS_THEAD_EQUIVALENT:
             seen = set()
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
@@ -311,7 +312,8 @@ class SbmvBenchmark(Benchmark):
                     k = min(k_req, max(0, n - 1))
                     key = (n, k)
                     if key in seen or (
-                        self.op_name == "ssbmv"
+                        IS_ASCEND
+                        and self.op_name == "ssbmv"
                         and (self.uplo, n, k) in ASCEND_EXCLUDED_CASES
                     ):
                         continue
@@ -459,6 +461,19 @@ class SbmvBenchmark(Benchmark):
         return ref_args, ref_kwargs, blas_args, kwargs
 
 
+def _run_sbmv_benchmark(bench):
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_sbmv
+
+        run_thead_sbmv(bench)
+    elif IS_ASCEND:
+        # Correctness is covered separately by tests/test_sbmv.py. This path
+        # times FlagBLAS and compares with saved H100 cuBLAS measurements.
+        bench.run()
+    else:
+        run_correctness_then_benchmark(bench)
+
+
 @pytest.mark.ssbmv
 def test_perf_ssbmv():
     bench = SbmvBenchmark(
@@ -468,12 +483,7 @@ def test_perf_ssbmv():
         dtypes=[torch.float32],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    if IS_ASCEND:
-        # Correctness is covered separately by tests/test_sbmv.py. This path
-        # times FlagBLAS and compares with saved H100 cuBLAS measurements.
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_sbmv_benchmark(bench)
 
 
 @pytest.mark.ssbmv
@@ -485,10 +495,7 @@ def test_perf_ssbmv_upper():
         dtypes=[torch.float32],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_sbmv_benchmark(bench)
 
 
 @pytest.mark.dsbmv
@@ -502,10 +509,7 @@ def test_perf_dsbmv():
         dtypes=[torch.float64],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_sbmv_benchmark(bench)
 
 
 @pytest.mark.dsbmv
@@ -519,7 +523,4 @@ def test_perf_dsbmv_upper():
         dtypes=[torch.float64],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_sbmv_benchmark(bench)

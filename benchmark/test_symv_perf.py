@@ -27,6 +27,7 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -38,7 +39,7 @@ if IS_HYGON:
     import atexit
 elif IS_MTHREADS:
     from benchmark.mublas_compat import cp, cublas
-elif not IS_ASCEND:
+elif not (IS_ASCEND or IS_THEAD_EQUIVALENT):
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -83,7 +84,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else load_cublas()
 
 
 class cuComplex(ctypes.Structure):
@@ -96,7 +97,7 @@ class cuDoubleComplex(ctypes.Structure):
 
 _CUBLAS_SYMV_FUNCS = (
     {}
-    if IS_HYGON or IS_ASCEND
+    if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT
     else {
         torch.float32: (_cublas.cublasSsymv_v2, ctypes.c_float, False),
         torch.float64: (_cublas.cublasDsymv_v2, ctypes.c_double, False),
@@ -290,14 +291,15 @@ class SymvBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
-            if cur_dtype not in (torch.float32, torch.complex64):
+        if IS_ASCEND or IS_THEAD_EQUIVALENT:
+            if IS_ASCEND and cur_dtype not in (torch.float32, torch.complex64):
                 pytest.skip("Ascend SYMV supports float32 and complex64")
+            make_randn = ascend_randn if IS_ASCEND else torch.randn
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
-                A = ascend_randn((n, n), dtype=cur_dtype, device=self.device) * 0.1
-                x = ascend_randn(n, dtype=cur_dtype, device=self.device)
-                y = ascend_randn(n, dtype=cur_dtype, device=self.device)
+                A = make_randn((n, n), dtype=cur_dtype, device=self.device) * 0.1
+                x = make_randn(n, dtype=cur_dtype, device=self.device)
+                y = make_randn(n, dtype=cur_dtype, device=self.device)
                 yield A, x, y, {
                     "uplo": self.uplo,
                     "n": n,
@@ -415,6 +417,17 @@ class SymvBenchmark(Benchmark):
         return ref_args, ref_kwargs, blas_args, kwargs
 
 
+def _run_symv_benchmark(bench):
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_symv
+
+        run_thead_symv(bench)
+    elif IS_ASCEND:
+        bench.run()
+    else:
+        run_correctness_then_benchmark(bench)
+
+
 @pytest.mark.ssymv
 def test_perf_ssymv():
     bench = SymvBenchmark(
@@ -424,10 +437,7 @@ def test_perf_ssymv():
         dtypes=[torch.float32],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_symv_benchmark(bench)
 
 
 @pytest.mark.ssymv
@@ -439,10 +449,7 @@ def test_perf_ssymv_upper():
         dtypes=[torch.float32],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_symv_benchmark(bench)
 
 
 @pytest.mark.dsymv
@@ -456,10 +463,7 @@ def test_perf_dsymv():
         dtypes=[torch.float64],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_symv_benchmark(bench)
 
 
 @pytest.mark.dsymv
@@ -473,10 +477,7 @@ def test_perf_dsymv_upper():
         dtypes=[torch.float64],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_symv_benchmark(bench)
 
 
 @pytest.mark.csymv
@@ -490,10 +491,7 @@ def test_perf_csymv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_symv_benchmark(bench)
 
 
 @pytest.mark.csymv
@@ -507,10 +505,7 @@ def test_perf_csymv_upper():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_symv_benchmark(bench)
 
 
 @pytest.mark.zsymv
@@ -526,10 +521,7 @@ def test_perf_zsymv():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_symv_benchmark(bench)
 
 
 @pytest.mark.zsymv
@@ -545,7 +537,4 @@ def test_perf_zsymv_upper():
         alpha=1.5 + 0.5j,
         beta=0.5 + 0.25j,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_symv_benchmark(bench)

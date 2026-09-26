@@ -21,6 +21,7 @@ from flag_blas.ops.level2.ger import (
     ScalarType,
     _check_ger_common,
     _f64_to_i64,
+    _scalar_to_complex_parts,
     _scalar_to_float,
 )
 from flag_blas.runtime import torch_device_fn
@@ -132,9 +133,7 @@ def sger(
     if alpha_value == 0.0:
         return
     with torch_device_fn.device(A.device):
-        sger_thead_kernel[_grid(m, n)](
-            x, y, A, alpha_value, m, n, incx, incy, lda
-        )
+        sger_thead_kernel[_grid(m, n)](x, y, A, alpha_value, m, n, incx, incy, lda)
 
 
 def dger(
@@ -157,3 +156,125 @@ def dger(
         dger_thead_kernel[_grid(m, n)](
             x, y, A, _f64_to_i64(alpha_value), m, n, incx, incy, lda
         )
+
+
+@libentry()
+@libtuner(
+    configs=runtime.get_tuned_config("thead_zger"),
+    key=["m", "n", "LDA", "INCX", "INCY", "CONJ_Y"],
+    restore_value=["A_ptr"],
+)
+@triton.jit
+def zger_thead_kernel(
+    x_ptr,
+    y_ptr,
+    A_ptr,
+    alpha_real_int: tl.int64,
+    alpha_imag_int: tl.int64,
+    m: tl.constexpr,
+    n: tl.constexpr,
+    INCX: tl.constexpr,
+    INCY: tl.constexpr,
+    LDA: tl.constexpr,
+    CONJ_Y: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_N: tl.constexpr,
+):
+    rows = tl.program_id(0) * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    cols = tl.program_id(1) * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+    parts = tl.arange(0, 2)
+    row_mask = rows < m
+    col_mask = cols < n
+    # Load each complex value once and keep its real/imaginary lanes adjacent.
+    x_vals = tl.load(
+        x_ptr + rows[:, None] * INCX * 2 + parts[None, :],
+        mask=row_mask[:, None],
+        other=0.0,
+    )
+    y_vals = tl.load(
+        y_ptr + cols[:, None] * INCY * 2 + parts[None, :],
+        mask=col_mask[:, None],
+        other=0.0,
+    )
+    x_real, x_imag = tl.split(x_vals)
+    y_real, y_imag = tl.split(y_vals)
+    if CONJ_Y:
+        y_imag = -y_imag
+    alpha_real = alpha_real_int.to(tl.float64, bitcast=True)
+    alpha_imag = alpha_imag_int.to(tl.float64, bitcast=True)
+    # Reuse alpha*x across the row instead of recomputing it for every lane.
+    ax_real = alpha_real * x_real - alpha_imag * x_imag
+    ax_imag = alpha_real * x_imag + alpha_imag * x_real
+    update_real = (
+        ax_real[:, None] * y_real[None, :] - ax_imag[:, None] * y_imag[None, :]
+    )
+    update_imag = (
+        ax_real[:, None] * y_imag[None, :] + ax_imag[:, None] * y_real[None, :]
+    )
+    update = tl.join(update_real, update_imag)
+    offsets = (rows[:, None] * LDA + cols[None, :])[:, :, None] * 2
+    offsets += parts[None, None, :]
+    mask = row_mask[:, None, None] & col_mask[None, :, None]
+    matrix = tl.load(A_ptr + offsets, mask=mask, other=0.0)
+    tl.store(A_ptr + offsets, matrix + update, mask=mask)
+
+
+def _zger(
+    m: int,
+    n: int,
+    alpha: ScalarType,
+    x: torch.Tensor,
+    incx: int,
+    y: torch.Tensor,
+    incy: int,
+    A: torch.Tensor,
+    lda: int,
+    conj_y: bool,
+) -> None:
+    if not _check_ger_common(m, n, x, incx, y, incy, A, lda, torch.complex128):
+        return
+    alpha_real, alpha_imag = _scalar_to_complex_parts(alpha)
+    if alpha_real == 0.0 and alpha_imag == 0.0:
+        return
+    with torch_device_fn.device(A.device):
+        zger_thead_kernel[_grid(m, n)](
+            torch.view_as_real(x),
+            torch.view_as_real(y),
+            torch.view_as_real(A),
+            _f64_to_i64(alpha_real),
+            _f64_to_i64(alpha_imag),
+            m,
+            n,
+            incx,
+            incy,
+            lda,
+            conj_y,
+        )
+
+
+def zgeru(
+    m: int,
+    n: int,
+    alpha: ScalarType,
+    x: torch.Tensor,
+    incx: int,
+    y: torch.Tensor,
+    incy: int,
+    A: torch.Tensor,
+    lda: int,
+) -> None:
+    _zger(m, n, alpha, x, incx, y, incy, A, lda, False)
+
+
+def zgerc(
+    m: int,
+    n: int,
+    alpha: ScalarType,
+    x: torch.Tensor,
+    incx: int,
+    y: torch.Tensor,
+    incy: int,
+    A: torch.Tensor,
+    lda: int,
+) -> None:
+    _zger(m, n, alpha, x, incx, y, incy, A, lda, True)

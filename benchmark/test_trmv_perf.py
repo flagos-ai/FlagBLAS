@@ -35,6 +35,7 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -46,7 +47,7 @@ if IS_HYGON:
     import atexit
 elif IS_MTHREADS:
     from benchmark.mublas_compat import cp, cublas
-elif not IS_ASCEND:
+elif not (IS_ASCEND or IS_THEAD_EQUIVALENT):
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -89,11 +90,11 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else load_cublas()
 
 _CUBLAS_TRMV_FUNCS = (
     {}
-    if IS_HYGON or IS_ASCEND
+    if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT
     else {
         torch.float32: _cublas.cublasStrmv_v2,
         torch.float64: _cublas.cublasDtrmv_v2,
@@ -238,10 +239,11 @@ gems_ztrmv_wrapper = _gems_wrapper(flag_blas.ztrmv)
 
 
 def _generate_triangular_A(n, lda, uplo, dtype, device):
-    if IS_ASCEND:
+    if IS_ASCEND or IS_THEAD_EQUIVALENT:
         # Only the selected triangle is accessed by TRMV, so avoid allocating
         # full-size construction and column-major reference temporaries.
-        A = ascend_randn((n, lda), dtype=dtype, device=device)
+        make_randn = ascend_randn if IS_ASCEND else torch.randn
+        A = make_randn((n, lda), dtype=dtype, device=device)
         if dtype.is_complex:
             torch.view_as_real(A).mul_(0.1)
         else:
@@ -288,14 +290,15 @@ class TrmvBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
+        if IS_ASCEND or IS_THEAD_EQUIVALENT:
+            make_randn = ascend_randn if IS_ASCEND else torch.randn
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
                 lda = n
                 A, _ = _generate_triangular_A(
                     n, lda, self.uplo, cur_dtype, self.device
                 )
-                yield A, ascend_randn(n, dtype=cur_dtype, device=self.device), {
+                yield A, make_randn(n, dtype=cur_dtype, device=self.device), {
                     "uplo": self.uplo,
                     "trans": self.trans,
                     "diag": self.diag,
@@ -405,7 +408,11 @@ class TrmvBenchmark(Benchmark):
 
 
 def _run_trmv_benchmark(bench):
-    if IS_ASCEND:
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_trmv
+
+        run_thead_trmv(bench)
+    elif IS_ASCEND:
         # Correctness is covered separately by tests/test_trmv.py; this path
         # times FlagBLAS against the saved H100 cuBLAS reference only.
         bench.run()

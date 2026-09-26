@@ -35,6 +35,7 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -73,7 +74,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else load_cublas()
 _cublas_handle = None
 
 
@@ -271,7 +272,7 @@ def _make_triangular_banded(n, k, lda, uplo, dtype, device):
         torch.view_as_real(A)[:, diag_col, 1] = 0.0
     else:
         A[:, diag_col] = diag_floor
-    if IS_ASCEND:
+    if IS_ASCEND or IS_THEAD_EQUIVALENT:
         return A.to(device).contiguous(), None
 
     column_A = torch.zeros((n, lda), dtype=dtype, device=device)
@@ -323,7 +324,7 @@ class StbsvBenchmark(Benchmark):
         if IS_HYGON:
             library, handle = _prepare_hipblas(self.device)
             c_func = _resolve_hipblas_tbsv(library, cur_dtype)
-        elif not IS_ASCEND:
+        elif not (IS_ASCEND or IS_THEAD_EQUIVALENT):
             handle = _get_cublas_handle()
             if cur_dtype == torch.float32:
                 c_func = _cublas.cublasStbsv_v2
@@ -351,7 +352,7 @@ class StbsvBenchmark(Benchmark):
                 )
                 randn = ascend_randn if IS_ASCEND else torch.randn
                 x = randn(n, dtype=cur_dtype, device=self.device)
-                if IS_ASCEND:
+                if IS_ASCEND or IS_THEAD_EQUIVALENT:
                     yield A, x, {
                         "uplo": self.uplo,
                         "trans": self.trans,
@@ -456,7 +457,11 @@ def _run_tbsv_variant(op_name, dtype, uplo, trans):
         trans=trans,
         diag=CUBLAS_DIAG_NON_UNIT,
     )
-    if IS_ASCEND:
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_tbsv
+
+        run_thead_tbsv(bench)
+    elif IS_ASCEND:
         # Correctness is covered separately by tests/test_tbsv.py; this path
         # times FlagBLAS against the saved H100 cuBLAS reference only.
         bench.run()

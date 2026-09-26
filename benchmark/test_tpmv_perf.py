@@ -35,6 +35,7 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -46,7 +47,7 @@ if IS_HYGON:
     import atexit
 elif IS_MTHREADS:
     from benchmark.mublas_compat import cp, cublas
-elif not IS_ASCEND:
+elif not (IS_ASCEND or IS_THEAD_EQUIVALENT):
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -181,11 +182,11 @@ if IS_HYGON:
     atexit.register(_destroy_hipblas_handles)
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else load_cublas()
 
 _CUBLAS_TPMV_FUNCS = (
     {}
-    if IS_HYGON or IS_ASCEND
+    if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT
     else {
         torch.float32: _cublas.cublasStpmv_v2,
         torch.float64: _cublas.cublasDtpmv_v2,
@@ -300,11 +301,12 @@ class TpmvBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
+        if IS_ASCEND or IS_THEAD_EQUIVALENT:
+            make_randn = ascend_randn if IS_ASCEND else torch.randn
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
                 AP = _generate_packed_triangular(n, cur_dtype, self.device)
-                x = ascend_randn(n, dtype=cur_dtype, device=self.device)
+                x = make_randn(n, dtype=cur_dtype, device=self.device)
                 yield AP, x, {
                     "uplo": self.uplo,
                     "trans": self.trans,
@@ -426,7 +428,11 @@ class TpmvBenchmark(Benchmark):
 
 
 def _run_tpmv_benchmark(bench):
-    if IS_ASCEND:
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_tpmv
+
+        run_thead_tpmv(bench)
+    elif IS_ASCEND:
         # Correctness is covered separately by tests/test_tpmv.py; this path
         # times FlagBLAS against the saved H100 cuBLAS reference only.
         bench.run()

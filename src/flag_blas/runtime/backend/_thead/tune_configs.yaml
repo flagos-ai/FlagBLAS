@@ -277,3 +277,46 @@ thead_dger:
   - META: {BLOCK_SIZE_M: 64, BLOCK_SIZE_N: 128}
     num_warps: 8
     num_stages: 3
+
+thead_zger:
+  - META: {BLOCK_SIZE_M: 1, BLOCK_SIZE_N: 256}
+    num_warps: 4
+    num_stages: 1
+
+thead_dtpmv:
+  - META: {BLOCK_SIZE_M: 16, BLOCK_K: 128}
+    num_warps: 4
+    num_stages: 1
+  - META: {BLOCK_SIZE_M: 2, BLOCK_K: 256}
+    num_warps: 4
+    num_stages: 1
+
+thead_ctrsv_small:
+  - META: {BLOCK: 16, CHUNK: 1}
+    num_warps: 1
+    num_stages: 1
+
+thead_ctrsv_forward:
+  - META: {BLOCK: 64, CHUNK: 1}
+    num_warps: 8
+    num_stages: 1
+
+thead_ctrsv_backward:
+  - META: {BLOCK: 64, CHUNK: 2}
+    num_warps: 4
+    num_stages: 1
+
+thead_ctrsv_trans:
+  - META: {BLOCK: 32, CHUNK: 1}
+    num_warps: 4
+    num_stages: 1
+
+thead_ztrsv_normal:
+  - META: {BLOCK: 16, CHUNK: 1}
+    num_warps: 1
+    num_stages: 1
+
+thead_ztrsv_trans:
+  - META: {BLOCK: 32, CHUNK: 2}
+    num_warps: 4
+    num_stages: 1

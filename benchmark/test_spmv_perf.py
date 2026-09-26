@@ -27,6 +27,7 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_ASCEND:
     from benchmark.ascend_l2_reference import AscendL2Benchmark as Benchmark
@@ -34,7 +35,7 @@ elif IS_HYGON:
     import atexit
 elif IS_MTHREADS:
     from benchmark.mublas_compat import cp, cublas
-else:
+elif not IS_THEAD_EQUIVALENT:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -162,11 +163,11 @@ if IS_HYGON:
     atexit.register(_destroy_hipblas_handles)
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else load_cublas()
 
 _CUBLAS_SPMV_FUNCS = (
     {}
-    if IS_HYGON or IS_ASCEND
+    if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT
     else {
         torch.float32: (_cublas.cublasSspmv_v2, ctypes.c_float),
         torch.float64: (_cublas.cublasDspmv_v2, ctypes.c_double),
@@ -263,7 +264,7 @@ class SpmvBenchmark(Benchmark):
         return None
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        if IS_ASCEND:
+        if IS_ASCEND or IS_THEAD_EQUIVALENT:
             for shape in self.shapes:
                 n = shape[0] if isinstance(shape, (tuple, list)) else shape
                 yield (
@@ -375,6 +376,19 @@ class SpmvBenchmark(Benchmark):
         return ref_args, ref_kwargs, blas_args, kwargs
 
 
+def _run_spmv_benchmark(bench):
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_spmv
+
+        run_thead_spmv(bench)
+    elif IS_ASCEND:
+        # Correctness is covered separately by tests/test_spmv.py. This path
+        # times FlagBLAS and compares with saved H100 cuBLAS measurements.
+        bench.run()
+    else:
+        run_correctness_then_benchmark(bench)
+
+
 @pytest.mark.sspmv
 def test_perf_sspmv():
     bench = SpmvBenchmark(
@@ -384,12 +398,7 @@ def test_perf_sspmv():
         dtypes=[torch.float32],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    if IS_ASCEND:
-        # Correctness is covered separately by tests/test_spmv.py. This path
-        # times FlagBLAS and compares with saved H100 cuBLAS measurements.
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_spmv_benchmark(bench)
 
 
 @pytest.mark.sspmv
@@ -401,10 +410,7 @@ def test_perf_sspmv_upper():
         dtypes=[torch.float32],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_spmv_benchmark(bench)
 
 
 @pytest.mark.dspmv
@@ -418,10 +424,7 @@ def test_perf_dspmv():
         dtypes=[torch.float64],
         uplo=CUBLAS_FILL_MODE_LOWER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_spmv_benchmark(bench)
 
 
 @pytest.mark.dspmv
@@ -435,7 +438,4 @@ def test_perf_dspmv_upper():
         dtypes=[torch.float64],
         uplo=CUBLAS_FILL_MODE_UPPER,
     )
-    if IS_ASCEND:
-        bench.run()
-    else:
-        run_correctness_then_benchmark(bench)
+    _run_spmv_benchmark(bench)

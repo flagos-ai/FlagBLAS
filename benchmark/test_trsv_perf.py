@@ -24,12 +24,13 @@ import flag_blas
 IS_HYGON = flag_blas.vendor_name == "hygon"
 IS_MTHREADS = flag_blas.vendor_name == "mthreads"
 IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_THEAD_EQUIVALENT = flag_blas.vendor_name == "thead"
 
 if IS_HYGON:
     import atexit
 elif IS_MTHREADS:
     from benchmark.mublas_compat import cp, cublas
-elif not IS_ASCEND:
+elif not (IS_ASCEND or IS_THEAD_EQUIVALENT):
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -71,11 +72,11 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on this system")
 
 
-_cublas = None if IS_HYGON or IS_ASCEND else load_cublas()
+_cublas = None if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT else load_cublas()
 
 _CUBLAS_TRSV_FUNCS = (
     {}
-    if IS_HYGON or IS_ASCEND
+    if IS_HYGON or IS_ASCEND or IS_THEAD_EQUIVALENT
     else {
         torch.float32: _cublas.cublasStrsv_v2,
         torch.float64: _cublas.cublasDtrsv_v2,
@@ -257,7 +258,11 @@ def _run_trsv_benchmark(
         trans=trans,
         diag=diag,
     )
-    if IS_ASCEND:
+    if IS_THEAD_EQUIVALENT:
+        from benchmark.thead_l2_reference import run_thead_trsv
+
+        run_thead_trsv(bench)
+    elif IS_ASCEND:
         # Use saved H100 timings, not a CUDA reference on the NPU. Operator
         # correctness is checked separately; this path measures performance.
         bench.run()
@@ -332,7 +337,7 @@ class TrsvBenchmark(Benchmark):
         if IS_HYGON:
             library, handle = _prepare_hipblas(self.device)
             c_func = _resolve_hipblas_trsv(library, cur_dtype)
-        elif not IS_ASCEND:
+        elif not (IS_ASCEND or IS_THEAD_EQUIVALENT):
             handle = cp.cuda.device.get_cublas_handle()
             cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
             if cur_dtype not in _CUBLAS_TRSV_FUNCS:
@@ -346,7 +351,7 @@ class TrsvBenchmark(Benchmark):
             )
             randn = ascend_randn if IS_ASCEND else torch.randn
             x = randn(n, dtype=cur_dtype, device=self.device)
-            if IS_ASCEND:
+            if IS_ASCEND or IS_THEAD_EQUIVALENT:
                 yield A, x, {
                     "uplo": self.uplo,
                     "trans": self.trans,
