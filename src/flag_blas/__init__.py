@@ -17,6 +17,8 @@ flag_blas - BLAS operations implemented with Triton
 """
 
 import warnings
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _metadata_version
 
 import torch
 
@@ -33,7 +35,10 @@ registrar = Register
 current_work_registerar = None
 runtime.replace_customized_ops(globals())
 
-__version__ = "0.3.0"
+try:
+    __version__ = _metadata_version("flag_blas")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 
 _FULL_CONFIG = ()
 
