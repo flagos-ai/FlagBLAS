@@ -1,3 +1,240 @@
+sgemm:
+  # Core configs for various shapes
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+sgemm_nn_thin:
+  - META: {BLOCK_M: 128, BLOCK_N: 16, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 64, BLOCK_N: 16, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 128, BLOCK_N: 32, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 64, BLOCK_N: 32, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 32, BLOCK_N: 32, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 16, BLOCK_N: 64, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 32, BLOCK_N: 64, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+group_bfgemm:
+  # Tuned for PPU (T-Head Zhenwu) BF16 GroupGEMM; NN layout variants of the
+  # verified _thead bfgemm tile shapes.
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, NUM_WM: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, NUM_WM: 4}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, NUM_WM: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 2}
+    num_warps: 8
+    num_stages: 3
+  # Deep-pipeline small-K-chunk variants; best for large-K few-expert shapes.
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 5
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 8}
+    num_warps: 8
+    num_stages: 6
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 6
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 8}
+    num_warps: 8
+    num_stages: 5
+group_hgemm:
+  # FP16 shares the BF16 tile family: same element size and tensor-core path.
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, NUM_WM: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, NUM_WM: 4}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, NUM_WM: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 2}
+    num_warps: 8
+    num_stages: 3
+  # Deep-pipeline small-K-chunk variants; best for large-K few-expert shapes.
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 5
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 8}
+    num_warps: 8
+    num_stages: 6
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 6
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 8}
+    num_warps: 8
+    num_stages: 5
+group_tf32gemm:
+  # TF32 stages buffer fp32 tiles (2x BF16 bytes); pipeline depths kept
+  # within the 256KB shared-memory budget of PPU-ZW810E. The 128x128 w4/w8
+  # family wins the few-expert compute-bound shapes; the 256x128 and
+  # 128x256 families win the many-expert bandwidth-bound shapes.
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 16}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 4}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 16}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 2}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 32, NUM_WM: 8}
+    num_warps: 4
+    num_stages: 6
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 4}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 8}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, NUM_WM: 4}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, NUM_WM: 8}
+    num_warps: 4
+    num_stages: 3
+group_tf32gemm_tn:
+  # Configs for the n-major (pre-transposed B) tf32 variant; same smem
+  # budget as group_tf32gemm. Winners measured per core-shape family on
+  # an idle PPU-ZW810E: 256x128x32 s3 for mid-K wide-N, BLOCK_K=16
+  # deep-pipeline variants for large-K, 128x256 for the K=7168 shapes.
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 8, EXPERTS_PER_CTA: 1}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 16, EXPERTS_PER_CTA: 1}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 4, EXPERTS_PER_CTA: 1}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, NUM_WM: 4, EXPERTS_PER_CTA: 1}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 4, EXPERTS_PER_CTA: 1}
+    num_warps: 8
+    num_stages: 4
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, NUM_WM: 4, EXPERTS_PER_CTA: 1}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, NUM_WM: 8, EXPERTS_PER_CTA: 1}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 8, EXPERTS_PER_CTA: 1}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, NUM_WM: 4, EXPERTS_PER_CTA: 1}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, NUM_WM: 4, EXPERTS_PER_CTA: 1}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 16, NUM_WM: 4, EXPERTS_PER_CTA: 1}
+    num_warps: 8
+    num_stages: 5
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 16, NUM_WM: 16, EXPERTS_PER_CTA: 1}
+    num_warps: 8
+    num_stages: 5
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 16, NUM_WM: 8, EXPERTS_PER_CTA: 1}
+    num_warps: 8
+    num_stages: 5
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 16, NUM_WM: 16, EXPERTS_PER_CTA: 1}
+    num_warps: 8
+    num_stages: 5
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 16, NUM_WM: 32, EXPERTS_PER_CTA: 32}
+    num_warps: 8
+    num_stages: 5
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 16, NUM_WM: 64, EXPERTS_PER_CTA: 32}
+    num_warps: 8
+    num_stages: 5
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 16, NUM_WM: 128, EXPERTS_PER_CTA: 32}
+    num_warps: 8
+    num_stages: 5
+
 # PPU SDK 2.1 / FlagTree 3.6: independently measured small GEMV regions.
 thead_sgemv_t_fullk:
   - META: {BLOCK_SIZE_M: 8, BLOCK_SIZE_K: 512}

@@ -14,6 +14,7 @@
 from .gbmv import cgbmv, dgbmv, sgbmv, zgbmv
 from .gemv import bfgemv, cgemv, dgemv, hgemv, sgemv, zgemv
 from .ger import cgerc, cgeru, sger
+from .group_gemm import group_bfgemm, group_hgemm, group_mm, group_tf32gemm
 from .hbmv import chbmv, zhbmv
 from .hemv import chemv
 from .her import cher, zher
@@ -62,6 +63,10 @@ __all__ = [
     "ctpsv",
     "ctrmv",
     "ctrsv",
+    "group_bfgemm",
+    "group_hgemm",
+    "group_mm",
+    "group_tf32gemm",
     "dtrmv",
     "dtrsv",
     "dtbmv",

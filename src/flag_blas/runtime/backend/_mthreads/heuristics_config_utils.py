@@ -12,4 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# MThreads backend heuristics.
+#
+# MThreads-specific heuristic configs can be added here as operators are
+# tuned for MUSA. Until then, the default heuristics are used as a fallback.
+
+
 HEURISTICS_CONFIGS = {}

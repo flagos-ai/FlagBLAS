@@ -3,9 +3,9 @@ import triton
 import triton.language as tl
 from triton.tools.tensor_descriptor import TensorDescriptor
 
+from flag_blas import runtime
 from flag_blas.ops.level3.group_gemm import (
     get_autotune_config,
-    get_autotune_config_tf32,
     grouped_bfgemm_kernel,
     grouped_hgemm_kernel,
     grouped_launch,
@@ -29,7 +29,7 @@ def matmul_tma_set_block_size_hook(nargs):
 
 
 @libentry()
-@libtuner(configs=get_autotune_config(), key=["M", "N", "K"])
+@libtuner(configs=runtime.get_tuned_config("group_bfgemm"), key=["M", "N", "K"])
 @triton.jit
 def grouped_bfgemm_tma_kernel(
     M,
@@ -134,7 +134,7 @@ def grouped_bfgemm_tma_kernel(
 
 
 @libentry()
-@libtuner(configs=get_autotune_config(), key=["M", "N", "K"])
+@libtuner(configs=runtime.get_tuned_config("group_bfgemm"), key=["M", "N", "K"])
 @triton.jit
 def grouped_bfgemm_small_m_tma_kernel(
     M,
@@ -223,7 +223,7 @@ def grouped_bfgemm_small_m_tma_kernel(
 
 
 @libentry()
-@libtuner(configs=get_autotune_config(), key=["M", "N", "K"])
+@libtuner(configs=runtime.get_tuned_config("group_hgemm"), key=["M", "N", "K"])
 @triton.jit
 def grouped_hgemm_tma_kernel(
     M,
@@ -328,7 +328,7 @@ def grouped_hgemm_tma_kernel(
 
 
 @libentry()
-@libtuner(configs=get_autotune_config(), key=["M", "N", "K"])
+@libtuner(configs=runtime.get_tuned_config("group_hgemm"), key=["M", "N", "K"])
 @triton.jit
 def grouped_hgemm_small_m_tma_kernel(
     M,
@@ -417,7 +417,7 @@ def grouped_hgemm_small_m_tma_kernel(
 
 
 @libentry()
-@libtuner(configs=get_autotune_config_tf32(), key=["M", "N", "K"])
+@libtuner(configs=runtime.get_tuned_config("group_tf32gemm"), key=["M", "N", "K"])
 @triton.jit
 def grouped_tf32gemm_tma_kernel(
     M,
@@ -528,7 +528,7 @@ def grouped_tf32gemm_tma_kernel(
 
 
 @libentry()
-@libtuner(configs=get_autotune_config_tf32(), key=["M", "N", "K"])
+@libtuner(configs=runtime.get_tuned_config("group_tf32gemm"), key=["M", "N", "K"])
 @triton.jit
 def grouped_tf32gemm_small_m_tma_kernel(
     M,

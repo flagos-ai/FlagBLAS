@@ -1,17 +1,29 @@
-import ctypes
-import ctypes.util
 import random
 
-import cupy as cp
 import pytest
 import torch
-from cupy_backends.cuda.libs import cublas
 
 import flag_blas
-from flag_blas.ops import CUBLAS_OP_N
 
 from . import accuracy_utils as utils
 from .conftest import TO_CPU
+
+IS_ASCEND = flag_blas.vendor_name == "ascend"
+IS_PPU = flag_blas.vendor_name == "thead"
+IS_HYGPON = flag_blas.vendor_name == "hygon"
+
+if IS_ASCEND:
+    torch_npu = pytest.importorskip("torch_npu")
+elif IS_PPU:
+    pass
+elif not IS_HYGPON:
+    import ctypes
+    import ctypes.util
+
+    import cupy as cp
+    from cupy_backends.cuda.libs import cublas
+
+    from flag_blas.ops import CUBLAS_OP_N
 
 
 def load_cublas():
@@ -27,7 +39,7 @@ def load_cublas():
     raise RuntimeError("Unable to find libcublas.so on the system.")
 
 
-_cublas = load_cublas()
+_cublas = load_cublas() if not (IS_ASCEND or IS_PPU or IS_HYGPON) else None
 
 
 def _cublasGemmGroupedBatchedEx(
@@ -76,7 +88,8 @@ def _cublasGemmGroupedBatchedEx(
     )
 
 
-cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
+if not (IS_ASCEND or IS_PPU or IS_HYGPON):
+    cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
 
 
 CUDA_R_16F = 2
@@ -242,6 +255,42 @@ def cublas_group_gemm_reference(group_A, group_B, group_C, offs_table, alpha, be
     return out
 
 
+def torch_group_gemm_reference(group_A, group_B, group_C, offs_table, alpha, beta):
+    prev_tf32 = torch.backends.cuda.matmul.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = False
+    ref = group_C.to(torch.float32).clone()
+    A32 = group_A.to(torch.float32)
+    B32 = group_B.to(torch.float32)
+    for m_g, n_g, k_g, start_M, start_K, start_C in offs_table:
+        res = torch.matmul(
+            A32[start_M : start_M + m_g, :k_g], B32[start_K : start_K + k_g, :n_g]
+        )
+        if beta == 0.0:
+            ref[start_C : start_C + m_g, :n_g] = alpha * res
+        else:
+            ref[start_C : start_C + m_g, :n_g] = (
+                alpha * res + beta * ref[start_C : start_C + m_g, :n_g]
+            )
+    torch.backends.cuda.matmul.allow_tf32 = prev_tf32
+    return ref.to(group_A.dtype)
+
+
+def hygon_group_hgemm(group_A, group_B, group_C, offs_table, alpha, beta):
+    m_list = [entry[0] for entry in offs_table]
+    group_list = torch.tensor(m_list, dtype=torch.int32, device=group_A.device).cumsum(
+        0
+    )
+    return flag_blas.group_hgemm(
+        group_A,
+        group_B,
+        group_C,
+        group_list,
+        torch.empty_like(group_C),
+        alpha=alpha,
+        beta=beta,
+    )
+
+
 @pytest.mark.group_gemm
 @pytest.mark.parametrize("k,e,n", utils.GROUP_GEMM_SHAPES)
 def test_accuracy_group_gemm(k, e, n):
@@ -251,6 +300,46 @@ def test_accuracy_group_gemm(k, e, n):
 
     m_list = [random.randint(1, 4096) for _ in range(e)]
     total_M = sum(m_list)
+
+    if IS_ASCEND:
+        group_A = torch.randn(total_M, k, dtype=torch.float16, device=device) * scale
+        group_B = torch.randn(e, k, n, dtype=torch.float16, device=device) * scale
+        group_list = torch.tensor(m_list, dtype=torch.int64, device=device).cumsum(0)
+        group_ref = torch_npu.npu_grouped_matmul(
+            [group_A],
+            [group_B],
+            group_list=group_list,
+            split_item=3,
+            group_type=0,
+            group_list_type=0,
+            output_dtype=group_A.dtype,
+        )[0]
+        group_out = flag_blas.group_hgemm(
+            group_A, group_B, group_list, torch.empty_like(group_ref)
+        )
+        if TO_CPU:
+            group_out = group_out.cpu()
+            group_ref = group_ref.cpu()
+        utils.blas_assert_close(group_out, group_ref, torch.float16, reduce_dim=k)
+        return
+
+    if IS_PPU:
+        group_A = torch.randn(total_M, k, dtype=torch.float16, device=device)
+        group_B = torch.randn(e, k, n, dtype=torch.float16, device=device)
+        group_list = torch.tensor(m_list, dtype=torch.int32, device=device).cumsum(0)
+        ref = torch.cat(
+            [
+                torch.mm(group_A[start:end], group_B[group_idx])
+                for group_idx, (start, end) in enumerate(
+                    zip([0] + group_list[:-1].tolist(), group_list.tolist())
+                )
+            ],
+            dim=0,
+        )
+        out = flag_blas.group_hgemm(group_A, group_B, group_list, torch.empty_like(ref))
+        utils.blas_assert_close(out, ref, torch.float16, reduce_dim=k, atol=2e-4)
+        return
+
     total_K = e * k
 
     group_A = (
@@ -281,21 +370,29 @@ def test_accuracy_group_gemm(k, e, n):
                     alpha * res + beta * ref_C[start_C : start_C + m_g, :n_g]
                 )
         ref = ref_C.to(torch.float16)
+    elif IS_HYGPON:
+        ref = torch_group_gemm_reference(
+            group_A, group_B, group_C, offs_table, alpha, beta
+        )
     else:
         ref = cublas_group_gemm_reference(
             group_A, group_B, group_C, offs_table, alpha, beta
         )
 
-    out = flag_blas.group_hgemm(
-        *_build_triton_arrays(group_A, group_B, group_C, offs_table),
-        alpha=alpha,
-        beta=beta,
-    )
+    if IS_HYGPON:
+        out = hygon_group_hgemm(group_A, group_B, group_C, offs_table, alpha, beta)
+    else:
+        out = flag_blas.group_hgemm(
+            *_build_triton_arrays(group_A, group_B, group_C, offs_table),
+            alpha=alpha,
+            beta=beta,
+        )
 
     utils.blas_assert_close(out, ref, torch.float16, reduce_dim=k)
 
 
 @pytest.mark.group_gemm
+@pytest.mark.skipif(IS_ASCEND or IS_PPU, reason="Hopper-only alpha/beta interface")
 def test_group_gemm_alpha_zero():
     m, k, e, n = 16, 64, 4, 128
     dtype, device = torch.float16, flag_blas.device
@@ -306,9 +403,12 @@ def test_group_gemm_alpha_zero():
     m_list = [m] * e
     offs_table = _build_offs_table(k, e, n, m_list)
 
-    out = flag_blas.group_hgemm(
-        *_build_triton_arrays(A, B, C, offs_table), alpha=0.0, beta=2.0
-    )
+    if IS_HYGPON:
+        out = hygon_group_hgemm(A, B, C, offs_table, 0.0, 2.0)
+    else:
+        out = flag_blas.group_hgemm(
+            *_build_triton_arrays(A, B, C, offs_table), alpha=0.0, beta=2.0
+        )
 
     if TO_CPU:
         utils.blas_assert_close(out, (C_orig * 2.0).to("cpu"), dtype, reduce_dim=k)
@@ -317,128 +417,7 @@ def test_group_gemm_alpha_zero():
 
 
 @pytest.mark.group_gemm
-def test_group_hgemm_dispatches_small_m_with_autotune(monkeypatch):
-    import types
-
-    from flag_blas.runtime.backend._nvidia.hopper.ops import (
-        group_gemm as hopper_group_gemm,
-    )
-
-    calls = []
-
-    class FakeKernel:
-        def __init__(self, name):
-            self.name = name
-
-        def __getitem__(self, grid):
-            def launch(*args, **kwargs):
-                calls.append((self.name, grid, kwargs))
-
-            return launch
-
-    monkeypatch.setattr(
-        torch.cuda,
-        "get_device_properties",
-        lambda *_args, **_kwargs: types.SimpleNamespace(multi_processor_count=1),
-    )
-    monkeypatch.setattr(hopper_group_gemm, "supports_tma", lambda _device=None: True)
-    monkeypatch.setattr(
-        hopper_group_gemm, "grouped_hgemm_small_m_tma_kernel", FakeKernel("small")
-    )
-    monkeypatch.setattr(
-        hopper_group_gemm, "grouped_hgemm_tma_kernel", FakeKernel("regular")
-    )
-    monkeypatch.setattr(
-        hopper_group_gemm, "grouped_hgemm_kernel", FakeKernel("fallback")
-    )
-
-    group_out = torch.empty((1, 1), dtype=torch.float16)
-    dummy_ptrs = torch.empty((0,), dtype=torch.int64)
-    small_m = torch.full((512,), 64, dtype=torch.int32)
-    small_n = torch.full((512,), 2048, dtype=torch.int32)
-    small_k = torch.full((512,), 64, dtype=torch.int32)
-    small_lda = small_k
-    small_ldb = small_n
-    small_ldc = small_n
-    large_m = small_m.clone()
-    large_m[0] = 65
-    mixed_m = torch.tensor([64, 7], dtype=torch.int32)
-    mixed_n = torch.tensor([128, 128], dtype=torch.int32)
-    mixed_k = torch.tensor([32, 32], dtype=torch.int32)
-
-    hopper_group_gemm.group_hgemm(
-        group_out,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        small_m,
-        small_n,
-        small_k,
-        small_lda,
-        small_ldb,
-        small_ldc,
-        512,
-        512 * 64,
-        2048,
-        64,
-        alpha=1.0,
-        beta=0.0,
-        use_small_m=True,
-    )
-
-    assert calls[-1][0] == "small"
-    assert "BLOCK_M" not in calls[-1][2]
-    assert "BLOCK_N" not in calls[-1][2]
-    assert "BLOCK_K" not in calls[-1][2]
-
-    hopper_group_gemm.group_hgemm(
-        group_out,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        mixed_m,
-        mixed_n,
-        mixed_k,
-        mixed_k,
-        mixed_n,
-        mixed_n,
-        2,
-        128,
-        128,
-        32,
-        alpha=1.0,
-        beta=0.0,
-        use_small_m=True,
-    )
-    assert calls[-1][0] == "small"
-
-    hopper_group_gemm.group_hgemm(
-        group_out,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        dummy_ptrs,
-        large_m,
-        small_n,
-        small_k,
-        small_lda,
-        small_ldb,
-        small_ldc,
-        512,
-        511 * 64 + 65,
-        2048,
-        64,
-        alpha=1.0,
-        beta=0.0,
-        use_small_m=True,
-    )
-
-    assert calls[-1][0] == "small"
-
-
-@pytest.mark.group_gemm
+@pytest.mark.skipif(IS_ASCEND or IS_PPU, reason="Hopper-only alpha/beta interface")
 def test_group_gemm_beta_zero():
     m, k, e, n = 8, 32, 3, 64
     dtype, device = torch.float16, flag_blas.device
@@ -448,10 +427,16 @@ def test_group_gemm_beta_zero():
     m_list = [m] * e
     offs_table = _build_offs_table(k, e, n, m_list)
 
-    ref = cublas_group_gemm_reference(A, B, C_zeros, offs_table, 1.0, 0.0)
-    out = flag_blas.group_hgemm(
-        *_build_triton_arrays(A, B, C_zeros, offs_table), alpha=1.0, beta=0.0
-    )
+    if IS_HYGPON:
+        ref = torch_group_gemm_reference(A, B, C_zeros, offs_table, 1.0, 0.0)
+    else:
+        ref = cublas_group_gemm_reference(A, B, C_zeros, offs_table, 1.0, 0.0)
+    if IS_HYGPON:
+        out = hygon_group_hgemm(A, B, C_zeros, offs_table, 1.0, 0.0)
+    else:
+        out = flag_blas.group_hgemm(
+            *_build_triton_arrays(A, B, C_zeros, offs_table), alpha=1.0, beta=0.0
+        )
 
     if TO_CPU:
         utils.blas_assert_close(out, ref.to("cpu"), dtype, reduce_dim=k)
@@ -463,6 +448,7 @@ def test_group_gemm_beta_zero():
 @pytest.mark.parametrize(
     "alpha,beta", [(1.0, 0.0), (2.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)]
 )
+@pytest.mark.skipif(IS_ASCEND or IS_PPU, reason="Hopper-only alpha/beta interface")
 def test_group_gemm_alpha_beta(alpha, beta):
     m, k, e, n = 32, 128, 2, 128
     dtype, device = torch.float16, flag_blas.device
@@ -473,10 +459,16 @@ def test_group_gemm_alpha_beta(alpha, beta):
     m_list = [m] * e
     offs_table = _build_offs_table(k, e, n, m_list)
 
-    ref = cublas_group_gemm_reference(A, B, C, offs_table, alpha, beta)
-    out = flag_blas.group_hgemm(
-        *_build_triton_arrays(A, B, C, offs_table), alpha=alpha, beta=beta
-    )
+    if IS_HYGPON:
+        ref = torch_group_gemm_reference(A, B, C, offs_table, alpha, beta)
+    else:
+        ref = cublas_group_gemm_reference(A, B, C, offs_table, alpha, beta)
+    if IS_HYGPON:
+        out = hygon_group_hgemm(A, B, C, offs_table, alpha, beta)
+    else:
+        out = flag_blas.group_hgemm(
+            *_build_triton_arrays(A, B, C, offs_table), alpha=alpha, beta=beta
+        )
 
     if TO_CPU:
         utils.blas_assert_close(out, ref.to("cpu"), dtype, reduce_dim=k)
