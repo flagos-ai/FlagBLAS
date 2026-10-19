@@ -12,11 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cupy as cp
 import numpy as np
 import pytest
 import torch
-from cupy_backends.cuda.libs import cublas
 from scipy.linalg import blas
 
 import flag_blas
@@ -24,6 +22,12 @@ from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 
 from . import accuracy_utils as utils
 from .conftest import TO_CPU
+
+IS_HYGON = flag_blas.vendor_name == "hygon"
+
+if not IS_HYGON:
+    import cupy as cp
+    from cupy_backends.cuda.libs import cublas
 
 CUDA_R_32F = 0
 CUDA_R_16F = 2
@@ -45,6 +49,17 @@ def cublas_hgemm_reference(
     transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc
 ):
     if m == 0 or n == 0:
+        return
+
+    if IS_HYGON:
+        # DTK 侧无可用 fp16 gemmEx: hipblasGemmEx/Ex_v2 对 fp16 返回
+        # NOT_SUPPORTED/INVALID, 唯一入口 legacy hipblasHgemm 为低精度累加,
+        # 不能作为 fp32 累加契约的参考。这里改用设备端 fp32 matmul (fp32 累加)
+        # 作 oracle, 与非 hygon 的 cublas.gemmEx(compute=CUDA_R_32F) 语义一致。
+        op_a = A if transa == CUBLAS_OP_N else A.t()
+        op_b = B if transb == CUBLAS_OP_N else B.t()
+        acc = torch.matmul(op_a.to(torch.float32), op_b.to(torch.float32))
+        C.copy_(alpha * acc + beta * C.to(torch.float32))
         return
 
     handle = cp.cuda.device.get_cublas_handle()

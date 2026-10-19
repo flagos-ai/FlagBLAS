@@ -17,12 +17,20 @@ import os
 import numpy as np
 import pytest
 import torch
-from cupy_backends.cuda.libs import cublas
 
 import flag_blas
 from benchmark.conftest import Config
-from benchmark.gemm_perf_common import GemmBenchmark
+from benchmark.gemm_perf_common import (
+    IS_HYGON,
+    GemmBenchmark,
+    _HIPBLAS_OP_MAP,
+)
 from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
+
+if IS_HYGON:
+    from benchmark.gemm_perf_common import _load_hipblas
+else:
+    from cupy_backends.cuda.libs import cublas
 
 
 def cublas_cgemm(
@@ -49,6 +57,28 @@ def cublas_cgemm(
     alpha_ptr,
     beta_ptr,
 ):
+    if IS_HYGON:
+        # DTK 侧无 cupy; 走 ctypes hipblasCgemm (alpha/beta 为 hipblasComplex
+        # host 标量, 由 gemm_perf_common.get_input_iter 打包成 alpha_ptr/beta_ptr)。
+        library = _load_hipblas()
+        library.hipblasCgemm(
+            handle,
+            _HIPBLAS_OP_MAP[transa],
+            _HIPBLAS_OP_MAP[transb],
+            m,
+            n,
+            k,
+            alpha_ptr,
+            A_col.data_ptr(),
+            lda_cublas,
+            B_col.data_ptr(),
+            ldb_cublas,
+            beta_ptr,
+            C_col.data_ptr(),
+            ldc_cublas,
+        )
+        return C_col
+
     cublas.cgemm(
         handle,
         transa,

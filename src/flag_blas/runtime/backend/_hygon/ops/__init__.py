@@ -1,3 +1,6 @@
+from .bfgemm import bfgemm
+from .cgemm import cgemm
+from .dgemm import dgemm
 from .amax import camax, damax, samax, zamax
 from .amin import camin, damin, samin, zamin
 from .asum import dasum, dzasum, sasum, scasum
@@ -12,11 +15,13 @@ from .hbmv import chbmv, zhbmv
 from .hemv import chemv, zhemv
 from .her import cher, zher
 from .her2 import cher2, zher2
+from .hgemm import hgemm
 from .hpmv import chpmv, zhpmv
 from .hpr import chpr, zhpr
 from .hpr2 import zhpr2
 from .nrm2 import dnrm2, dznrm2, scnrm2, snrm2
 from .sbmv import dsbmv, ssbmv
+from .sgemm import sgemm
 from .spmv import dspmv, sspmv
 from .symv import csymv, zsymv
 from .syr import csyr, dsyr, ssyr, zsyr
@@ -24,8 +29,14 @@ from .syr2 import dsyr2, ssyr2
 from .tbsv import ctbsv, dtbsv, stbsv, ztbsv
 from .trmv import ctrmv, dtrmv, strmv, ztrmv
 from .trsv import ctrsv, dtrsv, strsv, ztrsv
+from .zgemm import zgemm
 
 __all__ = [
+    "bfgemm",
+    "cgemm",
+    "dgemm",
+    "hgemm",
+    "zgemm",
     "sdot",
     "cdotu",
     "zdotu",
@@ -73,6 +84,7 @@ __all__ = [
     "group_bfgemm",
     "group_hgemm",
     "group_tf32gemm",
+    "sgemm",
     "ssbmv",
     "sspmv",
     "ssyr",

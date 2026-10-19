@@ -1,0 +1,24 @@
+--- a/triton/backends/hcu/compiler_hcu.py	2026-08-23 00:51:48.704814315 +0800
++++ b/triton/backends/hcu/compiler_hcu.py	2026-08-23 00:51:48.680814550 +0800
+@@ -96,6 +96,10 @@
+     #    - see get_options_args() to get more options.
+     sched_latency: str = 'none'
+ 
++    # Per-kernel override of the in-thread-transpose (ITT) pass.
++    # None: fall back to is_in_thread_transpose_enabled(arch) (knobs/env default)
++    use_in_thread_transpose: bool = None
++
+     # wasp options
+     wasp_enabled: bool = False
+     wdra_enabled: bool = False
+@@ -477,7 +481,9 @@
+         hcu.passes.ttgpuir.add_mls_lowering_pass(pm)
+ 
+         passes.ttgpuir.add_reduce_data_duplication(pm)
+-        itt_enabled = is_in_thread_transpose_enabled(options.arch)
++        itt_enabled = options.use_in_thread_transpose
++        if itt_enabled is None:
++            itt_enabled = is_in_thread_transpose_enabled(options.arch)
+         if itt_enabled:
+             hcu.passes.ttgpuir.add_in_thread_transpose(pm)
+             passes.ttgpuir.add_remove_layout_conversions(pm)

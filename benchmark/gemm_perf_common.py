@@ -13,16 +13,15 @@
 # limitations under the License.
 
 import itertools
+import struct
 from typing import Generator, List, Tuple
 
-import cupy as cp
 import numpy as np
 import torch
-from cupy_backends.cuda.libs import cublas
 
 import flag_blas
 from benchmark.performance_utils import Benchmark
-from flag_blas.ops import CUBLAS_OP_N
+from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 from flag_blas.utils import shape_utils
 
 CUDA_R_32F = 0
@@ -34,11 +33,323 @@ CUDA_R_16BF = 14
 # Use the proper cublasComputeType_t / cublasGemmAlgo_t enums there; other
 # vendors keep the original arguments.
 if flag_blas.vendor_name == "thead":
+    from cupy_backends.cuda.libs import cublas
+
     GEMM_COMPUTE_TYPE = cublas.CUBLAS_COMPUTE_32F
     GEMM_ALGO = cublas.CUBLAS_GEMM_DEFAULT
 else:
     GEMM_COMPUTE_TYPE = CUDA_R_32F
     GEMM_ALGO = 0
+
+HIPBLAS_POINTER_MODE_HOST = 0
+
+# DTK hipBLAS follows the rocBLAS convention for the operation enum
+# (HIPBLAS_OP_N/T/C = 111/112/113), while FlagBLAS APIs use cuBLAS-style
+# enums (CUBLAS_OP_N/T/C = 0/1/2). Map between them when calling hipBLAS.
+_HIPBLAS_OP_MAP = {0: 111, 1: 112, 2: 113}
+
+IS_HYGON = flag_blas.vendor_name == "hygon"
+
+if IS_HYGON:
+    import atexit
+    import ctypes
+    import ctypes.util
+
+    _HIPBLAS_LIBRARY = None
+    _HIPBLAS_HANDLES = {}
+
+    class _HipComplex(ctypes.Structure):
+        # hipblasComplex (host scalar for hipblasCgemm's alpha/beta)
+        _fields_ = [("real", ctypes.c_float), ("imag", ctypes.c_float)]
+
+    class _HipDoubleComplex(ctypes.Structure):
+        # hipblasDoubleComplex (host scalar for hipblasZgemm's alpha/beta)
+        _fields_ = [("real", ctypes.c_double), ("imag", ctypes.c_double)]
+
+    def _check_hipblas_status(status, operation):
+        if status != 0:
+            raise RuntimeError(f"{operation} failed with hipBLAS status {status}")
+
+    def _load_hipblas():
+        global _HIPBLAS_LIBRARY
+        if _HIPBLAS_LIBRARY is None:
+            library_name = ctypes.util.find_library("hipblas")
+            if library_name is None:
+                raise RuntimeError("Unable to find the hipBLAS shared library")
+            library = ctypes.CDLL(library_name)
+            library.hipblasCreate.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+            library.hipblasCreate.restype = ctypes.c_int
+            library.hipblasDestroy.argtypes = [ctypes.c_void_p]
+            library.hipblasDestroy.restype = ctypes.c_int
+            library.hipblasSetStream.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            library.hipblasSetStream.restype = ctypes.c_int
+            library.hipblasSetPointerMode.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            library.hipblasSetPointerMode.restype = ctypes.c_int
+            library.hipblasSgemm.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_int,
+            ]
+            library.hipblasSgemm.restype = ctypes.c_int
+            # hipblasDgemm (fp64 in/out) shares the same signature as
+            # hipblasSgemm; only the scalar type pointed by alpha/beta
+            # differs (fp64 instead of fp32).
+            library.hipblasDgemm.argtypes = library.hipblasSgemm.argtypes
+            library.hipblasDgemm.restype = ctypes.c_int
+            # hipblasHgemm (fp16 in/out, fp32 accumulate) shares the same
+            # (handle, transa, transb, m, n, k, alpha, A, lda, B, ldb,
+            # beta, C, ldc) signature as hipblasSgemm.
+            library.hipblasHgemm.argtypes = library.hipblasSgemm.argtypes
+            library.hipblasHgemm.restype = ctypes.c_int
+            # hipblasCgemm (complex64 in/out) shares the same (handle, transa,
+            # transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc) signature as
+            # hipblasSgemm; alpha/beta point to hipblasComplex host structs.
+            library.hipblasCgemm.argtypes = library.hipblasSgemm.argtypes
+            library.hipblasCgemm.restype = ctypes.c_int
+            # hipblasZgemm (complex128 in/out) shares the same signature; alpha/
+            # beta point to hipblasDoubleComplex host structs.
+            library.hipblasZgemm.argtypes = library.hipblasSgemm.argtypes
+            library.hipblasZgemm.restype = ctypes.c_int
+            # hipblasGemmEx_v2: like cuBLAS gemmEx, alpha/beta are scalars in
+            # the compute type and the A/B/C types are selected via hipDataType.
+            library.hipblasGemmEx_v2.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            library.hipblasGemmEx_v2.restype = ctypes.c_int
+            _HIPBLAS_LIBRARY = library
+        return _HIPBLAS_LIBRARY
+
+    def _prepare_hipblas(device):
+        library = _load_hipblas()
+        torch_device = torch.device(device)
+        device_index = torch_device.index
+        if device_index is None:
+            device_index = torch.cuda.current_device()
+        handle = _HIPBLAS_HANDLES.get(device_index)
+        if handle is None:
+            with torch.cuda.device(device_index):
+                handle = ctypes.c_void_p()
+                _check_hipblas_status(
+                    library.hipblasCreate(ctypes.byref(handle)), "hipblasCreate"
+                )
+                _check_hipblas_status(
+                    library.hipblasSetPointerMode(handle, HIPBLAS_POINTER_MODE_HOST),
+                    "hipblasSetPointerMode",
+                )
+            _HIPBLAS_HANDLES[device_index] = handle
+        stream = torch.cuda.current_stream(device).cuda_stream
+        _check_hipblas_status(
+            library.hipblasSetStream(handle, ctypes.c_void_p(stream)),
+            "hipblasSetStream",
+        )
+        return library, handle
+
+    def _hipblas_sgemm(
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha_ptr,
+        A,
+        lda,
+        B,
+        ldb,
+        beta_ptr,
+        C,
+        ldc,
+    ):
+        library = _load_hipblas()
+        _check_hipblas_status(
+            library.hipblasSgemm(
+                handle,
+                _HIPBLAS_OP_MAP[transa],
+                _HIPBLAS_OP_MAP[transb],
+                m,
+                n,
+                k,
+                alpha_ptr,
+                ctypes.c_void_p(A.data_ptr()),
+                lda,
+                ctypes.c_void_p(B.data_ptr()),
+                ldb,
+                beta_ptr,
+                ctypes.c_void_p(C.data_ptr()),
+                ldc,
+            ),
+            "hipblasSgemm",
+        )
+        return C
+
+    def _hipblas_dgemm(
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha_ptr,
+        A,
+        lda,
+        B,
+        ldb,
+        beta_ptr,
+        C,
+        ldc,
+    ):
+        library = _load_hipblas()
+        _check_hipblas_status(
+            library.hipblasDgemm(
+                handle,
+                _HIPBLAS_OP_MAP[transa],
+                _HIPBLAS_OP_MAP[transb],
+                m,
+                n,
+                k,
+                alpha_ptr,
+                ctypes.c_void_p(A.data_ptr()),
+                lda,
+                ctypes.c_void_p(B.data_ptr()),
+                ldb,
+                beta_ptr,
+                ctypes.c_void_p(C.data_ptr()),
+                ldc,
+            ),
+            "hipblasDgemm",
+        )
+        return C
+
+    def _hipblas_hgemm(
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha_ptr,
+        A,
+        lda,
+        B,
+        ldb,
+        beta_ptr,
+        C,
+        ldc,
+    ):
+        library = _load_hipblas()
+        _check_hipblas_status(
+            library.hipblasHgemm(
+                handle,
+                _HIPBLAS_OP_MAP[transa],
+                _HIPBLAS_OP_MAP[transb],
+                m,
+                n,
+                k,
+                alpha_ptr,
+                ctypes.c_void_p(A.data_ptr()),
+                lda,
+                ctypes.c_void_p(B.data_ptr()),
+                ldb,
+                beta_ptr,
+                ctypes.c_void_p(C.data_ptr()),
+                ldc,
+            ),
+            "hipblasHgemm",
+        )
+        return C
+
+    def _hipblas_gemm_ex_v2(
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha_ptr,
+        A,
+        a_type,
+        lda,
+        B,
+        b_type,
+        ldb,
+        beta_ptr,
+        C,
+        c_type,
+        ldc,
+        compute_type,
+        algo=0,
+    ):
+        library = _load_hipblas()
+        _check_hipblas_status(
+            library.hipblasGemmEx_v2(
+                handle,
+                _HIPBLAS_OP_MAP[transa],
+                _HIPBLAS_OP_MAP[transb],
+                m,
+                n,
+                k,
+                alpha_ptr,
+                ctypes.c_void_p(A.data_ptr()),
+                a_type,
+                lda,
+                ctypes.c_void_p(B.data_ptr()),
+                b_type,
+                ldb,
+                beta_ptr,
+                ctypes.c_void_p(C.data_ptr()),
+                c_type,
+                ldc,
+                compute_type,
+                algo,
+            ),
+            "hipblasGemmEx_v2",
+        )
+        return C
+
+    def _destroy_hipblas_handles():
+        if _HIPBLAS_LIBRARY is None:
+            return
+        for handle in tuple(_HIPBLAS_HANDLES.values()):
+            try:
+                _HIPBLAS_LIBRARY.hipblasDestroy(handle)
+            except Exception:
+                pass
+        _HIPBLAS_HANDLES.clear()
+
+    atexit.register(_destroy_hipblas_handles)
+else:
+    import cupy as cp
+    from cupy_backends.cuda.libs import cublas
+
 
 GEMM_SHAPES = [
     (511, 511, 511),
@@ -121,22 +432,40 @@ def cublas_sgemm(
     alpha_ptr,
     beta_ptr,
 ):
-    cublas.sgemm(
-        handle,
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha_ptr,
-        A_col.data_ptr(),
-        lda_cublas,
-        B_col.data_ptr(),
-        ldb_cublas,
-        beta_ptr,
-        C_col.data_ptr(),
-        ldc_cublas,
-    )
+    if IS_HYGON:
+        _hipblas_sgemm(
+            handle,
+            transa,
+            transb,
+            m,
+            n,
+            k,
+            alpha_ptr,
+            A_col,
+            lda_cublas,
+            B_col,
+            ldb_cublas,
+            beta_ptr,
+            C_col,
+            ldc_cublas,
+        )
+    else:
+        cublas.sgemm(
+            handle,
+            transa,
+            transb,
+            m,
+            n,
+            k,
+            alpha_ptr,
+            A_col.data_ptr(),
+            lda_cublas,
+            B_col.data_ptr(),
+            ldb_cublas,
+            beta_ptr,
+            C_col.data_ptr(),
+            ldc_cublas,
+        )
     return C_col
 
 
@@ -206,6 +535,29 @@ def cublas_hgemm(
     alpha_ptr,
     beta_ptr,
 ):
+    if IS_HYGON:
+        # hipblasHgemm is the only DTK hipBLAS entry point that accepts fp16
+        # arrays (hipblasGemmEx/_v2 reject fp16 on this backend). Its alpha and
+        # beta scalars are fp16; get_input_iter packs them accordingly. Note
+        # this entry point is used only as the native latency baseline: it does
+        # not accumulate in fp32, so accuracy is checked against
+        # hgemm_reference() instead.
+        return _hipblas_hgemm(
+            handle,
+            transa,
+            transb,
+            m,
+            n,
+            k,
+            alpha_ptr,
+            A_col,
+            lda_cublas,
+            B_col,
+            ldb_cublas,
+            beta_ptr,
+            C_col,
+            ldc_cublas,
+        )
     cublas.gemmEx(
         handle,
         transa,
@@ -226,6 +578,69 @@ def cublas_hgemm(
         ldc_cublas,
         GEMM_COMPUTE_TYPE,
         GEMM_ALGO,
+    )
+    return C_col
+
+
+def cublas_dgemm(
+    A_col,
+    B_col,
+    C_col,
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha,
+    A_row,
+    B_row,
+    C_row,
+    lda_cublas,
+    ldb_cublas,
+    ldc_cublas,
+    lda_flag,
+    ldb_flag,
+    ldc_flag,
+    beta,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    if IS_HYGON:
+        # hipblasDgemm reads the alpha/beta host scalars as fp64; the
+        # get_input_iter hygon branch packs them into c_double when
+        # alpha_dtype is np.float64.
+        return _hipblas_dgemm(
+            handle,
+            transa,
+            transb,
+            m,
+            n,
+            k,
+            alpha_ptr,
+            A_col,
+            lda_cublas,
+            B_col,
+            ldb_cublas,
+            beta_ptr,
+            C_col,
+            ldc_cublas,
+        )
+    cublas.dgemm(
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha_ptr,
+        A_col.data_ptr(),
+        lda_cublas,
+        B_col.data_ptr(),
+        ldb_cublas,
+        beta_ptr,
+        C_col.data_ptr(),
+        ldc_cublas,
     )
     return C_col
 
@@ -272,6 +687,76 @@ def gems_hgemm_wrapper(
     return C_row
 
 
+def hgemm_reference(
+    A_col,
+    B_col,
+    C_col,
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha,
+    A_row,
+    B_row,
+    C_row,
+    lda_cublas,
+    ldb_cublas,
+    ldc_cublas,
+    lda_flag,
+    ldb_flag,
+    ldc_flag,
+    beta,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    """fp32-accumulation accuracy reference for fp16 GEMM.
+
+    FlagBLAS hgemm kernels accumulate in fp32 (same semantics as cuBLAS
+    gemmEx with CUDA_R_16F inputs / CUDA_R_32F compute, used on NVIDIA below).
+    On Hygon/DTK the only hipBLAS fp16 entry point, hipblasHgemm, accumulates in
+    reduced precision and deviates up to ~10% relative to an fp32 accumulator on
+    large K, so it cannot act as the accuracy oracle. Instead the fp16 operands
+    (exactly representable in fp32) are multiplied on-device in fp32.
+    """
+    if IS_HYGON:
+        A = A_row.float()
+        B = B_row.float()
+        if transa == CUBLAS_OP_T:
+            A = A.t()
+        if transb == CUBLAS_OP_T:
+            B = B.t()
+        acc = alpha * torch.matmul(A, B)
+        if beta != 0:
+            acc += beta * C_row.float()
+        return acc.to(torch.float16)
+    return cublas_hgemm(
+        A_col,
+        B_col,
+        C_col,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_row,
+        B_row,
+        C_row,
+        lda_cublas,
+        ldb_cublas,
+        ldc_cublas,
+        lda_flag,
+        ldb_flag,
+        ldc_flag,
+        beta,
+        handle,
+        alpha_ptr,
+        beta_ptr,
+    )
+
+
 def cublas_bfgemm(
     A_col,
     B_col,
@@ -296,6 +781,32 @@ def cublas_bfgemm(
     alpha_ptr,
     beta_ptr,
 ):
+    if IS_HYGON:
+        # DTK hipBLAS has no working bf16 gemm entry point: hipblasGemmEx and
+        # hipblasGemmEx_v2 reject every (aType, bType, cType, computeType)
+        # combination tested (status HIPBLAS_STATUS_INVALID_ENUM / NOT_SUPPORTED,
+        # including plain fp32), and there is no legacy hipblasBgemm. torch's
+        # bf16 matmul dispatches to the vendor-tuned rocBLAS bf16 Tensile
+        # kernel (ISA936, fp32 accumulate), which is exactly the kernel a
+        # working hipBLAS bf16 gemmEx would select, so it is used here as the
+        # native latency baseline.
+        A = A_row
+        B = B_row
+        if transa == CUBLAS_OP_T:
+            A = A.t()
+        if transb == CUBLAS_OP_T:
+            B = B.t()
+        if alpha == 1.0 and beta == 0.0:
+            # BLAS reference computes in place: C <- A @ B (no alpha/beta
+            # kernel to launch). Skip the identity alpha multiply that would
+            # otherwise add an extra full-tensor kernel per call.
+            C_row.copy_(torch.matmul(A, B))
+        else:
+            out = alpha * torch.matmul(A, B)
+            if beta != 0:
+                out = out + beta * C_row
+            C_row.copy_(out)
+        return C_row
     cublas.gemmEx(
         handle,
         transa,
@@ -344,6 +855,24 @@ def cublas_bfgemm_reference(
     alpha_ptr,
     beta_ptr,
 ):
+    """fp32-accumulation accuracy reference for bf16 GEMM.
+
+    FlagBLAS bfgemm kernels accumulate in fp32 (the cuBLAS gemmEx semantic
+    used on NVIDIA below). On Hygon/DTK there is no hipBLAS bf16 gemm entry
+    point, so the bf16 operands (exactly representable in fp32) are multiplied
+    on-device in fp32 as the accuracy oracle.
+    """
+    if IS_HYGON:
+        A = A_row.float()
+        B = B_row.float()
+        if transa == CUBLAS_OP_T:
+            A = A.t()
+        if transb == CUBLAS_OP_T:
+            B = B.t()
+        acc = alpha * torch.matmul(A, B)
+        if beta != 0:
+            acc += beta * C_row.float()
+        return acc.to(torch.bfloat16)
     C_fp32 = torch.empty_strided(
         C_col.shape, C_col.stride(), dtype=torch.float32, device=C_col.device
     )
@@ -447,15 +976,49 @@ class GemmBenchmark(Benchmark):
         return GEMM_SHAPES + model_shapes()
 
     def get_input_iter(self, cur_dtype) -> Generator:
-        handle = cp.cuda.device.get_cublas_handle()
-        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
-        cublas.setMathMode(handle, 0)
-        torch.backends.cuda.matmul.allow_tf32 = False
+        if IS_HYGON:
+            _, handle = _prepare_hipblas(self.device)
+            if cur_dtype == torch.float16:
+                # hipblasHgemm reads alpha/beta as fp16 (hipblasHalf) scalars,
+                # so pack the host scalars into IEEE-754 binary16.
+                alpha_np = ctypes.c_ushort(
+                    int.from_bytes(struct.pack("<e", float(self.alpha)), "little")
+                )
+                beta_np = ctypes.c_ushort(
+                    int.from_bytes(struct.pack("<e", float(self.beta)), "little")
+                )
+            elif self.alpha_dtype == np.float64:
+                # hipblasDgemm reads alpha/beta as fp64 host scalars.
+                alpha_np = ctypes.c_double(float(self.alpha))
+                beta_np = ctypes.c_double(float(self.beta))
+            elif self.alpha_dtype == np.complex64:
+                # hipblasCgemm reads alpha/beta as hipblasComplex host structs.
+                alpha_np = _HipComplex(float(self.alpha.real), float(self.alpha.imag))
+                beta_np = _HipComplex(float(self.beta.real), float(self.beta.imag))
+            elif self.alpha_dtype == np.complex128:
+                # hipblasZgemm reads alpha/beta as hipblasDoubleComplex host
+                # structs.
+                alpha_np = _HipDoubleComplex(
+                    float(self.alpha.real), float(self.alpha.imag)
+                )
+                beta_np = _HipDoubleComplex(
+                    float(self.beta.real), float(self.beta.imag)
+                )
+            else:
+                alpha_np = ctypes.c_float(float(self.alpha))
+                beta_np = ctypes.c_float(float(self.beta))
+            alpha_ptr = ctypes.byref(alpha_np)
+            beta_ptr = ctypes.byref(beta_np)
+        else:
+            handle = cp.cuda.device.get_cublas_handle()
+            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+            cublas.setMathMode(handle, 0)
+            torch.backends.cuda.matmul.allow_tf32 = False
 
-        alpha_np = np.array(self.alpha, dtype=self.alpha_dtype)
-        beta_np = np.array(self.beta, dtype=self.alpha_dtype)
-        alpha_ptr = alpha_np.ctypes.data
-        beta_ptr = beta_np.ctypes.data
+            alpha_np = np.array(self.alpha, dtype=self.alpha_dtype)
+            beta_np = np.array(self.beta, dtype=self.alpha_dtype)
+            alpha_ptr = alpha_np.ctypes.data
+            beta_ptr = beta_np.ctypes.data
 
         for shape in self.shapes:
             m, n, k = shape

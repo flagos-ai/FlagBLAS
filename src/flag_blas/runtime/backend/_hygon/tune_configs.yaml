@@ -2315,3 +2315,263 @@ group_tf32gemm:
   - META: {NUM_WM: 14, BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 16, USE_BP: 1, PIPE_STAGES: 2, UNROLL: 1}
     num_warps: 16
     num_stages: 2
+
+sgemm_nn_hygon:
+  - META: {BLOCK_M: 32, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 32, BLOCK_N: 32, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 2
+    num_stages: 2
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 16, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 5
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 1}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 1
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 16
+    num_stages: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 1}
+    num_warps: 16
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 1
+  - META: {BLOCK_M: 32, BLOCK_N: 32, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 1}
+    num_warps: 8
+    num_stages: 1
+  - META: {BLOCK_M: 32, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 1
+  - META: {BLOCK_M: 32, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 64, BLOCK_N: 32, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  # v1.12: 4096^3 实测较 (64,64,w4,s2) 快 3.6% (2796.6 vs 2900.9us, 3轮正式协议)
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+sgemm_hygon:
+  # v2.2 (2026-08-30): 池裁剪为 7 个精选 config (tn/nt/tt 37-shape 全量扫描优胜者)。
+  # 大/方 shape (8192^3/16384^3/8192x28672x8192/2048x2048x16384) -> 256x256 w16;
+  # 中 shape (4096^3/1024^3) -> 128x64 w8 或 64x128 w8; tn 方 shape 偏好 128x128 w8 s3;
+  # 瘦/长 N shape (32768x1024x1024/256x8192x2048) -> 128x256 w8 或 64x64 w4。
+  # v2.8 (2026-08-31): 新增 256x256 GROUP_M=8 (原池只有 GROUP_M=1)。GROUP_M 决定
+  # M 方向 tile 的 L2 调度: nt/tt 大 shape 实测 G8 远优于 G1 (16384^3 nt 直连
+  # 198.7->169.5ms、tt 165.2->161.8ms), tuner 按 shape 自行择优, 其余 shape 不变。
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 1}
+    num_warps: 16
+    num_stages: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 16
+    num_stages: 2
+bfgemm_nn: &bfgemm_nn_hygon_configs
+  # v1: Hygon gfx936 bfgemm NN pool。原 Hygon 无 bfgemm_* 段, 回落 NVIDIA 缺省池
+  # (BK=64/128, stages 3-6), 在 gfx936 (<96KB smem) 上大量 shape 只能选到次优小 tile,
+  # 2048^3 NN main 仅 ~77TF。此处 = NVIDIA 原 9 config (保 TT 变体不回归, 超集) +
+  # 实测 hygon 优胜 config (BK=32/64, s2, w4-16; 2048^3 main 222.6->167us -25%,
+  # 4096^3 1352->1040us -23%)。libtuner 每 shape 从并集自选最优, 无回归风险。
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 6
+  - META: {BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 4}
+    num_warps: 4
+    num_stages: 4
+  # --- hygon 实测优胜 (2026-09-03 raw sweep, do_bench median) ---
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 16
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  # --- v2/v3 (2026-09-04): 大/瘦中 shape 全协议实测补池 ---
+  # 补池后 v3 官跑大方形再获一档: 新增的 (256,256,BK64,w8) 使 8192^3 7.53->5.54ms
+  # (~198TF; v2 池最优 (256,256,BK32,w16) 仅 ~146TF), raw 扫描 20+ config 无超
+  # 199TF 者。残余缺口为指令发射层 (Triton bf16 dot = v_mmac_f32_16x16x16_bf16
+  # 16x16x16 mmac, rocBLAS Tensile 更宽 mfma ~333TF/s), config/tile 已到顶;
+  # 其余新增 config 针对 NN/NT/TN-composite/TT 的瘦/中/非方形 shape (flag 侧 -5~-33%)。
+  # (32,32,BK64,w4): m 或 n=64 的方/小 shape (64x512x512 16.0->10.7us, 512x64x512 15.4->11.0us)
+  - META: {BLOCK_M: 32, BLOCK_N: 32, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  # (32,64,BK32,w4): 511^3 24.6->22.7us
+  - META: {BLOCK_M: 32, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  # (128,256,BK32,w4): 256x8192x2048 95.8->88.2us, 2048x11008x4096 1.431->1.039ms, 4096^3 1.041->0.816ms
+  - META: {BLOCK_M: 128, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  # (256,128,BK32,w4): 8192x256x2048 95.2->91.0us (镜像 pair)
+  - META: {BLOCK_M: 256, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 2
+  # (256,256,BK32,w8): 2048^3 166.1->128.5us (-23%)
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  # (256,256,BK64,w8): 2048x12288x4096 1.502->1.131ms, 2048x4096x11008 1.492->1.127ms,
+  # 512x16384x4096 0.574->0.455ms
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  # (128,128,BK32,w8): 4095^3 1.826->1.795ms
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  # (256,256,BK64,w16): 大方形实测 7.17ms (同 tile 的 w8 上方更优, 5.54ms);
+  # 保留在池内由 autotune 按 shape 自行取舍
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 16
+    num_stages: 2
+  # 小 shape (511/1023 级) 补充: 小块多 CTA 缓解并行不足。2026-09-06 do_bench
+  # (w200/r200) TN 511^3 扫: (64,64,BK64,w4/w8) 0.0280 -> (64,32,BK64,w4,s3)
+  # 0.0272/-6% ((64,32) 向 grid 8->16 个 CTA), (32,64,BK32,w4,s3) 0.0274,
+  # (32,32,BK32,w2,s3) 0.0280。四变体共享池, 由 autotune 按 shape 自选。
+  - META: {BLOCK_M: 64, BLOCK_N: 32, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 32, BLOCK_N: 64, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK_M: 32, BLOCK_N: 32, BLOCK_K: 32, GROUP_M: 8}
+    num_warps: 2
+    num_stages: 3
+
+# bfgemm_nt: Hygon gfx936 bfgemm NT 直接内核 pool。此前 hygon 无 bfgemm_nt 段,
+# 回落到 NVIDIA 缺省池 (BK128/s3-6 在 gfx936 smem 上限外大量 shape 只选到次优
+# 小 tile), v4 官跑 NT 大方形仅 8192^3 7.18ms (sp 0.50)、16384^3 55.9ms (sp 0.93)。
+# NT 与 NN 同源通用 level3 内核 (仅 B tile 读法不同: transb=T 时 B 物理 (n,k)),
+# 直接共享 bfgemm_nn 池 (27 configs)。2026-09-05 官方协议 (do_bench w1000/r100/
+# median) 逐 shape 验证: (256,256,BK64,w16,s2) 8192^3 -> 4.10ms (sp 0.87)、
+# 16384^3 -> 32.8ms (sp 1.59)、4096x24576x8192 -> 6.30ms (sp 1.66)、8191^3 -> 9.45ms
+# (sp 0.54) 等, 输出与旧池逐位一致; 小 shape 由 autotune 选小 tile config, 无回退。
+bfgemm_nt: *bfgemm_nn_hygon_configs
+
+# bfgemm_tn: Hygon gfx936 bfgemm TN 直接内核 pool。此前 hygon 无 bfgemm_tn 段,
+# 回落到 NVIDIA 缺省池 (仅 4 config: (64,32,BK128,w8,s5)/(64,64,BK64,w4,s4)/
+# (128,128,BK64,w8,s6)/(128,128,BK64,w8,s3); s5/s6 超出 gfx936 64KB smem 编译失败,
+# 实际可用 ~1-2 个), TN shape 大量只能选到次优 tile (v7 TN 8192^3 仅 0.516 sp 而
+# NN 同 shape 0.595, 且 2048 级小 shape 全低于 NN 对应档)。TN 与 NN/NT 同源通用
+# level3 内核 (仅 A tile 读法不同: transa=T 时 A 物理 (k,m)), 直接共享 bfgemm_nn 池;
+# libtuner 每 shape 从并集自选最优, 池扩大无回归风险 (只增选择)。
+bfgemm_tn: *bfgemm_nn_hygon_configs
+
+# hgemm_nn / hgemm_nt / hgemm_tn: Hygon gfx936 hgemm 专用池。
+# 此前 hygon 无 hgemm_* 段, 回落 NVIDIA 缺省池, TN/TT 变体绝对吞吐偏低
+# (hgemm 报告 2026-09-03: 8192^3 tn ~62 / tt ~76 TFLOPS, nn 105 / nt 154)。
+# hgemm 与 bfgemm 同为 2B dtype、共用同一套通用 level3 内核与 gfx936 资源约束
+# (smem/VGPR), 故初始池直接复用 bfgemm_*_hygon 池 (该池含 NVIDIA 原 9 config
+# 作为超集, libtuner 每 shape 自选最优, 相对缺省池无回退风险)。后续可在真机按
+# fp16 专项扫描增补/收敛。
+hgemm_nn: *bfgemm_nn_hygon_configs
+hgemm_nt: *bfgemm_nn_hygon_configs
+hgemm_tn: *bfgemm_nn_hygon_configs

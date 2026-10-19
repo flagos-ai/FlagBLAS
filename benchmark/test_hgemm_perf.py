@@ -15,7 +15,12 @@
 import pytest
 import torch
 
-from benchmark.gemm_perf_common import GemmBenchmark, cublas_hgemm, gems_hgemm_wrapper
+from benchmark.gemm_perf_common import (
+    GemmBenchmark,
+    cublas_hgemm,
+    gems_hgemm_wrapper,
+    hgemm_reference,
+)
 from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 
 
@@ -32,7 +37,7 @@ def test_perf_hgemm_nn():
     bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
-            torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
+            torch_result = hgemm_reference(A, B, C.clone(), **kwargs)
             gems_result = gems_hgemm_wrapper(A, B, C.clone(), **kwargs)
 
             k = kwargs.get("k", 0)
@@ -53,7 +58,7 @@ def test_perf_hgemm_tn():
     bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
-            torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
+            torch_result = hgemm_reference(A, B, C.clone(), **kwargs)
             gems_result = gems_hgemm_wrapper(A, B, C.clone(), **kwargs)
             k = kwargs.get("k", 0)
             bench.validate_results(torch_result, gems_result, k, tolerance=1e-4)
@@ -73,7 +78,7 @@ def test_perf_hgemm_nt():
     bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
-            torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
+            torch_result = hgemm_reference(A, B, C.clone(), **kwargs)
             gems_result = gems_hgemm_wrapper(A, B, C.clone(), **kwargs)
             k = kwargs.get("k", 0)
             bench.validate_results(torch_result, gems_result, k, tolerance=1e-4)
@@ -93,7 +98,7 @@ def test_perf_hgemm_tt():
     bench.init_user_config()
     for cur_dtype in bench.dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
-            torch_result = cublas_hgemm(A, B, C.clone(), **kwargs)
+            torch_result = hgemm_reference(A, B, C.clone(), **kwargs)
             gems_result = gems_hgemm_wrapper(A, B, C.clone(), **kwargs)
             k = kwargs.get("k", 0)
             bench.validate_results(torch_result, gems_result, k, tolerance=1e-4)

@@ -12,11 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cupy as cp
 import numpy as np
 import pytest
 import torch
-from cupy_backends.cuda.libs import cublas
 from scipy.linalg import blas
 
 import flag_blas
@@ -24,6 +22,12 @@ from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 
 from . import accuracy_utils as utils
 from .conftest import TO_CPU
+
+IS_HYGON = flag_blas.vendor_name == "hygon"
+
+if not IS_HYGON:
+    import cupy as cp
+    from cupy_backends.cuda.libs import cublas
 
 CUDA_R_32F = 0
 CUDA_R_16F = 2
@@ -45,6 +49,19 @@ def cublas_bfgemm_reference(
     transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc
 ):
     if m == 0 or n == 0:
+        return
+
+    if IS_HYGON:
+        # DTK hipBLAS 无可用 bf16 gemm 入口（hipblasGemmEx/_v2 全组合
+        # NOT_SUPPORTED / INVALID_ENUM，且无 legacy hipblasBgemm）；torch 的 bf16
+        # matmul 走 rocBLAS bf16 Tensile（fp32 累加），与 benchmark 基线同口径。
+        Aop = A.t() if transa == CUBLAS_OP_T else A
+        Bop = B.t() if transb == CUBLAS_OP_T else B
+        acc = Aop.to(torch.float32) @ Bop.to(torch.float32)
+        out = alpha * acc
+        if beta != 0.0:
+            out = out + beta * C.to(torch.float32)
+        C.copy_(out.to(torch.bfloat16))
         return
 
     handle = cp.cuda.device.get_cublas_handle()

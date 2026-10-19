@@ -17,60 +17,16 @@ import os
 import numpy as np
 import pytest
 import torch
-from cupy_backends.cuda.libs import cublas
 
 import flag_blas
 from benchmark.conftest import Config
-from benchmark.gemm_perf_common import GemmBenchmark
+from benchmark.gemm_perf_common import GemmBenchmark, cublas_dgemm
 from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 
 pytestmark = pytest.mark.skipif(
     flag_blas.vendor_name == "iluvatar",
     reason="dgemm is not supported on Iluvatar",
 )
-
-
-def cublas_dgemm(
-    A_col,
-    B_col,
-    C_col,
-    transa,
-    transb,
-    m,
-    n,
-    k,
-    alpha,
-    A_row,
-    B_row,
-    C_row,
-    lda_cublas,
-    ldb_cublas,
-    ldc_cublas,
-    lda_flag,
-    ldb_flag,
-    ldc_flag,
-    beta,
-    handle,
-    alpha_ptr,
-    beta_ptr,
-):
-    cublas.dgemm(
-        handle,
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha_ptr,
-        A_col.data_ptr(),
-        lda_cublas,
-        B_col.data_ptr(),
-        ldb_cublas,
-        beta_ptr,
-        C_col.data_ptr(),
-        ldc_cublas,
-    )
-    return C_col
 
 
 def gems_dgemm_wrapper(
