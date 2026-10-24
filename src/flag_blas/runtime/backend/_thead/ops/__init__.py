@@ -12,18 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .amax import camax, damax, samax, zamax
+from .amin import camin, damin, samin, zamin
+from .asum import dzasum, scasum
+from .axpy import caxpy, zaxpy
 from .bfgemm import bfgemm
 from .cgemm import cgemm
+from .copy import ccopy, zcopy
 from .dgemm import dgemm
+from .dot import cdotc, cdotu, zdotc, zdotu
 from .gemv import bfgemv, cgemv, dgemv, hgemv, sgemv, zgemv
 from .ger import dger, sger, zgerc, zgeru
 from .group_gemm import group_bfgemm, group_hgemm, group_tf32gemm
 from .hemv import chemv, zhemv
 from .hgemm import hgemm
+from .nrm2 import dnrm2, dznrm2, scnrm2, snrm2
+from .rotg import zrotg
+from .scal import cscal, csscal, zdscal, zscal
 from .sgemm import sgemm
 from .spmv import dspmv, sspmv
 from .spr import dspr, sspr
 from .spr2 import dspr2, sspr2
+from .swap import dswap, sswap
 from .syr import dsyr, ssyr
 from .syr2 import dsyr2, ssyr2
 from .tbsv import ctbsv, dtbsv, stbsv, ztbsv
@@ -33,6 +43,25 @@ from .trsv import ctrsv, dtrsv, strsv, ztrsv
 from .zgemm import zgemm
 
 __all__ = [
+    "samax",
+    "damax",
+    "camax",
+    "zamax",
+    "samin",
+    "damin",
+    "camin",
+    "zamin",
+    "scasum",
+    "dzasum",
+    "snrm2",
+    "dnrm2",
+    "scnrm2",
+    "dznrm2",
+    "zrotg",
+    "cdotu",
+    "cdotc",
+    "zcopy",
+    "dswap",
     "sgemm",
     "dgemm",
     "hgemm",
@@ -77,4 +106,14 @@ __all__ = [
     "dtrsv",
     "ctrsv",
     "ztrsv",
+    "zdotu",
+    "zdotc",
+    "ccopy",
+    "caxpy",
+    "zaxpy",
+    "cscal",
+    "csscal",
+    "zscal",
+    "zdscal",
+    "sswap",
 ]

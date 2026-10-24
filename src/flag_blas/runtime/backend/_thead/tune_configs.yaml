@@ -543,3 +543,133 @@ thead_ztrsv_trans:
   - META: {BLOCK: 32, CHUNK: 2}
     num_warps: 4
     num_stages: 1
+
+thead_l1_cdot_strided:
+  - META: {BLOCK: 1024, CAP: 128, PAIR: false, CHUNK: true, PIPE_STAGES: 1, LOOP_UNROLL: 1}
+    num_warps: 4
+    num_stages: 1
+  - META: {BLOCK: 256, CAP: 256, PAIR: true, CHUNK: true, PIPE_STAGES: 1, LOOP_UNROLL: 1}
+    num_warps: 2
+    num_stages: 1
+  - META: {BLOCK: 1024, CAP: 128, PAIR: true, CHUNK: true, PIPE_STAGES: 2, LOOP_UNROLL: 1}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK: 1024, CAP: 128, PAIR: false, CHUNK: true, PIPE_STAGES: 2, LOOP_UNROLL: 1}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK: 1024, CAP: 128, PAIR: false, CHUNK: true, PIPE_STAGES: 3, LOOP_UNROLL: 1}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK: 512, CAP: 128, PAIR: true, CHUNK: true, PIPE_STAGES: 2, LOOP_UNROLL: 1}
+    num_warps: 4
+    num_stages: 2
+
+thead_l1_ccopy_contiguous:
+  - META: {BLOCK: 2048}
+    num_warps: 4
+    num_stages: 1
+  - META: {BLOCK: 2048}
+    num_warps: 2
+    num_stages: 1
+thead_l1_update_contiguous:
+  - META: {BLOCK: 2048, CAP: 128}
+    num_warps: 4
+    num_stages: 1
+thead_l1_update_strided:
+  - META: {BLOCK: 512, CAP: 128}
+    num_warps: 4
+    num_stages: 1
+thead_l1_update_strided_small:
+  - META: {BLOCK: 512, CAP: 256}
+    num_warps: 2
+    num_stages: 1
+thead_l1_update_large:
+  - META: {BLOCK: 16384, CAP: 128}
+    num_warps: 8
+    num_stages: 1
+thead_l1_update_strided_double:
+  - META: {BLOCK: 512, CAP: 128}
+    num_warps: 2
+    num_stages: 1
+thead_l1_update_scal:
+  - META: {BLOCK: 2048, CAP: 128}
+    num_warps: 4
+    num_stages: 1
+thead_l1_update_scal_wide:
+  - META: {BLOCK: 512, CAP: 128}
+    num_warps: 4
+    num_stages: 1
+
+thead_l1_camax:
+  - META: {BLOCK: 512, CAP: 128, CHUNK: true, PAIR: false, FILTER: true, PIPE_STAGES: 1}
+    num_warps: 4
+    num_stages: 1
+  - META: {BLOCK: 512, CAP: 128, CHUNK: true, PAIR: true, FILTER: true, PIPE_STAGES: 1}
+    num_warps: 4
+    num_stages: 1
+  - META: {BLOCK: 512, CAP: 256, CHUNK: true, PAIR: true, FILTER: true, PIPE_STAGES: 1}
+    num_warps: 4
+    num_stages: 1
+  - META: {BLOCK: 2048, CAP: 256, CHUNK: true, PAIR: false, FILTER: false, PIPE_STAGES: 1}
+    num_warps: 4
+    num_stages: 1
+  - META: {BLOCK: 512, CAP: 512, PAIR: true, FILTER: true, CHUNK: true, PIPE_STAGES: 1}
+    num_warps: 4
+    num_stages: 1
+  - META: {BLOCK: 512, CAP: 128, CHUNK: true, PAIR: false, FILTER: true, PIPE_STAGES: 3}
+    num_warps: 4
+    num_stages: 3
+  - META: {BLOCK: 512, CAP: 256, CHUNK: true, PAIR: true, FILTER: true, PIPE_STAGES: 3}
+    num_warps: 4
+    num_stages: 3
+
+thead_l1_update_paired_strided:
+  - META: {BLOCK: 512, CAP: 128, LOOP_UNROLL: 1, REGISTER_PREFETCH: false}
+    num_warps: 4
+    num_stages: 2
+
+thead_l1_update_paired_double:
+  - META: {BLOCK: 256, CAP: 128, LOOP_UNROLL: 2, REGISTER_PREFETCH: true}
+    num_warps: 2
+    num_stages: 1
+
+thead_l1_zscal_dense:
+  - META: {BLOCK: 1024, CAP: 128}
+    num_warps: 4
+    num_stages: 1
+
+thead_l1_ccopy_batch:
+  - META: {BLOCK: 512, CAP: 64, BATCH: 4}
+    num_warps: 4
+    num_stages: 2
+
+thead_l1_zdot_pipelined:
+  - META: {BLOCK: 256, CAP: 128, PAIR: false, CHUNK: true, PIPE_STAGES: 1, LOOP_UNROLL: 1}
+    num_warps: 4
+    num_stages: 1
+  - META: {BLOCK: 1024, CAP: 128, PAIR: false, CHUNK: true, PIPE_STAGES: 2, LOOP_UNROLL: 2}
+    num_warps: 4
+    num_stages: 2
+  - META: {BLOCK: 512, CAP: 128, PAIR: false, CHUNK: true, PIPE_STAGES: 3, LOOP_UNROLL: 1}
+    num_warps: 4
+    num_stages: 3
+
+thead_l1_ccopy_pipeline:
+  - META: {BLOCK: 1024, CAP: 128}
+    num_warps: 4
+    num_stages: 2
+
+thead_l1_zcopy_pipeline:
+  - META: {BLOCK: 1024, CAP: 64, CHUNK: false}
+    num_warps: 4
+    num_stages: 3
+
+thead_l1_update_paired_double_small:
+  - META: {BLOCK: 256, CAP: 128, LOOP_UNROLL: 1, REGISTER_PREFETCH: false}
+    num_warps: 2
+    num_stages: 1
+
+thead_l1_update_paired_strided_equal:
+  - META: {BLOCK: 512, CAP: 128, LOOP_UNROLL: 2, REGISTER_PREFETCH: true}
+    num_warps: 2
+    num_stages: 1

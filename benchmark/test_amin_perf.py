@@ -97,14 +97,34 @@ if IS_HYGON:
     gems_zamin = _hygon_amin_wrapper(gems_zamin)
 
 else:
+    if flag_blas.vendor_name == "thead":
 
-    def cublas_isamin(x, incx=1, n=None, handle=None, result=None):
-        cublas.isamin(handle, n, x.data_ptr(), incx, result.data_ptr())
-        return result
+        def _thead_amin_baseline(func):
+            def call(x, incx=1, n=None, handle=None, result=None, host_result=None):
+                func(handle, n, x.data_ptr(), incx, host_result.data_ptr())
+                return host_result
 
-    def cublas_idamin(x, incx=1, n=None, handle=None, result=None):
-        cublas.idamin(handle, n, x.data_ptr(), incx, result.data_ptr())
-        return result
+            return call
+
+        def _thead_amin_wrapper(op):
+            def call(x, incx=1, n=None, handle=None, result=None, host_result=None):
+                return op(x, incx=incx, n=n, handle=handle, result=result)
+
+            return call
+
+        cublas_isamin = _thead_amin_baseline(cublas.isamin)
+        cublas_idamin = _thead_amin_baseline(cublas.idamin)
+        gems_samin = _thead_amin_wrapper(gems_samin)
+        gems_damin = _thead_amin_wrapper(gems_damin)
+    else:
+
+        def cublas_isamin(x, incx=1, n=None, handle=None, result=None):
+            cublas.isamin(handle, n, x.data_ptr(), incx, result.data_ptr())
+            return result
+
+        def cublas_idamin(x, incx=1, n=None, handle=None, result=None):
+            cublas.idamin(handle, n, x.data_ptr(), incx, result.data_ptr())
+            return result
 
     def cublas_icamin(x, incx=1, n=None, handle=None, result=None):
         cublas.icamin(handle, n, x.data_ptr(), incx, result.data_ptr())
@@ -131,7 +151,10 @@ class AminBenchmark(Benchmark):
             c_func = _resolve_hipblas_amin(cur_dtype)
         else:
             handle = cp.cuda.device.get_cublas_handle()
-            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
+            if flag_blas.vendor_name == "thead" and not cur_dtype.is_complex:
+                cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+            else:
+                cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
 
         for shape in self.shapes:
             n = shape[0]
@@ -147,7 +170,19 @@ class AminBenchmark(Benchmark):
             }
             if IS_HYGON:
                 kwargs["c_func"] = c_func
+            if flag_blas.vendor_name == "thead" and not cur_dtype.is_complex:
+                # Allocate outside the timer; FlagBLAS retains its device output.
+                kwargs["host_result"] = torch.empty(1, dtype=torch.int32, device="cpu")
             yield x, kwargs
+
+    def validate_results(self, reference_result, blas_result, dtype, reduce_dim=1):
+        if flag_blas.vendor_name == "thead" and not dtype.is_complex:
+            # The vendor API returns a host index; FlagBLAS returns a device index.
+            reference_result = reference_result.cpu()
+            blas_result = blas_result.cpu()
+        return super().validate_results(
+            reference_result, blas_result, dtype, reduce_dim=reduce_dim
+        )
 
     def get_gbps(self, args, latency):
         x = args[0]
@@ -165,6 +200,8 @@ class AminBenchmark(Benchmark):
 
 if IS_HYGON:
     AminBenchmark.correctness_reference = "hipBLAS"
+elif flag_blas.vendor_name == "thead":
+    AminBenchmark.correctness_reference = "PPU BLAS (host output)"
 
 
 @pytest.mark.samin

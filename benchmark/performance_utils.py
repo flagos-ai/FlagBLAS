@@ -645,6 +645,11 @@ class Benchmark:
 
 
 def run_correctness_then_benchmark(bench):
+    if flag_blas.vendor_name == "thead":
+        from benchmark.thead_l1_reference import needs_h100_l1_reference, run_thead_l1
+
+        if needs_h100_l1_reference(bench.op_name):
+            return run_thead_l1(bench)
     if not Config.query and not Config.skip_correctness:
         bench.run_correctness_check()
     elif Config.skip_correctness:

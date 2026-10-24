@@ -68,10 +68,15 @@ def cpu_amin_reference(n, x, incx, result):
 
 
 def amin_reference(n, x, incx, result):
-    if TO_CPU:
+    if TO_CPU or (flag_blas.vendor_name == "thead" and x.is_complex()):
+        # PPU complex AMIN is unavailable; validate against the CPU reference.
+        if not TO_CPU:
+            print(
+                "[correctness] T-Head complex AMIN uses CPU reference; vendor interface unavailable"
+            )
         ref_result = torch.zeros(result.shape, dtype=result.dtype, device="cpu")
         cpu_amin_reference(n, x, incx, ref_result)
-        return ref_result
+        return ref_result if TO_CPU else ref_result.to(result.device)
 
     ref_x = to_reference(x)
     ref_result = to_reference(result).clone()
@@ -152,6 +157,17 @@ else:
             raise ValueError(f"Unsupported dtype for cuBLAS: {dtype}")
 
         handle = cp.cuda.device.get_cublas_handle()
+        if flag_blas.vendor_name == "thead" and not x.is_complex():
+            # PPU real AMIN requires host memory for its output index.
+            host_result = torch.empty(1, dtype=torch.int32, device="cpu")
+            previous_mode = cublas.getPointerMode(handle)
+            try:
+                cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+                func(handle, n, x.data_ptr(), incx, host_result.data_ptr())
+            finally:
+                cublas.setPointerMode(handle, previous_mode)
+            result.copy_(host_result)
+            return
         cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
 
         func(handle, n, x.data_ptr(), incx, result.data_ptr())
