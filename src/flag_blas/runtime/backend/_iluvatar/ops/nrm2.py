@@ -206,6 +206,125 @@ def nrm2_kernel_direct_complex(
     tl.store(out_ptr, tl.sqrt(block_sum))
 
 
+@libentry()
+@triton.jit
+def sum_finish(P, OUT, N, B: tl.constexpr, COMPLEX: tl.constexpr, SQRT: tl.constexpr):
+    offset = tl.arange(0, B)
+    if COMPLEX:
+        real = tl.sum(tl.load(P + offset * 2, offset < N, 0), 0)
+        imag = tl.sum(tl.load(P + offset * 2 + 1, offset < N, 0), 0)
+        tl.store(OUT, real)
+        tl.store(OUT + 1, imag)
+    else:
+        value = tl.sum(tl.load(P + offset, offset < N, 0), 0)
+        if SQRT:
+            value = tl.sqrt(value)
+        tl.store(OUT, value)
+
+
+@libentry()
+@triton.jit
+def unary_stage1(
+    X,
+    P,
+    N,
+    IX: tl.constexpr,
+    B: tl.constexpr,
+    COMPLEX: tl.constexpr,
+    NORM: tl.constexpr,
+    PERSISTENT: tl.constexpr,
+    DIRECT: tl.constexpr,
+    CACHE: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    step = tl.num_programs(0) * B
+    offset = tl.arange(0, B)
+    acc = tl.full((B,), 0, tl.float32)
+    start = pid * B
+    end = N if PERSISTENT else tl.minimum(N, start + B)
+    while start < end:
+        index = start + offset
+        valid = index < N
+        if COMPLEX:
+            if IX == 1:
+                packed = tl.arange(0, B * 2)
+                value = tl.load(
+                    X + start * 2 + packed,
+                    packed < (N - start) * 2,
+                    0,
+                    cache_modifier=CACHE,
+                )
+                real, imag = tl.split(tl.reshape(value, (B, 2)))
+            else:
+                real = tl.load(X + index * IX * 2, valid, 0, cache_modifier=CACHE)
+                imag = tl.load(X + index * IX * 2 + 1, valid, 0, cache_modifier=CACHE)
+            if NORM:
+                acc += real * real + imag * imag
+            else:
+                acc += tl.abs(real) + tl.abs(imag)
+        else:
+            value = tl.load(X + index * IX, valid, 0, cache_modifier=CACHE)
+            if NORM:
+                acc += value * value
+            else:
+                acc += tl.abs(value)
+        start += step
+    value = tl.sum(acc, 0)
+    if DIRECT and NORM:
+        value = tl.sqrt(value)
+    tl.store(P + pid, value)
+
+
+def _persistent_grid(n, block, device):
+    sm_count = torch.cuda.get_device_properties(device).multi_processor_count
+    return min(triton.cdiv(n, block), sm_count * 8)
+
+
+def _finish_sum(partial, result, count, complex_output=False, sqrt=False):
+    block = triton.next_power_of_2(count)
+    sum_finish[(1,)](
+        triton.reinterpret(partial, tl.float32),
+        triton.reinterpret(result, tl.float32),
+        count,
+        block,
+        complex_output,
+        sqrt,
+        num_warps=4 if block <= 4096 else 8,
+    )
+
+
+def run_small_nrm2(n, x, incx, result):
+    complex_input = x.dtype == torch.complex64
+    if n <= 1024:
+        block, warps = max(256, triton.next_power_of_2(n)), 4
+    elif complex_input and incx >= 5 and n > 4096:
+        block, warps = 256, 4
+    else:
+        block, warps = 8192, 32
+    count = triton.cdiv(n, block)
+    partial = (
+        result
+        if count == 1
+        else torch.empty((count,), dtype=result.dtype, device=x.device)
+    )
+    unary_stage1[(count,)](
+        triton.reinterpret(x, tl.float32),
+        partial,
+        n,
+        incx,
+        block,
+        complex_input,
+        True,
+        False,
+        count == 1,
+        "",
+        num_warps=warps,
+        enable_fp_fusion=False,
+    )
+    if count > 1:
+        _finish_sum(partial, result, count, sqrt=True)
+
+
 def _nrm2_impl(
     n: int,
     x: torch.Tensor,
@@ -228,6 +347,11 @@ def _nrm2_impl(
         result.dim() == 1 and result.numel() == 1
     ), "result must be a 1-element tensor"
     assert x.device == result.device, "x and result must be on the same device"
+
+    if x.dtype in (torch.float32, torch.complex64) and n <= 8192 and n != 1024:
+        with torch_device_fn.device(x.device):
+            run_small_nrm2(n, x, incx, result)
+        return
 
     if x.dtype in (torch.float32, torch.complex64) and n == 1024:
         block_size = triton.next_power_of_2(n)

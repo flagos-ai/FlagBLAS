@@ -415,3 +415,43 @@ mthreads_tpmv:
   - META: {BM: 64, BK: 64}
     num_warps: 16
     num_stages: 1
+
+# Level-3 GEMM tiles.
+# The sgemm entry drives the FMA-style kernel in _mthreads/ops/sgemm.py.
+sgemm:
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 5
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 4
+
+# bfgemm (bf16) tuned configs, scanned on MTT S5000 across the core-shape set.
+# All tile configs measured within ~1% of each other (smem-fed bandwidth wall),
+# so only a small per-variant set is kept to keep autotune fast.
+bfgemm_nn:
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 3
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 16
+    num_stages: 2
+  - META: {BLOCK_M: 64, BLOCK_N: 64, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+
+bfgemm_tn:
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2
+  - META: {BLOCK_M: 64, BLOCK_N: 128, BLOCK_K: 128, GROUP_M: 8}
+    num_warps: 4
+    num_stages: 3
+
+bfgemm_nt:
+  - META: {BLOCK_M: 256, BLOCK_N: 256, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 16
+    num_stages: 2
+  - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
+    num_warps: 8
+    num_stages: 2

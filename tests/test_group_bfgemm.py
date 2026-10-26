@@ -111,7 +111,6 @@ if (
 ):
     cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
 
-
 CUDA_R_16F = 2
 CUDA_R_16BF = 14
 CUBLAS_COMPUTE_32F = 0
@@ -194,6 +193,13 @@ def _build_triton_arrays(group_A, group_B, group_C, offs_table):
 
 
 def cublas_group_gemm_reference(group_A, group_B, group_C, offs_table, alpha, beta):
+    global _cublas
+    import cupy as cp
+    from cupy_backends.cuda.libs import cublas
+    if _cublas is None:
+        _cublas = load_cublas()
+        cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
+
     e = len(offs_table)
     if e == 0:
         return torch.empty_like(group_C)

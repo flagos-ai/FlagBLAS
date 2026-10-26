@@ -81,66 +81,37 @@ def _bfgemm_nn_kernel(
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
-    is_full_m = (pid_m * BLOCK_M + BLOCK_M) <= m
-    is_full_n = (pid_n * BLOCK_N + BLOCK_N) <= n
+    mask_m = offs_am < m
+    mask_n = offs_bn < n
 
     k_full_iters = k // BLOCK_K
     k_remainder = k % BLOCK_K
 
-    if is_full_m and is_full_n:
-        for i in range(k_full_iters):
-            a = tl.load(a_ptrs)
-            b = tl.load(b_ptrs)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-            a_ptrs += BLOCK_K
-            b_ptrs += BLOCK_K * ldb
+    for i in range(k_full_iters):
+        a = tl.load(a_ptrs, mask=mask_m[:, None], other=0.0)
+        b = tl.load(b_ptrs, mask=mask_n[None, :], other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32)
+        a_ptrs += BLOCK_K
+        b_ptrs += BLOCK_K * ldb
 
-        if k_remainder > 0:
-            mask_k = offs_k < k_remainder
-            a = tl.load(a_ptrs, mask=mask_k[None, :], other=0.0)
-            b = tl.load(b_ptrs, mask=mask_k[:, None], other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-    else:
-        mask_m = offs_am < m
-        mask_n = offs_bn < n
-        a_mask_base = mask_m[:, None]
-        b_mask_base = mask_n[None, :]
-
-        for i in range(k_full_iters):
-            a = tl.load(a_ptrs, mask=a_mask_base, other=0.0)
-            b = tl.load(b_ptrs, mask=b_mask_base, other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-            a_ptrs += BLOCK_K
-            b_ptrs += BLOCK_K * ldb
-
-        if k_remainder > 0:
-            mask_k = offs_k < k_remainder
-            a_mask_tail = mask_m[:, None] & mask_k[None, :]
-            b_mask_tail = mask_k[:, None] & mask_n[None, :]
-            a = tl.load(a_ptrs, mask=a_mask_tail, other=0.0)
-            b = tl.load(b_ptrs, mask=b_mask_tail, other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
+    if k_remainder > 0:
+        mask_k = offs_k < k_remainder
+        a_mask_tail = mask_m[:, None] & mask_k[None, :]
+        b_mask_tail = mask_k[:, None] & mask_n[None, :]
+        a = tl.load(a_ptrs, mask=a_mask_tail, other=0.0)
+        b = tl.load(b_ptrs, mask=b_mask_tail, other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32)
 
     offs_cm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     offs_cn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     c_ptrs = c_ptr + (offs_cm[:, None] * ldc + offs_cn[None, :])
 
-    if is_full_m and is_full_n:
-        if BETA_IS_ZERO:
-            tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16))
-        else:
-            c_vals = tl.load(c_ptrs).to(tl.float32)
-            tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16))
+    c_mask = mask_m[:, None] & mask_n[None, :]
+    if BETA_IS_ZERO:
+        tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16), mask=c_mask)
     else:
-        mask_m = offs_cm < m
-        mask_n = offs_cn < n
-        c_mask = mask_m[:, None] & mask_n[None, :]
-
-        if BETA_IS_ZERO:
-            tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16), mask=c_mask)
-        else:
-            c_vals = tl.load(c_ptrs, mask=c_mask).to(tl.float32)
-            tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16), mask=c_mask)
+        c_vals = tl.load(c_ptrs, mask=c_mask).to(tl.float32)
+        tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16), mask=c_mask)
 
 
 @libentry()
@@ -190,66 +161,37 @@ def _bfgemm_tn_kernel(
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
-    is_full_m = (pid_m * BLOCK_M + BLOCK_M) <= m
-    is_full_n = (pid_n * BLOCK_N + BLOCK_N) <= n
+    mask_m = offs_am < m
+    mask_n = offs_bn < n
 
     k_full_iters = k // BLOCK_K
     k_remainder = k % BLOCK_K
 
-    if is_full_m and is_full_n:
-        for i in range(k_full_iters):
-            a = tl.load(a_ptrs)
-            b = tl.load(b_ptrs)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-            a_ptrs += BLOCK_K * lda
-            b_ptrs += BLOCK_K * ldb
+    for i in range(k_full_iters):
+        a = tl.load(a_ptrs, mask=mask_m[:, None], other=0.0)
+        b = tl.load(b_ptrs, mask=mask_n[None, :], other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32)
+        a_ptrs += BLOCK_K * lda
+        b_ptrs += BLOCK_K * ldb
 
-        if k_remainder > 0:
-            mask_k = offs_k < k_remainder
-            a = tl.load(a_ptrs, mask=mask_k[None, :], other=0.0)
-            b = tl.load(b_ptrs, mask=mask_k[:, None], other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-    else:
-        mask_m = offs_am < m
-        mask_n = offs_bn < n
-        a_mask_base = mask_m[:, None]
-        b_mask_base = mask_n[None, :]
-
-        for i in range(k_full_iters):
-            a = tl.load(a_ptrs, mask=a_mask_base, other=0.0)
-            b = tl.load(b_ptrs, mask=b_mask_base, other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-            a_ptrs += BLOCK_K * lda
-            b_ptrs += BLOCK_K * ldb
-
-        if k_remainder > 0:
-            mask_k = offs_k < k_remainder
-            a_mask_tail = mask_m[:, None] & mask_k[None, :]
-            b_mask_tail = mask_k[:, None] & mask_n[None, :]
-            a = tl.load(a_ptrs, mask=a_mask_tail, other=0.0)
-            b = tl.load(b_ptrs, mask=b_mask_tail, other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
+    if k_remainder > 0:
+        mask_k = offs_k < k_remainder
+        a_mask_tail = mask_m[:, None] & mask_k[None, :]
+        b_mask_tail = mask_k[:, None] & mask_n[None, :]
+        a = tl.load(a_ptrs, mask=a_mask_tail, other=0.0)
+        b = tl.load(b_ptrs, mask=b_mask_tail, other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32)
 
     offs_cm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     offs_cn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     c_ptrs = c_ptr + (offs_cm[:, None] * ldc + offs_cn[None, :])
 
-    if is_full_m and is_full_n:
-        if BETA_IS_ZERO:
-            tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16))
-        else:
-            c_vals = tl.load(c_ptrs).to(tl.float32)
-            tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16))
+    c_mask = mask_m[:, None] & mask_n[None, :]
+    if BETA_IS_ZERO:
+        tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16), mask=c_mask)
     else:
-        mask_m = offs_cm < m
-        mask_n = offs_cn < n
-        c_mask = mask_m[:, None] & mask_n[None, :]
-
-        if BETA_IS_ZERO:
-            tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16), mask=c_mask)
-        else:
-            c_vals = tl.load(c_ptrs, mask=c_mask).to(tl.float32)
-            tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16), mask=c_mask)
+        c_vals = tl.load(c_ptrs, mask=c_mask).to(tl.float32)
+        tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16), mask=c_mask)
 
 
 @libentry()
@@ -299,66 +241,37 @@ def _bfgemm_nt_kernel(
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
-    is_full_m = (pid_m * BLOCK_M + BLOCK_M) <= m
-    is_full_n = (pid_n * BLOCK_N + BLOCK_N) <= n
+    mask_m = offs_am < m
+    mask_n = offs_bn < n
 
     k_full_iters = k // BLOCK_K
     k_remainder = k % BLOCK_K
 
-    if is_full_m and is_full_n:
-        for i in range(k_full_iters):
-            a = tl.load(a_ptrs)
-            b = tl.load(b_ptrs)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-            a_ptrs += BLOCK_K
-            b_ptrs += BLOCK_K
+    for i in range(k_full_iters):
+        a = tl.load(a_ptrs, mask=mask_m[:, None], other=0.0)
+        b = tl.load(b_ptrs, mask=mask_n[None, :], other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32)
+        a_ptrs += BLOCK_K
+        b_ptrs += BLOCK_K
 
-        if k_remainder > 0:
-            mask_k = offs_k < k_remainder
-            a = tl.load(a_ptrs, mask=mask_k[None, :], other=0.0)
-            b = tl.load(b_ptrs, mask=mask_k[:, None], other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-    else:
-        mask_m = offs_am < m
-        mask_n = offs_bn < n
-        a_mask_base = mask_m[:, None]
-        b_mask_base = mask_n[None, :]
-
-        for i in range(k_full_iters):
-            a = tl.load(a_ptrs, mask=a_mask_base, other=0.0)
-            b = tl.load(b_ptrs, mask=b_mask_base, other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-            a_ptrs += BLOCK_K
-            b_ptrs += BLOCK_K
-
-        if k_remainder > 0:
-            mask_k = offs_k < k_remainder
-            a_mask_tail = mask_m[:, None] & mask_k[None, :]
-            b_mask_tail = mask_k[:, None] & mask_n[None, :]
-            a = tl.load(a_ptrs, mask=a_mask_tail, other=0.0)
-            b = tl.load(b_ptrs, mask=b_mask_tail, other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
+    if k_remainder > 0:
+        mask_k = offs_k < k_remainder
+        a_mask_tail = mask_m[:, None] & mask_k[None, :]
+        b_mask_tail = mask_k[:, None] & mask_n[None, :]
+        a = tl.load(a_ptrs, mask=a_mask_tail, other=0.0)
+        b = tl.load(b_ptrs, mask=b_mask_tail, other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32)
 
     offs_cm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     offs_cn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     c_ptrs = c_ptr + (offs_cm[:, None] * ldc + offs_cn[None, :])
 
-    if is_full_m and is_full_n:
-        if BETA_IS_ZERO:
-            tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16))
-        else:
-            c_vals = tl.load(c_ptrs).to(tl.float32)
-            tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16))
+    c_mask = mask_m[:, None] & mask_n[None, :]
+    if BETA_IS_ZERO:
+        tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16), mask=c_mask)
     else:
-        mask_m = offs_cm < m
-        mask_n = offs_cn < n
-        c_mask = mask_m[:, None] & mask_n[None, :]
-
-        if BETA_IS_ZERO:
-            tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16), mask=c_mask)
-        else:
-            c_vals = tl.load(c_ptrs, mask=c_mask).to(tl.float32)
-            tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16), mask=c_mask)
+        c_vals = tl.load(c_ptrs, mask=c_mask).to(tl.float32)
+        tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16), mask=c_mask)
 
 
 @libentry()
@@ -408,67 +321,37 @@ def _bfgemm_tt_kernel(
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
-    is_full_m = (pid_m * BLOCK_M + BLOCK_M) <= m
-    is_full_n = (pid_n * BLOCK_N + BLOCK_N) <= n
+    mask_m = offs_am < m
+    mask_n = offs_bn < n
 
     k_full_iters = k // BLOCK_K
     k_remainder = k % BLOCK_K
 
-    if is_full_m and is_full_n:
-        for i in range(k_full_iters):
-            a = tl.load(a_ptrs)
-            b = tl.load(b_ptrs)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-            a_ptrs += BLOCK_K * lda
-            b_ptrs += BLOCK_K
+    for i in range(k_full_iters):
+        a = tl.load(a_ptrs, mask=mask_m[:, None], other=0.0)
+        b = tl.load(b_ptrs, mask=mask_n[None, :], other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32)
+        a_ptrs += BLOCK_K * lda
+        b_ptrs += BLOCK_K
 
-        if k_remainder > 0:
-            mask_k = offs_k < k_remainder
-            a = tl.load(a_ptrs, mask=mask_k[None, :], other=0.0)
-            b = tl.load(b_ptrs, mask=mask_k[:, None], other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-    else:
-        mask_m = offs_am < m
-        mask_n = offs_bn < n
-        a_mask_base = mask_m[:, None]
-        b_mask_base = mask_n[None, :]
-
-        for i in range(k_full_iters):
-            a = tl.load(a_ptrs, mask=a_mask_base, other=0.0)
-            b = tl.load(b_ptrs, mask=b_mask_base, other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
-            a_ptrs += BLOCK_K * lda
-            b_ptrs += BLOCK_K
-
-        if k_remainder > 0:
-            mask_k = offs_k < k_remainder
-            a_mask_tail = mask_m[:, None] & mask_k[None, :]
-            b_mask_tail = mask_k[:, None] & mask_n[None, :]
-            a = tl.load(a_ptrs, mask=a_mask_tail, other=0.0)
-            b = tl.load(b_ptrs, mask=b_mask_tail, other=0.0)
-            acc = tl.dot(a, b, acc, out_dtype=tl.float32)
+    if k_remainder > 0:
+        mask_k = offs_k < k_remainder
+        a_mask_tail = mask_m[:, None] & mask_k[None, :]
+        b_mask_tail = mask_k[:, None] & mask_n[None, :]
+        a = tl.load(a_ptrs, mask=a_mask_tail, other=0.0)
+        b = tl.load(b_ptrs, mask=b_mask_tail, other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32)
 
     offs_cm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     offs_cn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     c_ptrs = c_ptr + (offs_cm[:, None] * ldc + offs_cn[None, :])
 
-    if is_full_m and is_full_n:
-        if BETA_IS_ZERO:
-            tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16))
-        else:
-            c_vals = tl.load(c_ptrs).to(tl.float32)
-            tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16))
+    c_mask = mask_m[:, None] & mask_n[None, :]
+    if BETA_IS_ZERO:
+        tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16), mask=c_mask)
     else:
-        mask_m = offs_cm < m
-        mask_n = offs_cn < n
-        c_mask = mask_m[:, None] & mask_n[None, :]
-
-        if BETA_IS_ZERO:
-            tl.store(c_ptrs, (alpha * acc).to(tl.bfloat16), mask=c_mask)
-        else:
-            c_vals = tl.load(c_ptrs, mask=c_mask).to(tl.float32)
-            tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16), mask=c_mask)
-
+        c_vals = tl.load(c_ptrs, mask=c_mask).to(tl.float32)
+        tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16), mask=c_mask)
 
 def bfgemm(
     transa: int,

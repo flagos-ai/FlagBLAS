@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ctypes
+import os
+
 import numpy as np
 import pytest
 import torch
@@ -23,15 +26,26 @@ from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 from . import accuracy_utils as utils
 from .conftest import TO_CPU
 
+# cuPy/cuBLAS are only available on CUDA-capable vendors; on other backends the
+# reference uses the vendor's native BLAS through ctypes (muBLAS on MThreads)
+# or falls back to a torch.matmul-based implementation.  Hygon uses a
+# device-side fp32 matmul oracle (see cublas_hgemm_reference).
 IS_HYGON = flag_blas.vendor_name == "hygon"
 
-if not IS_HYGON:
+try:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
+    HAS_CUBLAS = True
+except ImportError:
+    cp = None
+    cublas = None
+    HAS_CUBLAS = False
 CUDA_R_32F = 0
 CUDA_R_16F = 2
 CUDA_R_16BF = 14
+
+_CUBLAS_VENDORS = ("nvidia", "iluvatar")
 
 # T-Head (Zhenwu) cuBLAS rejects a legacy cudaDataType passed where
 # cublasGemmEx expects a cublasComputeType_t (CUBLAS_STATUS_NOT_SUPPORTED).
@@ -45,6 +59,115 @@ else:
     GEMM_ALGO = 0
 
 
+def _load_lib(names, search_dir=None):
+    """Load the first shared library that can be resolved."""
+    if search_dir is not None:
+        for name in names:
+            path = os.path.join(search_dir, name)
+            if os.path.exists(path):
+                try:
+                    return ctypes.cdll.LoadLibrary(path)
+                except OSError:
+                    continue
+    for name in names:
+        try:
+            return ctypes.cdll.LoadLibrary(name)
+        except OSError:
+            continue
+    return None
+
+
+# Native BLAS library of the current vendor: (lib, function-prefix).
+_ctypes_blas = None
+if flag_blas.vendor_name in _CUBLAS_VENDORS and not HAS_CUBLAS:
+    _cuda_home = os.environ.get("CUDA_HOME")
+    _lib = _load_lib(
+        ["libcublas.so", "libcublas.so.12", "libcublas.so.11"],
+        os.path.join(_cuda_home, "lib64") if _cuda_home else None,
+    )
+    if _lib is not None:
+        _ctypes_blas = (_lib, "cublas")
+elif flag_blas.vendor_name == "mthreads":
+    _lib = _load_lib(
+        ["libmublas.so", "libmublas.so.1"],
+        os.path.join(os.environ.get("MUSA_HOME", "/usr/local/musa"), "lib"),
+    )
+    if _lib is not None:
+        _ctypes_blas = (_lib, "mublas")
+
+_ctypes_hgemm = None
+_blas_handle = None
+if _ctypes_blas is not None:
+    _lib, _prefix = _ctypes_blas
+    _ctypes_hgemm = getattr(_lib, f"{_prefix}Hgemm", None)
+    if _ctypes_hgemm is not None:
+        _ctypes_hgemm.restype = ctypes.c_int
+        _ctypes_hgemm.argtypes = [
+            ctypes.c_void_p,  # handle
+            ctypes.c_int,  # transa
+            ctypes.c_int,  # transb
+            ctypes.c_int,  # m
+            ctypes.c_int,  # n
+            ctypes.c_int,  # k
+            ctypes.c_void_p,  # alpha
+            ctypes.c_void_p,  # A
+            ctypes.c_int,  # lda
+            ctypes.c_void_p,  # B
+            ctypes.c_int,  # ldb
+            ctypes.c_void_p,  # beta
+            ctypes.c_void_p,  # C
+            ctypes.c_int,  # ldc
+        ]
+
+
+def _get_blas_handle():
+    """Lazily create the native BLAS handle used by ctypes references."""
+    global _blas_handle
+    if _blas_handle is None:
+        lib, prefix = _ctypes_blas
+        create = getattr(lib, f"{prefix}Create_v2", None) or getattr(
+            lib, f"{prefix}Create"
+        )
+        create.restype = ctypes.c_int
+        create.argtypes = [ctypes.c_void_p]
+        handle = ctypes.c_void_p()
+        create(ctypes.byref(handle))
+        _blas_handle = handle.value
+    return _blas_handle
+
+
+def _native_op(code):
+    """Map a cuBLAS op code (N=0/T=1/C=2) to the native BLAS library's codes.
+
+    cuBLAS-compatible libraries (iluvatar) reuse 0/1/2, but muBLAS uses
+    MUBLAS_OP_N=111/MUBLAS_OP_T=112/MUBLAS_OP_C=113.
+    """
+    if _ctypes_blas is not None and _ctypes_blas[1] == "mublas":
+        return {CUBLAS_OP_N: 111, CUBLAS_OP_T: 112, 2: 113}[code]
+    return code
+
+
+_musart_last_error_fn = None
+_musart_loaded = False
+
+
+def _clear_musa_sticky_error():
+    """Consume the sticky error muBLAS leaves on the MUSA context."""
+    global _musart_last_error_fn, _musart_loaded
+    if not _musart_loaded:
+        # MUSA 5.x 提供 libmusart.so.5，4.3.x 提供 libmusart.so.4。
+        _musart_last_error_fn = _load_lib(
+            ("libmusart.so.5", "libmusart.so.4", "libmusart.so"),
+            os.path.join(os.environ.get("MUSA_HOME", "/usr/local/musa"), "lib"),
+        )
+        if _musart_last_error_fn is not None:
+            _musart_last_error_fn.musaGetLastError.restype = ctypes.c_int
+        _musart_loaded = True
+    if _musart_last_error_fn is not None:
+        _musart_last_error_fn.musaGetLastError()
+
+
+
 def cublas_hgemm_reference(
     transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc
 ):
@@ -53,42 +176,92 @@ def cublas_hgemm_reference(
 
     if IS_HYGON:
         # No usable fp16 gemmEx on the DTK side: hipblasGemmEx/Ex_v2 return
-        # NOT_SUPPORTED/INVALID for fp16, and the only entry point, legacy hipblasHgemm, uses low-precision accumulation,
-        # so it cannot serve as a reference for the fp32 accumulation contract. Use device-side fp32 matmul (fp32 accumulation)
-        # as the oracle instead, consistent with cublas.gemmEx(compute=CUDA_R_32F) on non-hygon.
+        # NOT_SUPPORTED/INVALID for fp16, and the only entry point, legacy
+        # hipblasHgemm, uses low-precision accumulation, so it cannot serve as
+        # a reference for the fp32 accumulation contract. Use device-side fp32
+        # matmul (fp32 accumulation) as the oracle instead, consistent with
+        # cublas.gemmEx(compute=CUDA_R_32F) on non-hygon.
         op_a = A if transa == CUBLAS_OP_N else A.t()
         op_b = B if transb == CUBLAS_OP_N else B.t()
         acc = torch.matmul(op_a.to(torch.float32), op_b.to(torch.float32))
         C.copy_(alpha * acc + beta * C.to(torch.float32))
         return
 
-    handle = cp.cuda.device.get_cublas_handle()
-    cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+    if HAS_CUBLAS:
+        handle = cp.cuda.device.get_cublas_handle()
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
 
-    alpha_np = np.array([alpha], dtype=np.float32)
-    beta_np = np.array([beta], dtype=np.float32)
+        alpha_np = np.array([alpha], dtype=np.float32)
+        beta_np = np.array([beta], dtype=np.float32)
 
-    cublas.gemmEx(
-        handle,
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha_np.ctypes.data,
-        A.data_ptr(),
-        CUDA_R_16F,
-        lda,
-        B.data_ptr(),
-        CUDA_R_16F,
-        ldb,
-        beta_np.ctypes.data,
-        C.data_ptr(),
-        CUDA_R_16F,
-        ldc,
-        GEMM_COMPUTE_TYPE,
-        GEMM_ALGO,
+        cublas.gemmEx(
+            handle,
+            transa,
+            transb,
+            m,
+            n,
+            k,
+            alpha_np.ctypes.data,
+            A.data_ptr(),
+            CUDA_R_16F,
+            lda,
+            B.data_ptr(),
+            CUDA_R_16F,
+            ldb,
+            beta_np.ctypes.data,
+            C.data_ptr(),
+            CUDA_R_16F,
+            ldc,
+            GEMM_COMPUTE_TYPE,
+            GEMM_ALGO,
+        )
+        return
+
+    if _ctypes_hgemm is not None:
+        # muBLAS Hgemm expects __half (fp16) scalar pointers for alpha/beta.
+        alpha_np = np.asarray(alpha, dtype=np.float16)
+        beta_np = np.asarray(beta, dtype=np.float16)
+        _ctypes_hgemm(
+            ctypes.c_void_p(_get_blas_handle()),
+            ctypes.c_int(_native_op(transa)),
+            ctypes.c_int(_native_op(transb)),
+            ctypes.c_int(m),
+            ctypes.c_int(n),
+            ctypes.c_int(k),
+            ctypes.c_void_p(alpha_np.ctypes.data),
+            ctypes.c_void_p(A.data_ptr()),
+            ctypes.c_int(lda),
+            ctypes.c_void_p(B.data_ptr()),
+            ctypes.c_int(ldb),
+            ctypes.c_void_p(beta_np.ctypes.data),
+            ctypes.c_void_p(C.data_ptr()),
+            ctypes.c_int(ldc),
+        )
+        if _ctypes_blas is not None and _ctypes_blas[1] == "mublas":
+            _clear_musa_sticky_error()
+        return
+
+    # torch.matmul fallback: rebuild row-major views from the column-major
+    # (cuBLAS-layout) inputs. ``A``/``B``/``C`` are stored with column-major
+    # strides (shape ``(m, k)`` with stride ``(1, m)`` etc.), so a transposed
+    # operand is obtained by viewing the *other* physical layout.
+    if transa == CUBLAS_OP_N:
+        A_row = A.contiguous()
+    else:
+        A_row = A.t().contiguous()
+    if transb == CUBLAS_OP_N:
+        B_row = B.contiguous()
+    else:
+        B_row = B.t().contiguous()
+    C_row = C.contiguous()
+    C_row.copy_(
+        (
+            alpha * torch.matmul(A_row.float(), B_row.float())
+            + beta * C_row.float()
+        ).to(torch.float16)
     )
+    # 就地写回列主序 C：测试逻辑依赖 reference 修改 C_col（C 即 C_col）。
+    C.copy_(C_row)
 
 
 @pytest.mark.hgemm

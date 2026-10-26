@@ -13,8 +13,11 @@
 # limitations under the License.
 
 
+from .amax import samax
+from .asum import sasum, scasum
 from .bfgemm import bfgemm
 from .cgemm import cgemm
+from .dot import cdotc, cdotu, sdot
 from .gemv import bfgemv, fp8_gemv, hgemv, sgemv
 from .ger import cgerc, cgeru, sger
 from .group_gemm import group_bfgemm, group_hgemm, group_tf32gemm
@@ -30,6 +33,12 @@ from .trmv import ctrmv, strmv
 from .trsv import ctrsv, strsv
 
 __all__ = [
+    "samax",
+    "sasum",
+    "scasum",
+    "sdot",
+    "cdotc",
+    "cdotu",
     "sgemv",
     "hgemv",
     "bfgemv",

@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ctypes
+import os
+
 import numpy as np
 import pytest
 import torch
@@ -23,12 +26,21 @@ from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 from . import accuracy_utils as utils
 from .conftest import TO_CPU
 
+# cuPy/cuBLAS are only available on CUDA-capable vendors; on other backends the
+# reference uses the vendor's native BLAS through ctypes (muBLAS/mublasLt on
+# MThreads) or falls back to a torch.matmul-based implementation.  Hygon uses a
+# device-side fp32 matmul oracle (see cublas_bfgemm_reference).
 IS_HYGON = flag_blas.vendor_name == "hygon"
 
-if not IS_HYGON:
+try:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
+    HAS_CUBLAS = True
+except ImportError:
+    cp = None
+    cublas = None
+    HAS_CUBLAS = False
 CUDA_R_32F = 0
 CUDA_R_16F = 2
 CUDA_R_16BF = 14
@@ -45,6 +57,143 @@ else:
     GEMM_ALGO = 0
 
 
+def _load_lib(names, search_dir=None):
+    """Load the first shared library that can be resolved."""
+    if search_dir is not None:
+        for name in names:
+            path = os.path.join(search_dir, name)
+            if os.path.exists(path):
+                try:
+                    return ctypes.cdll.LoadLibrary(path)
+                except OSError:
+                    continue
+    for name in names:
+        try:
+            return ctypes.cdll.LoadLibrary(name)
+        except OSError:
+            continue
+    return None
+
+
+# muBLAS itself has no working bf16 GEMM on the MThreads MUSA driver
+# (mublasGemmEx returns MUBLAS_STATUS_ARCH_MISMATCH), but mublasLt handles bf16
+# with fp32 accumulation, so it is used as the device-side bf16 reference.
+_mublaslt = None
+if flag_blas.vendor_name == "mthreads":
+    _mublaslt = _load_lib(
+        ["libmublasLt.so", "libmublasLt.so.1"],
+        os.path.join(os.environ.get("MUSA_HOME", "/usr/local/musa"), "lib"),
+    )
+
+_mublaslt_handle = None
+
+
+def _get_mublaslt_handle():
+    """Lazily create the mublasLt handle used by ctypes references."""
+    global _mublaslt_handle
+    if _mublaslt_handle is None:
+        handle = ctypes.c_void_p()
+        _mublaslt.mublasLtCreate(ctypes.byref(handle))
+        _mublaslt_handle = handle.value
+    return _mublaslt_handle
+
+
+def _lt_matrix_layout(type_code, rows, cols, ld):
+    """Create a col-major mublasLt matrix layout descriptor."""
+    layout = ctypes.c_void_p()
+    _mublaslt.mublasLtMatrixLayoutCreate(
+        ctypes.byref(layout),
+        ctypes.c_int(type_code),
+        ctypes.c_uint64(rows),
+        ctypes.c_uint64(cols),
+        ctypes.c_int64(ld),
+        ctypes.c_int(0),  # MUBLASLT_ORDER_COL
+    )
+    return layout
+
+
+_musart_last_error_fn = None
+_musart_loaded = False
+
+
+def _clear_musa_sticky_error():
+    """Consume the sticky error muBLAS leaves on the MUSA context."""
+    global _musart_last_error_fn, _musart_loaded
+    if not _musart_loaded:
+        # MUSA 5.x 提供 libmusart.so.5，4.3.x 提供 libmusart.so.4。
+        _musart_last_error_fn = _load_lib(
+            ("libmusart.so.5", "libmusart.so.4", "libmusart.so"),
+            os.path.join(os.environ.get("MUSA_HOME", "/usr/local/musa"), "lib"),
+        )
+        if _musart_last_error_fn is not None:
+            _musart_last_error_fn.musaGetLastError.restype = ctypes.c_int
+        _musart_loaded = True
+    if _musart_last_error_fn is not None:
+        _musart_last_error_fn.musaGetLastError()
+
+
+def _mublaslt_bfgemm_reference(
+    transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc
+):
+    """bf16 reference computed by mublasLtMatmul (fp32 accumulation).
+
+    Transposed operands are re-expressed as physical transposes with col-major
+    layouts (col-major (m, k) layout == row-major (k, m) memory), so the call is
+    always (N, N) and no matmulDesc attributes are needed.
+    """
+    if transa == CUBLAS_OP_N:
+        A_mat, a_ld = A, m
+    else:
+        A_mat, a_ld = A.contiguous(), m  # row-major (k, m) memory
+    if transb == CUBLAS_OP_N:
+        B_mat, b_ld = B, k
+    else:
+        B_mat, b_ld = B.contiguous(), k  # row-major (n, k) memory
+
+    desc = ctypes.c_void_p()
+    # compute type fp32, scalar type fp32 (musaDataType_t code, not compute type)
+    _mublaslt.mublasLtMatmulDescCreate(
+        ctypes.byref(desc), ctypes.c_int(68), ctypes.c_int(0)
+    )
+    Ad = _lt_matrix_layout(CUDA_R_16BF, m, k, a_ld)
+    Bd = _lt_matrix_layout(CUDA_R_16BF, k, n, b_ld)
+    Cd = _lt_matrix_layout(CUDA_R_16BF, m, n, ldc)
+    alpha_np = np.asarray(alpha, dtype=np.float32)
+    beta_np = np.asarray(beta, dtype=np.float32)
+    matmul = _mublaslt.mublasLtMatmul
+    matmul.restype = ctypes.c_int
+    matmul.argtypes = [ctypes.c_void_p] * 14 + [ctypes.c_uint64] + [ctypes.c_void_p]
+    # In-place: D == C, as the test expects the reference to overwrite C.
+    matmul(
+        ctypes.c_void_p(_get_mublaslt_handle()),
+        desc,
+        ctypes.c_void_p(alpha_np.ctypes.data),
+        ctypes.c_void_p(A_mat.data_ptr()),
+        Ad,
+        ctypes.c_void_p(B_mat.data_ptr()),
+        Bd,
+        ctypes.c_void_p(beta_np.ctypes.data),
+        ctypes.c_void_p(C.data_ptr()),
+        Cd,
+        ctypes.c_void_p(C.data_ptr()),
+        Cd,
+        None,
+        None,
+        ctypes.c_uint64(0),
+        None,
+    )
+    # Synchronize before reading MUSA errors: mublasLt kernels run asynchronously
+    # and a failed launch would otherwise surface as a sticky error on a later
+    # torch_musa call.
+    if flag_blas.vendor_name == "mthreads":
+        torch.musa.synchronize()
+    _mublaslt.mublasLtMatmulDescDestroy(desc)
+    for layout in (Ad, Bd, Cd):
+        _mublaslt.mublasLtMatrixLayoutDestroy(layout)
+    if flag_blas.vendor_name == "mthreads":
+        _clear_musa_sticky_error()
+
+
 def cublas_bfgemm_reference(
     transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc
 ):
@@ -54,7 +203,8 @@ def cublas_bfgemm_reference(
     if IS_HYGON:
         # No usable bf16 gemm entry point in DTK hipBLAS (all combinations of
         # hipblasGemmEx/_v2 return NOT_SUPPORTED / INVALID_ENUM, and no legacy
-        # hipblasBgemm); torch bf16 matmul uses rocBLAS bf16 Tensile (fp32 accumulation), same as benchmark baseline.
+        # hipblasBgemm); torch bf16 matmul uses rocBLAS bf16 Tensile (fp32
+        # accumulation), same as the benchmark baseline.
         Aop = A.t() if transa == CUBLAS_OP_T else A
         Bop = B.t() if transb == CUBLAS_OP_T else B
         acc = Aop.to(torch.float32) @ Bop.to(torch.float32)
@@ -64,39 +214,67 @@ def cublas_bfgemm_reference(
         C.copy_(out.to(torch.bfloat16))
         return
 
-    handle = cp.cuda.device.get_cublas_handle()
-    cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+    if HAS_CUBLAS:
+        handle = cp.cuda.device.get_cublas_handle()
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
 
-    alpha_np = np.array([alpha], dtype=np.float32)
-    beta_np = np.array([beta], dtype=np.float32)
+        alpha_np = np.array([alpha], dtype=np.float32)
+        beta_np = np.array([beta], dtype=np.float32)
 
-    C_fp32 = torch.empty_strided(
-        C.shape, C.stride(), dtype=torch.float32, device=C.device
+        C_fp32 = torch.empty_strided(
+            C.shape, C.stride(), dtype=torch.float32, device=C.device
+        )
+        C_fp32.copy_(C)
+
+        cublas.gemmEx(
+            handle,
+            transa,
+            transb,
+            m,
+            n,
+            k,
+            alpha_np.ctypes.data,
+            A.data_ptr(),
+            CUDA_R_16BF,
+            lda,
+            B.data_ptr(),
+            CUDA_R_16BF,
+            ldb,
+            beta_np.ctypes.data,
+            C_fp32.data_ptr(),
+            CUDA_R_32F,
+            ldc,
+            GEMM_COMPUTE_TYPE,
+            GEMM_ALGO,
+        )
+        C.copy_(C_fp32.to(torch.bfloat16))
+        return
+
+    if _mublaslt is not None:
+        _mublaslt_bfgemm_reference(
+            transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc
+        )
+        return
+
+    # torch.matmul fallback: rebuild row-major views from the column-major
+    # (cuBLAS-layout) inputs, computing in fp32 with bf16 output.
+    if transa == CUBLAS_OP_N:
+        A_row = A.contiguous()
+    else:
+        A_row = A.t().contiguous()
+    if transb == CUBLAS_OP_N:
+        B_row = B.contiguous()
+    else:
+        B_row = B.t().contiguous()
+    C_row = C.contiguous()
+    C_row.copy_(
+        (
+            alpha * torch.matmul(A_row.float(), B_row.float())
+            + beta * C_row.float()
+        ).to(torch.bfloat16)
     )
-    C_fp32.copy_(C)
-
-    cublas.gemmEx(
-        handle,
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha_np.ctypes.data,
-        A.data_ptr(),
-        CUDA_R_16BF,
-        lda,
-        B.data_ptr(),
-        CUDA_R_16BF,
-        ldb,
-        beta_np.ctypes.data,
-        C_fp32.data_ptr(),
-        CUDA_R_32F,
-        ldc,
-        GEMM_COMPUTE_TYPE,
-        GEMM_ALGO,
-    )
-    C.copy_(C_fp32.to(torch.bfloat16))
+    # 就地写回列主序 C：测试逻辑依赖 reference 修改 C_col（C 即 C_col）。
+    C.copy_(C_row)
 
 
 @pytest.mark.bfgemm

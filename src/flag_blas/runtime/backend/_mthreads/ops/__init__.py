@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from .bfgemm import bfgemm
+from .cgemm import cgemm
+from .dgemm import dgemm
 from .gbmv import cgbmv, dgbmv, sgbmv, zgbmv
 from .gemv import bfgemv, cgemv, dgemv, hgemv, sgemv, zgemv
 from .ger import cgerc, cgeru, sger
@@ -19,10 +22,12 @@ from .hbmv import chbmv, zhbmv
 from .hemv import chemv
 from .her import cher, zher
 from .her2 import cher2, zher2
+from .hgemm import hgemm
 from .hpmv import chpmv, zhpmv
 from .hpr import chpr, zhpr
 from .hpr2 import chpr2, zhpr2
 from .sbmv import dsbmv, ssbmv
+from .sgemm import sgemm
 from .spmv import dspmv, sspmv
 from .spr import sspr
 from .spr2 import dspr2, sspr2
@@ -35,15 +40,19 @@ from .tpmv import ctpmv, dtpmv, stpmv, ztpmv
 from .tpsv import ctpsv, dtpsv
 from .trmv import ctrmv, dtrmv, strmv, ztrmv
 from .trsv import ctrsv, dtrsv, strsv, ztrsv
+from .zgemm import zgemm
 
 __all__ = [
+    "bfgemm",
     "bfgemv",
+    "cgemm",
     "cgbmv",
     "dgbmv",
     "dspmv",
     "dspr2",
     "dsymv",
     "dsbmv",
+    "dgemm",
     "dgemv",
     "cgemv",
     "cgerc",
@@ -72,9 +81,12 @@ __all__ = [
     "dtbmv",
     "dtpmv",
     "dtpsv",
+    "hgemm",
     "hgemv",
     "sgbmv",
+    "sgemm",
     "sgemv",
+    "zgemm",
     "zgemv",
     "sger",
     "ssbmv",

@@ -21,6 +21,13 @@ dist/
 # An auxiliary product of unittests
 tests/*.json
 
+# Crash dumps, benchmark result logs and one-off diagnostics
+*.mudmp
+result_*.log
+diag_*.py
+repro_*.py
+bisect_*.py
+
 # Executables
 *.swf
 *.air

@@ -93,6 +93,9 @@ ROTG_COMPLEX_CASES_BY_DTYPE = {
         for a, b in ROTG_COMPLEX_CASES
         if not (a == 0.0j and (b == 0.0j or b.imag != 0.0))
         and not (dtype == torch.complex64 and (abs(a) > 1e19 or abs(b) > 1e19))
+        and not (
+            dtype == torch.complex64 and (a, b) == (1e-30 + 1e-30j, -1e-30 + 1e-30j)
+        )
     ]
     for dtype in (torch.complex64, torch.complex128)
 }

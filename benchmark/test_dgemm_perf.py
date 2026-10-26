@@ -20,55 +20,17 @@ import torch
 
 import flag_blas
 from benchmark.conftest import Config
-from benchmark.gemm_perf_common import GemmBenchmark, cublas_dgemm
+from benchmark.gemm_perf_common import (
+    GemmBenchmark,
+    cublas_dgemm,
+    gems_dgemm_wrapper,
+)
 from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 
 pytestmark = pytest.mark.skipif(
     flag_blas.vendor_name == "iluvatar",
     reason="dgemm is not supported on Iluvatar",
 )
-
-
-def gems_dgemm_wrapper(
-    A_col,
-    B_col,
-    C_col,
-    transa,
-    transb,
-    m,
-    n,
-    k,
-    alpha,
-    A_row,
-    B_row,
-    C_row,
-    lda_cublas,
-    ldb_cublas,
-    ldc_cublas,
-    lda_flag,
-    ldb_flag,
-    ldc_flag,
-    beta,
-    handle,
-    alpha_ptr,
-    beta_ptr,
-):
-    flag_blas.dgemm(
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha,
-        A_row,
-        lda_flag,
-        B_row,
-        ldb_flag,
-        beta,
-        C_row,
-        ldc_flag,
-    )
-    return C_row
 
 
 class DgemmBenchmark(GemmBenchmark):
