@@ -7,7 +7,11 @@ import torch
 
 import flag_blas
 from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
-from tests.test_rotg import ROTG_COMPLEX_CASES_BY_DTYPE, ROTG_REAL_CASES
+from tests.test_rotg import (
+    ROTG_COMPLEX_CASES_BY_DTYPE,
+    ROTG_REAL_CASES,
+    _scipy_rotg_reference,
+)
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
 if not IS_HYGON:
@@ -123,7 +127,31 @@ else:
         return a, b, c, s
 
 
+def _cpu_real_rotg_reference(a, b, c, s, handle=None, c_func=None):
+    r, z, c_value, s_value = _scipy_rotg_reference(a.dtype, a.item(), b.item())
+    if c_value == 0.0 and r != 0.0:
+        z = 1.0
+    for tensor, value in ((a, r), (b, z), (c, c_value), (s, s_value)):
+        tensor.fill_(value)
+    return a, b, c, s
+
+
 class RotgBenchmark(Benchmark):
+    def run_correctness_check(self):
+        if flag_blas.vendor_name != "thead" or self.op_name not in {"srotg", "drotg"}:
+            return super().run_correctness_check()
+        # PPU's vendor ROTG returns a different z when a == 0 and b != 0.
+        # Check BLAS semantics on CPU, then restore the vendor function for timing.
+        reference = self.torch_op
+        reference_name = getattr(self, "correctness_reference", "cuBLAS")
+        self.torch_op = _cpu_real_rotg_reference
+        self.correctness_reference = "CPU BLAS"
+        try:
+            return super().run_correctness_check()
+        finally:
+            self.torch_op = reference
+            self.correctness_reference = reference_name
+
     def set_more_shapes(self):
         dtype = self.dtypes[0]
         if dtype.is_complex:

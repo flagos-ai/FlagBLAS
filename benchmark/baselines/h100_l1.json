@@ -2668,7 +2668,7 @@
     "latency_ms": 8.544608116149902
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 64,
@@ -2677,7 +2677,7 @@
     "latency_ms": 0.0063680000603199005
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 1024,
@@ -2686,7 +2686,7 @@
     "latency_ms": 0.006624000146985054
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 2048,
@@ -2695,7 +2695,7 @@
     "latency_ms": 0.010400000028312206
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 4096,
@@ -2704,7 +2704,7 @@
     "latency_ms": 0.010463999584317207
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 65536,
@@ -2713,7 +2713,7 @@
     "latency_ms": 0.010944000445306301
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 5333,
@@ -2722,7 +2722,7 @@
     "latency_ms": 0.01033599954098463
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 100000,
@@ -2731,7 +2731,7 @@
     "latency_ms": 0.011455999687314034
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 1048576,
@@ -2740,7 +2740,7 @@
     "latency_ms": 0.015776000916957855
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 3000000,
@@ -2749,7 +2749,7 @@
     "latency_ms": 0.021695999428629875
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 4194304,
@@ -2758,7 +2758,7 @@
     "latency_ms": 0.026528000831604004
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 10000000,
@@ -2767,7 +2767,7 @@
     "latency_ms": 0.046271998435258865
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 16777216,
@@ -2776,7 +2776,7 @@
     "latency_ms": 0.06390400230884552
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 33554432,
@@ -2785,7 +2785,7 @@
     "latency_ms": 0.1069440022110939
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 50000000,
@@ -2794,7 +2794,7 @@
     "latency_ms": 0.14959999918937683
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 67108864,
@@ -2803,7 +2803,7 @@
     "latency_ms": 0.19326400011777878
   },
   {
-    "op": "camax",
+    "op": "icamax",
     "dtype": "torch.complex64",
     "params": {
       "n": 134217728,
@@ -2812,7 +2812,7 @@
     "latency_ms": 0.3654400110244751
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 256,
@@ -2821,7 +2821,7 @@
     "latency_ms": 0.006527999881654978
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 512,
@@ -2830,7 +2830,7 @@
     "latency_ms": 0.00684799998998642
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 1024,
@@ -2839,7 +2839,7 @@
     "latency_ms": 0.006719999946653843
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 4096,
@@ -2848,7 +2848,7 @@
     "latency_ms": 0.010367999784648418
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 65536,
@@ -2857,7 +2857,7 @@
     "latency_ms": 0.011136000044643879
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 768,
@@ -2866,7 +2866,7 @@
     "latency_ms": 0.0071680000983178616
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 1280,
@@ -2875,7 +2875,7 @@
     "latency_ms": 0.007199999876320362
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 1536,
@@ -2884,7 +2884,7 @@
     "latency_ms": 0.007552000228315592
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 1792,
@@ -2893,7 +2893,7 @@
     "latency_ms": 0.00800000037997961
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 2048,
@@ -2902,7 +2902,7 @@
     "latency_ms": 0.010400000028312206
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 2304,
@@ -2911,7 +2911,7 @@
     "latency_ms": 0.01027199998497963
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 2560,
@@ -2920,7 +2920,7 @@
     "latency_ms": 0.010304000228643417
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 3072,
@@ -2929,7 +2929,7 @@
     "latency_ms": 0.01027199998497963
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 3584,
@@ -2938,7 +2938,7 @@
     "latency_ms": 0.010432000271975994
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 5333,
@@ -2947,7 +2947,7 @@
     "latency_ms": 0.010432000271975994
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 100000,
@@ -2956,7 +2956,7 @@
     "latency_ms": 0.011807999573647976
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 1048576,
@@ -2965,7 +2965,7 @@
     "latency_ms": 0.019200000911951065
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 3000000,
@@ -2974,7 +2974,7 @@
     "latency_ms": 0.031808000057935715
   },
   {
-    "op": "camax_stride_incx2",
+    "op": "icamax_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 4194304,
@@ -2983,7 +2983,7 @@
     "latency_ms": 0.040063999593257904
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 256,
@@ -2992,7 +2992,7 @@
     "latency_ms": 0.006527999881654978
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 512,
@@ -3001,7 +3001,7 @@
     "latency_ms": 0.006912000011652708
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 1024,
@@ -3010,7 +3010,7 @@
     "latency_ms": 0.006688000168651342
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 4096,
@@ -3019,7 +3019,7 @@
     "latency_ms": 0.010623999871313572
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 65536,
@@ -3028,7 +3028,7 @@
     "latency_ms": 0.011935999616980553
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 768,
@@ -3037,7 +3037,7 @@
     "latency_ms": 0.007391999941319227
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 1280,
@@ -3046,7 +3046,7 @@
     "latency_ms": 0.007327999919652939
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 1536,
@@ -3055,7 +3055,7 @@
     "latency_ms": 0.007872000336647034
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 1792,
@@ -3064,7 +3064,7 @@
     "latency_ms": 0.008320000022649765
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 2048,
@@ -3073,7 +3073,7 @@
     "latency_ms": 0.010751999914646149
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 2304,
@@ -3082,7 +3082,7 @@
     "latency_ms": 0.01071999967098236
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 2560,
@@ -3091,7 +3091,7 @@
     "latency_ms": 0.010400000028312206
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 3072,
@@ -3100,7 +3100,7 @@
     "latency_ms": 0.01056000031530857
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 3584,
@@ -3109,7 +3109,7 @@
     "latency_ms": 0.01056000031530857
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 5333,
@@ -3118,7 +3118,7 @@
     "latency_ms": 0.01056000031530857
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 100000,
@@ -3127,7 +3127,7 @@
     "latency_ms": 0.012896000407636166
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 1048576,
@@ -3136,7 +3136,7 @@
     "latency_ms": 0.029664000496268272
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 3000000,
@@ -3145,7 +3145,7 @@
     "latency_ms": 0.05795200169086456
   },
   {
-    "op": "camax_stride_incx5",
+    "op": "icamax_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 4194304,
@@ -4727,7 +4727,7 @@
     "latency_ms": 0.10601600259542465
   },
   {
-    "op": "camin",
+    "op": "icamin",
     "dtype": "torch.complex64",
     "params": {
       "n": 64,
@@ -4736,7 +4736,7 @@
     "latency_ms": 0.006399999838322401
   },
   {
-    "op": "camin",
+    "op": "icamin",
     "dtype": "torch.complex64",
     "params": {
       "n": 1024,
@@ -4745,7 +4745,7 @@
     "latency_ms": 0.0066559999249875546
   },
   {
-    "op": "camin",
+    "op": "icamin",
     "dtype": "torch.complex64",
     "params": {
       "n": 2048,
@@ -4754,7 +4754,7 @@
     "latency_ms": 0.006752000190317631
   },
   {
-    "op": "camin",
+    "op": "icamin",
     "dtype": "torch.complex64",
     "params": {
       "n": 4096,
@@ -4763,7 +4763,7 @@
     "latency_ms": 0.007391999941319227
   },
   {
-    "op": "camin",
+    "op": "icamin",
     "dtype": "torch.complex64",
     "params": {
       "n": 5333,
@@ -4772,7 +4772,7 @@
     "latency_ms": 0.00886400043964386
   },
   {
-    "op": "camin_stride_incx2",
+    "op": "icamin_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 64,
@@ -4781,7 +4781,7 @@
     "latency_ms": 0.006688000168651342
   },
   {
-    "op": "camin_stride_incx2",
+    "op": "icamin_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 1024,
@@ -4790,7 +4790,7 @@
     "latency_ms": 0.006688000168651342
   },
   {
-    "op": "camin_stride_incx2",
+    "op": "icamin_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 2048,
@@ -4799,7 +4799,7 @@
     "latency_ms": 0.00687999976798892
   },
   {
-    "op": "camin_stride_incx2",
+    "op": "icamin_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 4096,
@@ -4808,7 +4808,7 @@
     "latency_ms": 0.007840000092983246
   },
   {
-    "op": "camin_stride_incx2",
+    "op": "icamin_stride_incx2",
     "dtype": "torch.complex64",
     "params": {
       "n": 5333,
@@ -4817,7 +4817,7 @@
     "latency_ms": 0.00902399979531765
   },
   {
-    "op": "camin_stride_incx3",
+    "op": "icamin_stride_incx3",
     "dtype": "torch.complex64",
     "params": {
       "n": 64,
@@ -4826,7 +4826,7 @@
     "latency_ms": 0.006432000081986189
   },
   {
-    "op": "camin_stride_incx3",
+    "op": "icamin_stride_incx3",
     "dtype": "torch.complex64",
     "params": {
       "n": 1024,
@@ -4835,7 +4835,7 @@
     "latency_ms": 0.006719999946653843
   },
   {
-    "op": "camin_stride_incx3",
+    "op": "icamin_stride_incx3",
     "dtype": "torch.complex64",
     "params": {
       "n": 2048,
@@ -4844,7 +4844,7 @@
     "latency_ms": 0.00687999976798892
   },
   {
-    "op": "camin_stride_incx3",
+    "op": "icamin_stride_incx3",
     "dtype": "torch.complex64",
     "params": {
       "n": 4096,
@@ -4853,7 +4853,7 @@
     "latency_ms": 0.007903999648988247
   },
   {
-    "op": "camin_stride_incx3",
+    "op": "icamin_stride_incx3",
     "dtype": "torch.complex64",
     "params": {
       "n": 5333,
@@ -4862,7 +4862,7 @@
     "latency_ms": 0.009056000038981438
   },
   {
-    "op": "camin_stride_incx5",
+    "op": "icamin_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 64,
@@ -4871,7 +4871,7 @@
     "latency_ms": 0.006463999859988689
   },
   {
-    "op": "camin_stride_incx5",
+    "op": "icamin_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 1024,
@@ -4880,7 +4880,7 @@
     "latency_ms": 0.006816000211983919
   },
   {
-    "op": "camin_stride_incx5",
+    "op": "icamin_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 2048,
@@ -4889,7 +4889,7 @@
     "latency_ms": 0.0072639998979866505
   },
   {
-    "op": "camin_stride_incx5",
+    "op": "icamin_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 4096,
@@ -4898,7 +4898,7 @@
     "latency_ms": 0.007903999648988247
   },
   {
-    "op": "camin_stride_incx5",
+    "op": "icamin_stride_incx5",
     "dtype": "torch.complex64",
     "params": {
       "n": 5333,
@@ -8974,7 +8974,7 @@
     "latency_ms": 4.04417610168457
   },
   {
-    "op": "zamin",
+    "op": "izamin",
     "dtype": "torch.complex128",
     "params": {
       "n": 64,
@@ -8983,7 +8983,7 @@
     "latency_ms": 0.006432000081986189
   },
   {
-    "op": "zamin",
+    "op": "izamin",
     "dtype": "torch.complex128",
     "params": {
       "n": 1024,
@@ -8992,7 +8992,7 @@
     "latency_ms": 0.006752000190317631
   },
   {
-    "op": "zamin",
+    "op": "izamin",
     "dtype": "torch.complex128",
     "params": {
       "n": 2048,
@@ -9001,7 +9001,7 @@
     "latency_ms": 0.006912000011652708
   },
   {
-    "op": "zamin",
+    "op": "izamin",
     "dtype": "torch.complex128",
     "params": {
       "n": 4096,
@@ -9010,7 +9010,7 @@
     "latency_ms": 0.007903999648988247
   },
   {
-    "op": "zamin",
+    "op": "izamin",
     "dtype": "torch.complex128",
     "params": {
       "n": 5333,
@@ -9019,7 +9019,7 @@
     "latency_ms": 0.009056000038981438
   },
   {
-    "op": "zamin_stride_incx2",
+    "op": "izamin_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 64,
@@ -9028,7 +9028,7 @@
     "latency_ms": 0.006752000190317631
   },
   {
-    "op": "zamin_stride_incx2",
+    "op": "izamin_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 1024,
@@ -9037,7 +9037,7 @@
     "latency_ms": 0.00684799998998642
   },
   {
-    "op": "zamin_stride_incx2",
+    "op": "izamin_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 2048,
@@ -9046,7 +9046,7 @@
     "latency_ms": 0.0072639998979866505
   },
   {
-    "op": "zamin_stride_incx2",
+    "op": "izamin_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 4096,
@@ -9055,7 +9055,7 @@
     "latency_ms": 0.008128000423312187
   },
   {
-    "op": "zamin_stride_incx2",
+    "op": "izamin_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 5333,
@@ -9064,7 +9064,7 @@
     "latency_ms": 0.009503999724984169
   },
   {
-    "op": "zamin_stride_incx3",
+    "op": "izamin_stride_incx3",
     "dtype": "torch.complex128",
     "params": {
       "n": 64,
@@ -9073,7 +9073,7 @@
     "latency_ms": 0.006496000103652477
   },
   {
-    "op": "zamin_stride_incx3",
+    "op": "izamin_stride_incx3",
     "dtype": "torch.complex128",
     "params": {
       "n": 1024,
@@ -9082,7 +9082,7 @@
     "latency_ms": 0.0071680000983178616
   },
   {
-    "op": "zamin_stride_incx3",
+    "op": "izamin_stride_incx3",
     "dtype": "torch.complex128",
     "params": {
       "n": 2048,
@@ -9091,7 +9091,7 @@
     "latency_ms": 0.007360000163316727
   },
   {
-    "op": "zamin_stride_incx3",
+    "op": "izamin_stride_incx3",
     "dtype": "torch.complex128",
     "params": {
       "n": 4096,
@@ -9100,7 +9100,7 @@
     "latency_ms": 0.008415999822318554
   },
   {
-    "op": "zamin_stride_incx3",
+    "op": "izamin_stride_incx3",
     "dtype": "torch.complex128",
     "params": {
       "n": 5333,
@@ -9109,7 +9109,7 @@
     "latency_ms": 0.009696000255644321
   },
   {
-    "op": "zamin_stride_incx5",
+    "op": "izamin_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 64,
@@ -9118,7 +9118,7 @@
     "latency_ms": 0.006496000103652477
   },
   {
-    "op": "zamin_stride_incx5",
+    "op": "izamin_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 1024,
@@ -9127,7 +9127,7 @@
     "latency_ms": 0.0072639998979866505
   },
   {
-    "op": "zamin_stride_incx5",
+    "op": "izamin_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 2048,
@@ -9136,7 +9136,7 @@
     "latency_ms": 0.007648000027984381
   },
   {
-    "op": "zamin_stride_incx5",
+    "op": "izamin_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 4096,
@@ -9145,7 +9145,7 @@
     "latency_ms": 0.008895999751985073
   },
   {
-    "op": "zamin_stride_incx5",
+    "op": "izamin_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 5333,
@@ -11527,667 +11527,535 @@
     "latency_ms": 4.578432083129883
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 64,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
     "latency_ms": 0.0058559998869895935
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 1024,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.006240000016987324
+    "latency_ms": 0.006016000173985958
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 2048,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.006016000173985958
+    "latency_ms": 0.006047999951988459
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 4096,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.006144000217318535
+    "latency_ms": 0.006207999773323536
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 65536,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.007424000184983015
+    "latency_ms": 0.0072639998979866505
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 5333,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.006399999838322401
+    "latency_ms": 0.006047999951988459
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 100000,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.008224000222980976
+    "latency_ms": 0.00825599953532219
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 1048576,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.028863999992609024
+    "latency_ms": 0.02860799990594387
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 3000000,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.06998399645090103
+    "latency_ms": 0.07017599791288376
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 4194304,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.09564799815416336
+    "latency_ms": 0.09504000097513199
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 10000000,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.2181120067834854
+    "latency_ms": 0.2173440009355545
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 16777216,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.3609279990196228
+    "latency_ms": 0.3591040074825287
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 33554432,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.7172320187091827
+    "latency_ms": 0.7134239971637726
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 50000000,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 1.063904047012329
+    "latency_ms": 1.0641920566558838
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 67108864,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 1.4265919923782349
+    "latency_ms": 1.4249600172042847
   },
   {
-    "op": "zrot",
+    "op": "zdrot",
     "dtype": "torch.complex128",
     "params": {
       "n": 134217728,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 2.843775987625122
+    "latency_ms": 2.8411200046539307
   },
   {
-    "op": "zrot_stride_incx2_incy2",
+    "op": "zdrot_stride_incx2_incy2",
     "dtype": "torch.complex128",
     "params": {
       "n": 1024,
       "incx": 2,
       "incy": 2,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
+    },
+    "latency_ms": 0.006240000016987324
+  },
+  {
+    "op": "zdrot_stride_incx2_incy2",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 5333,
+      "incx": 2,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
     },
     "latency_ms": 0.006463999859988689
   },
   {
-    "op": "zrot_stride_incx2_incy2",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 5333,
-      "incx": 2,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.006463999859988689
-  },
-  {
-    "op": "zrot_stride_incx2_incy2",
+    "op": "zdrot_stride_incx2_incy2",
     "dtype": "torch.complex128",
     "params": {
       "n": 65536,
       "incx": 2,
       "incy": 2,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.009216000325977802
+    "latency_ms": 0.008960000239312649
   },
   {
-    "op": "zrot_stride_incx2_incy2",
+    "op": "zdrot_stride_incx2_incy2",
     "dtype": "torch.complex128",
     "params": {
       "n": 100000,
       "incx": 2,
       "incy": 2,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.010432000271975994
+    "latency_ms": 0.010288000106811523
   },
   {
-    "op": "zrot_stride_incx2_incy2",
+    "op": "zdrot_stride_incx2_incy2",
     "dtype": "torch.complex128",
     "params": {
       "n": 1048576,
       "incx": 2,
       "incy": 2,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.05244800075888634
+    "latency_ms": 0.05100800096988678
   },
   {
-    "op": "zrot_stride_incx2_incy2",
+    "op": "zdrot_stride_incx2_incy2",
     "dtype": "torch.complex128",
     "params": {
       "n": 3000000,
       "incx": 2,
       "incy": 2,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.13688000291585922
+    "latency_ms": 0.13391999900341034
   },
   {
-    "op": "zrot_stride_incx2_incy2",
+    "op": "zdrot_stride_incx2_incy2",
     "dtype": "torch.complex128",
     "params": {
       "n": 4194304,
       "incx": 2,
       "incy": 2,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.1889759972691536
+    "latency_ms": 0.18598400056362152
   },
   {
-    "op": "zrot_stride_incx2_incy3",
+    "op": "zdrot_stride_incx2_incy3",
     "dtype": "torch.complex128",
     "params": {
       "n": 1024,
       "incx": 2,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.0063680000603199005
+    "latency_ms": 0.006240000016987324
   },
   {
-    "op": "zrot_stride_incx2_incy3",
+    "op": "zdrot_stride_incx2_incy3",
     "dtype": "torch.complex128",
     "params": {
       "n": 5333,
       "incx": 2,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.00684799998998642
-  },
-  {
-    "op": "zrot_stride_incx2_incy3",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 65536,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.009696000255644321
-  },
-  {
-    "op": "zrot_stride_incx2_incy3",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 100000,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.01158399973064661
-  },
-  {
-    "op": "zrot_stride_incx2_incy3",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 1048576,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.06249599903821945
-  },
-  {
-    "op": "zrot_stride_incx2_incy3",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 3000000,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.16617600619792938
-  },
-  {
-    "op": "zrot_stride_incx2_incy3",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 4194304,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.22969600558280945
-  },
-  {
-    "op": "zrot_stride_incx3_incy2",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 1024,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.0063680000603199005
-  },
-  {
-    "op": "zrot_stride_incx3_incy2",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 5333,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.006816000211983919
-  },
-  {
-    "op": "zrot_stride_incx3_incy2",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 65536,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.0098879998549819
-  },
-  {
-    "op": "zrot_stride_incx3_incy2",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 100000,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.011392000131309032
-  },
-  {
-    "op": "zrot_stride_incx3_incy2",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 1048576,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.06265600025653839
-  },
-  {
-    "op": "zrot_stride_incx3_incy2",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 3000000,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.16550399363040924
-  },
-  {
-    "op": "zrot_stride_incx3_incy2",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 4194304,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.22979199886322021
-  },
-  {
-    "op": "zrot_stride_incx3_incy3",
-    "dtype": "torch.complex128",
-    "params": {
-      "n": 1024,
-      "incx": 3,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
     "latency_ms": 0.006624000146985054
   },
   {
-    "op": "zrot_stride_incx3_incy3",
+    "op": "zdrot_stride_incx2_incy3",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 65536,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.009344000369310379
+  },
+  {
+    "op": "zdrot_stride_incx2_incy3",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 100000,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.011168000288307667
+  },
+  {
+    "op": "zdrot_stride_incx2_incy3",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 1048576,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.05951999872922897
+  },
+  {
+    "op": "zdrot_stride_incx2_incy3",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 3000000,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.15910400450229645
+  },
+  {
+    "op": "zdrot_stride_incx2_incy3",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 4194304,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.22230400145053864
+  },
+  {
+    "op": "zdrot_stride_incx3_incy2",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 1024,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.006240000016987324
+  },
+  {
+    "op": "zdrot_stride_incx3_incy2",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 5333,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.006432000081986189
+  },
+  {
+    "op": "zdrot_stride_incx3_incy2",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 65536,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.009375999681651592
+  },
+  {
+    "op": "zdrot_stride_incx3_incy2",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 100000,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.011392000131309032
+  },
+  {
+    "op": "zdrot_stride_incx3_incy2",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 1048576,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.0605119988322258
+  },
+  {
+    "op": "zdrot_stride_incx3_incy2",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 3000000,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.1589760035276413
+  },
+  {
+    "op": "zdrot_stride_incx3_incy2",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 4194304,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.22230400145053864
+  },
+  {
+    "op": "zdrot_stride_incx3_incy3",
+    "dtype": "torch.complex128",
+    "params": {
+      "n": 1024,
+      "incx": 3,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.006304000038653612
+  },
+  {
+    "op": "zdrot_stride_incx3_incy3",
     "dtype": "torch.complex128",
     "params": {
       "n": 5333,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.00684799998998642
+    "latency_ms": 0.006527999881654978
   },
   {
-    "op": "zrot_stride_incx3_incy3",
+    "op": "zdrot_stride_incx3_incy3",
     "dtype": "torch.complex128",
     "params": {
       "n": 65536,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.010463999584317207
+    "latency_ms": 0.010015999898314476
   },
   {
-    "op": "zrot_stride_incx3_incy3",
+    "op": "zdrot_stride_incx3_incy3",
     "dtype": "torch.complex128",
     "params": {
       "n": 100000,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.012256000190973282
+    "latency_ms": 0.012384000234305859
   },
   {
-    "op": "zrot_stride_incx3_incy3",
+    "op": "zdrot_stride_incx3_incy3",
     "dtype": "torch.complex128",
     "params": {
       "n": 1048576,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.07379200309515
+    "latency_ms": 0.07044799998402596
   },
   {
-    "op": "zrot_stride_incx3_incy3",
+    "op": "zdrot_stride_incx3_incy3",
     "dtype": "torch.complex128",
     "params": {
       "n": 3000000,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.19684799760580063
+    "latency_ms": 0.18985599279403687
   },
   {
-    "op": "zrot_stride_incx3_incy3",
+    "op": "zdrot_stride_incx3_incy3",
     "dtype": "torch.complex128",
     "params": {
       "n": 4194304,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.2731519937515259
+    "latency_ms": 0.2653439939022064
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 64,
@@ -12196,7 +12064,7 @@
     "latency_ms": 0.006463999859988689
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 1024,
@@ -12205,7 +12073,7 @@
     "latency_ms": 0.006816000211983919
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 2048,
@@ -12214,7 +12082,7 @@
     "latency_ms": 0.007007999811321497
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 4096,
@@ -12223,7 +12091,7 @@
     "latency_ms": 0.007648000027984381
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 65536,
@@ -12232,7 +12100,7 @@
     "latency_ms": 0.029664000496268272
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 5333,
@@ -12241,7 +12109,7 @@
     "latency_ms": 0.009088000282645226
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 100000,
@@ -12250,7 +12118,7 @@
     "latency_ms": 0.043168000876903534
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 1048576,
@@ -12259,7 +12127,7 @@
     "latency_ms": 0.3579519987106323
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 3000000,
@@ -12268,7 +12136,7 @@
     "latency_ms": 1.0162720084190369
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 4194304,
@@ -12277,7 +12145,7 @@
     "latency_ms": 1.4207679629325867
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 10000000,
@@ -12286,7 +12154,7 @@
     "latency_ms": 3.3104639053344727
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 16777216,
@@ -12295,7 +12163,7 @@
     "latency_ms": 5.540319919586182
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 33554432,
@@ -12304,7 +12172,7 @@
     "latency_ms": 11.06004810333252
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 50000000,
@@ -12313,7 +12181,7 @@
     "latency_ms": 16.471152305603027
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 67108864,
@@ -12322,7 +12190,7 @@
     "latency_ms": 22.09046459197998
   },
   {
-    "op": "zamax",
+    "op": "izamax",
     "dtype": "torch.complex128",
     "params": {
       "n": 134217728,
@@ -12331,7 +12199,7 @@
     "latency_ms": 44.1581916809082
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 256,
@@ -12340,7 +12208,7 @@
     "latency_ms": 0.007040000054985285
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 512,
@@ -12349,7 +12217,7 @@
     "latency_ms": 0.006783999968320131
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 1024,
@@ -12358,7 +12226,7 @@
     "latency_ms": 0.006943999789655209
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 4096,
@@ -12367,7 +12235,7 @@
     "latency_ms": 0.007903999648988247
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 65536,
@@ -12376,7 +12244,7 @@
     "latency_ms": 0.031136000528931618
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 768,
@@ -12385,7 +12253,7 @@
     "latency_ms": 0.007615999784320593
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 1280,
@@ -12394,7 +12262,7 @@
     "latency_ms": 0.00774399982765317
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 1536,
@@ -12403,7 +12271,7 @@
     "latency_ms": 0.007519999984651804
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 1792,
@@ -12412,7 +12280,7 @@
     "latency_ms": 0.008383999578654766
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 2048,
@@ -12421,7 +12289,7 @@
     "latency_ms": 0.007007999811321497
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 2304,
@@ -12430,7 +12298,7 @@
     "latency_ms": 0.007903999648988247
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 2560,
@@ -12439,7 +12307,7 @@
     "latency_ms": 0.00774399982765317
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 3072,
@@ -12448,7 +12316,7 @@
     "latency_ms": 0.007807999849319458
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 3584,
@@ -12457,7 +12325,7 @@
     "latency_ms": 0.00825599953532219
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 5333,
@@ -12466,7 +12334,7 @@
     "latency_ms": 0.009535999968647957
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 100000,
@@ -12475,7 +12343,7 @@
     "latency_ms": 0.0451200008392334
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 1048576,
@@ -12484,7 +12352,7 @@
     "latency_ms": 0.38944000005722046
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 3000000,
@@ -12493,7 +12361,7 @@
     "latency_ms": 1.087712049484253
   },
   {
-    "op": "zamax_stride_incx2",
+    "op": "izamax_stride_incx2",
     "dtype": "torch.complex128",
     "params": {
       "n": 4194304,
@@ -12502,7 +12370,7 @@
     "latency_ms": 1.512336015701294
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 256,
@@ -12511,7 +12379,7 @@
     "latency_ms": 0.007199999876320362
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 512,
@@ -12520,7 +12388,7 @@
     "latency_ms": 0.006783999968320131
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 1024,
@@ -12529,7 +12397,7 @@
     "latency_ms": 0.007007999811321497
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 4096,
@@ -12538,7 +12406,7 @@
     "latency_ms": 0.008608000352978706
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 65536,
@@ -12547,7 +12415,7 @@
     "latency_ms": 0.035711999982595444
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 768,
@@ -12556,7 +12424,7 @@
     "latency_ms": 0.007807999849319458
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 1280,
@@ -12565,7 +12433,7 @@
     "latency_ms": 0.007935999892652035
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 1536,
@@ -12574,7 +12442,7 @@
     "latency_ms": 0.00774399982765317
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 1792,
@@ -12583,7 +12451,7 @@
     "latency_ms": 0.008799999952316284
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 2048,
@@ -12592,7 +12460,7 @@
     "latency_ms": 0.007424000184983015
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 2304,
@@ -12601,7 +12469,7 @@
     "latency_ms": 0.008415999822318554
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 2560,
@@ -12610,7 +12478,7 @@
     "latency_ms": 0.008191999979317188
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 3072,
@@ -12619,7 +12487,7 @@
     "latency_ms": 0.00825599953532219
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 3584,
@@ -12628,7 +12496,7 @@
     "latency_ms": 0.008960000239312649
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 5333,
@@ -12637,7 +12505,7 @@
     "latency_ms": 0.010400000028312206
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 100000,
@@ -12646,7 +12514,7 @@
     "latency_ms": 0.051072001457214355
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 1048576,
@@ -12655,7 +12523,7 @@
     "latency_ms": 0.455487996339798
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 3000000,
@@ -12664,7 +12532,7 @@
     "latency_ms": 1.2590080499649048
   },
   {
-    "op": "zamax_stride_incx5",
+    "op": "izamax_stride_incx5",
     "dtype": "torch.complex128",
     "params": {
       "n": 4194304,
@@ -12673,664 +12541,532 @@
     "latency_ms": 1.7475200295448303
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 64,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.00559999980032444
+    "latency_ms": 0.005760000087320805
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 1024,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.005727999843657017
+    "latency_ms": 0.005760000087320805
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 2048,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.006016000173985958
+    "latency_ms": 0.00598399993032217
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 4096,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.006047999951988459
+    "latency_ms": 0.005919999908655882
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 65536,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.006591999903321266
+    "latency_ms": 0.006688000168651342
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 5333,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.005888000130653381
+    "latency_ms": 0.005919999908655882
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 100000,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.00723200011998415
+    "latency_ms": 0.006976000033318996
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 1048576,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.017472000792622566
+    "latency_ms": 0.017791999503970146
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 3000000,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
     "latency_ms": 0.038015998899936676
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 4194304,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.050175998359918594
+    "latency_ms": 0.05040000006556511
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 10000000,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.11126399785280228
+    "latency_ms": 0.11180800199508667
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 16777216,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.1828480064868927
+    "latency_ms": 0.18272000551223755
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 33554432,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.3592959940433502
+    "latency_ms": 0.3590079993009567
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 50000000,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.5294559895992279
+    "latency_ms": 0.5297920107841492
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 67108864,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
     "latency_ms": 0.7141119837760925
   },
   {
-    "op": "crot",
+    "op": "csrot",
     "dtype": "torch.complex64",
     "params": {
       "n": 134217728,
       "incx": 1,
       "incy": 1,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 1.4213280081748962
+    "latency_ms": 1.421023964881897
   },
   {
-    "op": "crot_stride_incx2_incy2",
+    "op": "csrot_stride_incx2_incy2",
     "dtype": "torch.complex64",
     "params": {
       "n": 1024,
       "incx": 2,
       "incy": 2,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.005824000108987093
-  },
-  {
-    "op": "crot_stride_incx2_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 5333,
-      "incx": 2,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.006207999773323536
-  },
-  {
-    "op": "crot_stride_incx2_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 65536,
-      "incx": 2,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.007424000184983015
-  },
-  {
-    "op": "crot_stride_incx2_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 100000,
-      "incx": 2,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.008320000022649765
-  },
-  {
-    "op": "crot_stride_incx2_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 1048576,
-      "incx": 2,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.02860799990594387
-  },
-  {
-    "op": "crot_stride_incx2_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 3000000,
-      "incx": 2,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.07004799693822861
-  },
-  {
-    "op": "crot_stride_incx2_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 4194304,
-      "incx": 2,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.09567999839782715
-  },
-  {
-    "op": "crot_stride_incx2_incy3",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 1024,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.006144000217318535
-  },
-  {
-    "op": "crot_stride_incx2_incy3",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 5333,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.006144000217318535
-  },
-  {
-    "op": "crot_stride_incx2_incy3",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 65536,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.007935999892652035
-  },
-  {
-    "op": "crot_stride_incx2_incy3",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 100000,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.008832000195980072
-  },
-  {
-    "op": "crot_stride_incx2_incy3",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 1048576,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.03403199836611748
-  },
-  {
-    "op": "crot_stride_incx2_incy3",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 3000000,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.08614400029182434
-  },
-  {
-    "op": "crot_stride_incx2_incy3",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 4194304,
-      "incx": 2,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.11727999895811081
-  },
-  {
-    "op": "crot_stride_incx3_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 1024,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.006175999995321035
-  },
-  {
-    "op": "crot_stride_incx3_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 5333,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.006335999816656113
-  },
-  {
-    "op": "crot_stride_incx3_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 65536,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.007712000049650669
-  },
-  {
-    "op": "crot_stride_incx3_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 100000,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.008704000152647495
-  },
-  {
-    "op": "crot_stride_incx3_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 1048576,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.0342399999499321
-  },
-  {
-    "op": "crot_stride_incx3_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 3000000,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.08630400151014328
-  },
-  {
-    "op": "crot_stride_incx3_incy2",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 4194304,
-      "incx": 3,
-      "incy": 2,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
-    },
-    "latency_ms": 0.11753600090742111
-  },
-  {
-    "op": "crot_stride_incx3_incy3",
-    "dtype": "torch.complex64",
-    "params": {
-      "n": 1024,
-      "incx": 3,
-      "incy": 3,
-      "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
     "latency_ms": 0.00598399993032217
   },
   {
-    "op": "crot_stride_incx3_incy3",
+    "op": "csrot_stride_incx2_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 5333,
+      "incx": 2,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.006207999773323536
+  },
+  {
+    "op": "csrot_stride_incx2_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 65536,
+      "incx": 2,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.0074880002066493034
+  },
+  {
+    "op": "csrot_stride_incx2_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 100000,
+      "incx": 2,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.008287999778985977
+  },
+  {
+    "op": "csrot_stride_incx2_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 1048576,
+      "incx": 2,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.028672000393271446
+  },
+  {
+    "op": "csrot_stride_incx2_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 3000000,
+      "incx": 2,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.07023999840021133
+  },
+  {
+    "op": "csrot_stride_incx2_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 4194304,
+      "incx": 2,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.09551999717950821
+  },
+  {
+    "op": "csrot_stride_incx2_incy3",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 1024,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.005919999908655882
+  },
+  {
+    "op": "csrot_stride_incx2_incy3",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 5333,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.006175999995321035
+  },
+  {
+    "op": "csrot_stride_incx2_incy3",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 65536,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.00774399982765317
+  },
+  {
+    "op": "csrot_stride_incx2_incy3",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 100000,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.008671999908983707
+  },
+  {
+    "op": "csrot_stride_incx2_incy3",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 1048576,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.0342399999499321
+  },
+  {
+    "op": "csrot_stride_incx2_incy3",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 3000000,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.08630400151014328
+  },
+  {
+    "op": "csrot_stride_incx2_incy3",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 4194304,
+      "incx": 2,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.11779200285673141
+  },
+  {
+    "op": "csrot_stride_incx3_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 1024,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.006111999973654747
+  },
+  {
+    "op": "csrot_stride_incx3_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 5333,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.006175999995321035
+  },
+  {
+    "op": "csrot_stride_incx3_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 65536,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.007903999648988247
+  },
+  {
+    "op": "csrot_stride_incx3_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 100000,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.00863999966531992
+  },
+  {
+    "op": "csrot_stride_incx3_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 1048576,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.03407999873161316
+  },
+  {
+    "op": "csrot_stride_incx3_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 3000000,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.0862400010228157
+  },
+  {
+    "op": "csrot_stride_incx3_incy2",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 4194304,
+      "incx": 3,
+      "incy": 2,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.11753600090742111
+  },
+  {
+    "op": "csrot_stride_incx3_incy3",
+    "dtype": "torch.complex64",
+    "params": {
+      "n": 1024,
+      "incx": 3,
+      "incy": 3,
+      "c": 0.8,
+      "s": 0.6
+    },
+    "latency_ms": 0.005919999908655882
+  },
+  {
+    "op": "csrot_stride_incx3_incy3",
     "dtype": "torch.complex64",
     "params": {
       "n": 5333,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.006175999995321035
+    "latency_ms": 0.006304000038653612
   },
   {
-    "op": "crot_stride_incx3_incy3",
+    "op": "csrot_stride_incx3_incy3",
     "dtype": "torch.complex64",
     "params": {
       "n": 65536,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.007935999892652035
+    "latency_ms": 0.007872000336647034
   },
   {
-    "op": "crot_stride_incx3_incy3",
+    "op": "csrot_stride_incx3_incy3",
     "dtype": "torch.complex64",
     "params": {
       "n": 100000,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.009312000125646591
+    "latency_ms": 0.009375999681651592
   },
   {
-    "op": "crot_stride_incx3_incy3",
+    "op": "csrot_stride_incx3_incy3",
     "dtype": "torch.complex64",
     "params": {
       "n": 1048576,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.039903998374938965
+    "latency_ms": 0.03993599861860275
   },
   {
-    "op": "crot_stride_incx3_incy3",
+    "op": "csrot_stride_incx3_incy3",
     "dtype": "torch.complex64",
     "params": {
       "n": 3000000,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.10235199704766273
+    "latency_ms": 0.1021760031580925
   },
   {
-    "op": "crot_stride_incx3_incy3",
+    "op": "csrot_stride_incx3_incy3",
     "dtype": "torch.complex64",
     "params": {
       "n": 4194304,
       "incx": 3,
       "incy": 3,
       "c": 0.8,
-      "s": [
-        0.36,
-        0.48
-      ]
+      "s": 0.6
     },
-    "latency_ms": 0.14006400108337402
+    "latency_ms": 0.14022399485111237
   },
   {
     "op": "zrotg",

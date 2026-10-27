@@ -181,60 +181,60 @@ ops:
       - BLAS
     stages:
       - stable: '0.1'
-  - id: samax
+  - id: isamax
     description: |
       Single-precision BLAS Level 1 index-of-maximum-absolute-value reduction.
       Returns the 1-based index of the float32 vector element with the largest absolute value.
     for:
-      - samax
+      - isamax
     labels:
       - amax
     kind:
       - BLAS
     stages:
       - stable: '0.1'
-  - id: damax
+  - id: idamax
     description: |
       Double-precision BLAS Level 1 index-of-maximum-absolute-value reduction.
       Returns the 1-based index of the float64 vector element with the largest absolute value.
     for:
-      - damax
+      - idamax
     labels:
       - amax
     kind:
       - BLAS
     stages:
       - stable: '0.1'
-  - id: camax
+  - id: icamax
     description: |
       Single-precision complex BLAS Level 1 index-of-maximum-absolute-value reduction.
       Returns the 1-based index of the complex64 element with the largest BLAS complex absolute value.
     for:
-      - camax
+      - icamax
     labels:
       - amax
     kind:
       - BLAS
     stages:
       - stable: '0.1'
-  - id: zamax
+  - id: izamax
     description: |
       Double-precision complex BLAS Level 1 index-of-maximum-absolute-value reduction.
       Returns the 1-based index of the complex128 element with the largest BLAS complex absolute value.
     for:
-      - zamax
+      - izamax
     labels:
       - amax
     kind:
       - BLAS
     stages:
       - stable: '0.1'
-  - id: samin
+  - id: isamin
     description: |
       Single-precision BLAS Level 1 index-of-minimum-absolute-value reduction.
       Returns the 1-based index of the float32 vector element with the smallest absolute value.
     for:
-      - samin
+      - isamin
     labels:
       - amin
       - NoCPU
@@ -242,12 +242,12 @@ ops:
       - BLAS
     stages:
       - stable: '0.1'
-  - id: damin
+  - id: idamin
     description: |
       Double-precision BLAS Level 1 index-of-minimum-absolute-value reduction.
       Returns the 1-based index of the float64 vector element with the smallest absolute value.
     for:
-      - damin
+      - idamin
     labels:
       - amin
       - NoCPU
@@ -255,12 +255,12 @@ ops:
       - BLAS
     stages:
       - stable: '0.1'
-  - id: camin
+  - id: icamin
     description: |
       Single-precision complex BLAS Level 1 index-of-minimum-absolute-value reduction.
       Returns the 1-based index of the complex64 element with the smallest BLAS complex absolute value.
     for:
-      - camin
+      - icamin
     labels:
       - amin
       - NoCPU
@@ -268,12 +268,12 @@ ops:
       - BLAS
     stages:
       - stable: '0.1'
-  - id: zamin
+  - id: izamin
     description: |
       Double-precision complex BLAS Level 1 index-of-minimum-absolute-value reduction.
       Returns the 1-based index of the complex128 element with the smallest BLAS complex absolute value.
     for:
-      - zamin
+      - izamin
     labels:
       - amin
       - NoCPU
@@ -617,24 +617,24 @@ ops:
       - BLAS
     stages:
       - stable: '0.1'
-  - id: crot
+  - id: csrot
     description: |
       Single-precision complex BLAS Level 1 plane rotation.
-      Applies a Givens rotation to strided complex64 vectors x and y in place.
+      Applies a Givens rotation with real float32 c and s to strided complex64 vectors x and y in place.
     for:
-      - crot
+      - csrot
     labels:
       - rot
     kind:
       - BLAS
     stages:
       - stable: '0.1'
-  - id: zrot
+  - id: zdrot
     description: |
       Double-precision complex BLAS Level 1 plane rotation.
-      Applies a Givens rotation to strided complex128 vectors x and y in place.
+      Applies a Givens rotation with real float64 c and s to strided complex128 vectors x and y in place.
     for:
-      - zrot
+      - zdrot
     labels:
       - rot
     kind:

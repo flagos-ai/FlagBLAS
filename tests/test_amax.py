@@ -133,8 +133,8 @@ def amax_reference(n, x, incx, result):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samax),
-        pytest.param(torch.float64, marks=pytest.mark.damax),
+        pytest.param(torch.float32, marks=pytest.mark.isamax),
+        pytest.param(torch.float64, marks=pytest.mark.idamax),
     ],
 )
 @pytest.mark.parametrize("shape", AMAX_SHAPES)
@@ -152,9 +152,9 @@ def test_accuracy_amax_real(dtype, shape):
     ref_result = amax_reference(n, x, incx, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.samax(n, x, incx, result)
+        flag_blas.isamax(n, x, incx, result)
     else:
-        flag_blas.damax(n, x, incx, result)
+        flag_blas.idamax(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -163,8 +163,8 @@ def test_accuracy_amax_real(dtype, shape):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.camax),
-        pytest.param(torch.complex128, marks=pytest.mark.zamax),
+        pytest.param(torch.complex64, marks=pytest.mark.icamax),
+        pytest.param(torch.complex128, marks=pytest.mark.izamax),
     ],
 )
 @pytest.mark.parametrize("shape", AMAX_SHAPES)
@@ -182,9 +182,9 @@ def test_accuracy_amax_complex(dtype, shape):
     ref_result = amax_reference(n, x, incx, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.camax(n, x, incx, result)
+        flag_blas.icamax(n, x, incx, result)
     else:
-        flag_blas.zamax(n, x, incx, result)
+        flag_blas.izamax(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -193,10 +193,10 @@ def test_accuracy_amax_complex(dtype, shape):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samax),
-        pytest.param(torch.float64, marks=pytest.mark.damax),
-        pytest.param(torch.complex64, marks=pytest.mark.camax),
-        pytest.param(torch.complex128, marks=pytest.mark.zamax),
+        pytest.param(torch.float32, marks=pytest.mark.isamax),
+        pytest.param(torch.float64, marks=pytest.mark.idamax),
+        pytest.param(torch.complex64, marks=pytest.mark.icamax),
+        pytest.param(torch.complex128, marks=pytest.mark.izamax),
     ],
 )
 def test_accuracy_amax_empty_tensor(dtype):
@@ -212,13 +212,13 @@ def test_accuracy_amax_empty_tensor(dtype):
     n = 0
 
     if dtype == torch.float32:
-        flag_blas.samax(n, x, 1, result)
+        flag_blas.isamax(n, x, 1, result)
     elif dtype == torch.float64:
-        flag_blas.damax(n, x, 1, result)
+        flag_blas.idamax(n, x, 1, result)
     elif dtype == torch.complex64:
-        flag_blas.camax(n, x, 1, result)
+        flag_blas.icamax(n, x, 1, result)
     else:
-        flag_blas.zamax(n, x, 1, result)
+        flag_blas.izamax(n, x, 1, result)
 
     assert result.item() == 0
     assert result.dtype == torch.int32
@@ -229,8 +229,8 @@ def test_accuracy_amax_empty_tensor(dtype):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samax),
-        pytest.param(torch.float64, marks=pytest.mark.damax),
+        pytest.param(torch.float32, marks=pytest.mark.isamax),
+        pytest.param(torch.float64, marks=pytest.mark.idamax),
     ],
 )
 @pytest.mark.parametrize(
@@ -248,9 +248,9 @@ def test_accuracy_amax_different_n_real(dtype, n, vec_size):
     ref_result = amax_reference(n, x, 1, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.samax(n, x, 1, result)
+        flag_blas.isamax(n, x, 1, result)
     else:
-        flag_blas.damax(n, x, 1, result)
+        flag_blas.idamax(n, x, 1, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -259,8 +259,8 @@ def test_accuracy_amax_different_n_real(dtype, n, vec_size):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.camax),
-        pytest.param(torch.complex128, marks=pytest.mark.zamax),
+        pytest.param(torch.complex64, marks=pytest.mark.icamax),
+        pytest.param(torch.complex128, marks=pytest.mark.izamax),
     ],
 )
 @pytest.mark.parametrize(
@@ -278,9 +278,9 @@ def test_accuracy_amax_different_n_complex(dtype, n, vec_size):
     ref_result = amax_reference(n, x, 1, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.camax(n, x, 1, result)
+        flag_blas.icamax(n, x, 1, result)
     else:
-        flag_blas.zamax(n, x, 1, result)
+        flag_blas.izamax(n, x, 1, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -289,8 +289,8 @@ def test_accuracy_amax_different_n_complex(dtype, n, vec_size):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samax),
-        pytest.param(torch.float64, marks=pytest.mark.damax),
+        pytest.param(torch.float32, marks=pytest.mark.isamax),
+        pytest.param(torch.float64, marks=pytest.mark.idamax),
     ],
 )
 @pytest.mark.parametrize("shape", L1_AMAX_STRIDE_SHAPES)
@@ -308,9 +308,9 @@ def test_accuracy_amax_different_n_with_stride_real(dtype, shape, incx):
     ref_result = amax_reference(n, x, incx, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.samax(n, x, incx, result)
+        flag_blas.isamax(n, x, incx, result)
     else:
-        flag_blas.damax(n, x, incx, result)
+        flag_blas.idamax(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -319,8 +319,8 @@ def test_accuracy_amax_different_n_with_stride_real(dtype, shape, incx):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.camax),
-        pytest.param(torch.complex128, marks=pytest.mark.zamax),
+        pytest.param(torch.complex64, marks=pytest.mark.icamax),
+        pytest.param(torch.complex128, marks=pytest.mark.izamax),
     ],
 )
 @pytest.mark.parametrize("shape", L1_AMAX_STRIDE_SHAPES)
@@ -338,8 +338,8 @@ def test_accuracy_amax_different_n_with_stride_complex(dtype, shape, incx):
     ref_result = amax_reference(n, x, incx, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.camax(n, x, incx, result)
+        flag_blas.icamax(n, x, incx, result)
     else:
-        flag_blas.zamax(n, x, incx, result)
+        flag_blas.izamax(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)

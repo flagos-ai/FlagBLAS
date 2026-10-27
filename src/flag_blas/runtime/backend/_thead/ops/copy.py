@@ -113,8 +113,6 @@ _ccopy_contiguous = libentry()(
     libtuner(
         configs=runtime.get_tuned_config("thead_l1_ccopy_contiguous"),
         key=["N"],
-        warmup=20,
-        rep=50,
     )(_ccopy_bits.jit_function)
 )
 

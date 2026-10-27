@@ -14,11 +14,8 @@
 
 import ctypes
 import ctypes.util
-import glob
-import os
 
 import pytest
-import scipy
 import torch
 from scipy.linalg import blas as cpu_blas
 
@@ -37,8 +34,6 @@ from .conftest import TO_CPU
 IS_HYGON = flag_blas.vendor_name == "hygon"
 if IS_HYGON:
     from tests.hipblas_reference import (
-        HipComplex,
-        HipDoubleComplex,
         check_hipblas_status,
         get_hipblas_context,
         get_hipblas_library,
@@ -64,34 +59,6 @@ def load_cublas():
 _cublas = None if IS_HYGON else load_cublas()
 
 
-def load_cpu_blas():
-    lib_paths = glob.glob(
-        os.path.join(
-            os.path.dirname(scipy.__file__),
-            "..",
-            "scipy.libs",
-            "libscipy_openblas*.so",
-        )
-    )
-    for path in lib_paths:
-        try:
-            return ctypes.cdll.LoadLibrary(path)
-        except OSError:
-            continue
-    raise RuntimeError("Cannot find SciPy OpenBLAS library")
-
-
-_cpu_blas_lib = load_cpu_blas()
-
-
-class cuComplex(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float)]
-
-
-class cuDoubleComplex(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
-
-
 def cublas_rot_reference(n, x, incx, y, incy, c, s):
     if n <= 0:
         return x, y
@@ -111,13 +78,13 @@ def cublas_rot_reference(n, x, incx, y, incy, c, s):
         c_c = ctypes.c_double(c_val)
         s_c = ctypes.c_double(s_val)
     elif dtype == torch.complex64:
-        func = _cublas.cublasCrot_v2
+        func = _cublas.cublasCsrot_v2
         c_c = ctypes.c_float(c_val)
-        s_c = cuComplex(s_val.real, s_val.imag)
+        s_c = ctypes.c_float(s_val)
     elif dtype == torch.complex128:
-        func = _cublas.cublasZrot_v2
+        func = _cublas.cublasZdrot_v2
         c_c = ctypes.c_double(c_val)
-        s_c = cuDoubleComplex(s_val.real, s_val.imag)
+        s_c = ctypes.c_double(s_val)
     else:
         raise ValueError(f"Unsupported dtype {dtype}")
 
@@ -150,35 +117,23 @@ def cpu_rot_reference(n, x, incx, y, incy, c, s):
     x_np = ref_x.numpy()
     y_np = ref_y.numpy()
 
-    if dtype == torch.float64:
-        cpu_blas.drot(
-            x_np,
-            y_np,
-            c_val,
-            s_val,
-            n=n,
-            incx=incx,
-            incy=incy,
-            overwrite_x=1,
-            overwrite_y=1,
-        )
-    elif dtype == torch.complex128:
-        n_c = ctypes.c_int(n)
-        incx_c = ctypes.c_int(incx)
-        incy_c = ctypes.c_int(incy)
-        c_c = ctypes.c_double(c_val)
-        s_c = cuDoubleComplex(s_val.real, s_val.imag)
-        _cpu_blas_lib.scipy_zrot_(
-            ctypes.byref(n_c),
-            ctypes.c_void_p(x_np.ctypes.data),
-            ctypes.byref(incx_c),
-            ctypes.c_void_p(y_np.ctypes.data),
-            ctypes.byref(incy_c),
-            ctypes.byref(c_c),
-            ctypes.byref(s_c),
-        )
-    else:
-        raise ValueError(f"Unsupported dtype {dtype}")
+    function = {
+        torch.float32: cpu_blas.srot,
+        torch.float64: cpu_blas.drot,
+        torch.complex64: cpu_blas.csrot,
+        torch.complex128: cpu_blas.zdrot,
+    }[dtype]
+    function(
+        x_np,
+        y_np,
+        c_val,
+        s_val,
+        n=n,
+        incx=incx,
+        incy=incy,
+        overwrite_x=1,
+        overwrite_y=1,
+    )
 
     return ref_x, ref_y
 
@@ -189,8 +144,8 @@ if IS_HYGON:
         symbol = {
             torch.float32: "hipblasSrot",
             torch.float64: "hipblasDrot",
-            torch.complex64: "hipblasCrot_v2",
-            torch.complex128: "hipblasZrot_v2",
+            torch.complex64: "hipblasCsrot",
+            torch.complex128: "hipblasZdrot",
         }[dtype]
         function = getattr(get_hipblas_library(), symbol)
         function.argtypes = [
@@ -214,8 +169,8 @@ if IS_HYGON:
         if dtype == torch.float64:
             return ctypes.c_double(c), ctypes.c_double(s)
         if dtype == torch.complex64:
-            return ctypes.c_float(c), HipComplex(s.real, s.imag)
-        return ctypes.c_double(c), HipDoubleComplex(s.real, s.imag)
+            return ctypes.c_float(c), ctypes.c_float(s)
+        return ctypes.c_double(c), ctypes.c_double(s)
 
     def hipblas_rot_reference(n, x, incx, y, incy, c, s):
         if n <= 0:
@@ -264,10 +219,10 @@ def get_c_s(dtype, device):
         s = torch.tensor([0.6], dtype=torch.float64, device=device)
     elif dtype == torch.complex64:
         c = torch.tensor([0.8], dtype=torch.float32, device=device)
-        s = torch.tensor([0.36 + 0.48j], dtype=torch.complex64, device=device)
+        s = torch.tensor([0.6], dtype=torch.float32, device=device)
     elif dtype == torch.complex128:
         c = torch.tensor([0.8], dtype=torch.float64, device=device)
-        s = torch.tensor([0.36 + 0.48j], dtype=torch.complex128, device=device)
+        s = torch.tensor([0.6], dtype=torch.float64, device=device)
     else:
         raise ValueError(f"Unsupported dtype: {dtype}")
     return c, s
@@ -309,8 +264,8 @@ def test_accuracy_rot_real(dtype, shape):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.crot),
-        pytest.param(torch.complex128, marks=pytest.mark.zrot),
+        pytest.param(torch.complex64, marks=pytest.mark.csrot),
+        pytest.param(torch.complex128, marks=pytest.mark.zdrot),
     ],
 )
 @pytest.mark.parametrize("shape", ROT_SHAPES)
@@ -329,9 +284,9 @@ def test_accuracy_rot_complex(dtype, shape):
     ref_x, ref_y = rot_reference(n, x, incx, y, incy, c, s)
 
     if dtype == torch.complex64:
-        flag_blas.crot(n, x, incx, y, incy, c, s)
+        flag_blas.csrot(n, x, incx, y, incy, c, s)
     else:
-        flag_blas.zrot(n, x, incx, y, incy, c, s)
+        flag_blas.zdrot(n, x, incx, y, incy, c, s)
 
     blas_assert_close(x, ref_x, dtype)
     blas_assert_close(y, ref_y, dtype)
@@ -343,8 +298,8 @@ def test_accuracy_rot_complex(dtype, shape):
     [
         pytest.param(torch.float32, marks=pytest.mark.srot),
         pytest.param(torch.float64, marks=pytest.mark.drot),
-        pytest.param(torch.complex64, marks=pytest.mark.crot),
-        pytest.param(torch.complex128, marks=pytest.mark.zrot),
+        pytest.param(torch.complex64, marks=pytest.mark.csrot),
+        pytest.param(torch.complex128, marks=pytest.mark.zdrot),
     ],
 )
 def test_accuracy_rot_empty_tensor(dtype):
@@ -368,9 +323,9 @@ def test_accuracy_rot_empty_tensor(dtype):
     elif dtype == torch.float64:
         flag_blas.drot(n, x, 1, y, 1, c, s)
     elif dtype == torch.complex64:
-        flag_blas.crot(n, x, 1, y, 1, c, s)
+        flag_blas.csrot(n, x, 1, y, 1, c, s)
     else:
-        flag_blas.zrot(n, x, 1, y, 1, c, s)
+        flag_blas.zdrot(n, x, 1, y, 1, c, s)
 
     blas_assert_close(x, ref_x, dtype)
     blas_assert_close(y, ref_y, dtype)
@@ -411,8 +366,8 @@ def test_accuracy_rot_different_n_real(dtype, n, vec_size):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.crot),
-        pytest.param(torch.complex128, marks=pytest.mark.zrot),
+        pytest.param(torch.complex64, marks=pytest.mark.csrot),
+        pytest.param(torch.complex128, marks=pytest.mark.zdrot),
     ],
 )
 @pytest.mark.parametrize(
@@ -430,9 +385,9 @@ def test_accuracy_rot_different_n_complex(dtype, n, vec_size):
     ref_x, ref_y = rot_reference(n, x, 1, y, 1, c, s)
 
     if dtype == torch.complex64:
-        flag_blas.crot(n, x, 1, y, 1, c, s)
+        flag_blas.csrot(n, x, 1, y, 1, c, s)
     else:
-        flag_blas.zrot(n, x, 1, y, 1, c, s)
+        flag_blas.zdrot(n, x, 1, y, 1, c, s)
 
     blas_assert_close(x, ref_x, dtype)
     blas_assert_close(y, ref_y, dtype)
@@ -473,8 +428,8 @@ def test_accuracy_rot_different_n_with_stride_real(dtype, shape, incx, incy):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.crot),
-        pytest.param(torch.complex128, marks=pytest.mark.zrot),
+        pytest.param(torch.complex64, marks=pytest.mark.csrot),
+        pytest.param(torch.complex128, marks=pytest.mark.zdrot),
     ],
 )
 @pytest.mark.parametrize("shape", L1_STRIDE_SHAPES)
@@ -492,9 +447,49 @@ def test_accuracy_rot_different_n_with_stride_complex(dtype, shape, incx, incy):
     ref_x, ref_y = rot_reference(n, x, incx, y, incy, c, s)
 
     if dtype == torch.complex64:
-        flag_blas.crot(n, x, incx, y, incy, c, s)
+        flag_blas.csrot(n, x, incx, y, incy, c, s)
     else:
-        flag_blas.zrot(n, x, incx, y, incy, c, s)
+        flag_blas.zdrot(n, x, incx, y, incy, c, s)
 
     blas_assert_close(x[::incx][:n], ref_x[::incx][:n], dtype)
     blas_assert_close(y[::incy][:n], ref_y[::incy][:n], dtype)
+
+
+@pytest.mark.rot
+@pytest.mark.parametrize(
+    "op,dtype",
+    [
+        pytest.param("csrot", torch.complex64, marks=pytest.mark.csrot),
+        pytest.param("zdrot", torch.complex128, marks=pytest.mark.zdrot),
+    ],
+)
+@pytest.mark.parametrize("c,s", [(1.0, 0.0), (0.0, 1.0), (-0.8, 0.6), (0.8, -0.6)])
+@pytest.mark.parametrize("incx,incy", [(1, 1), (2, 3)])
+def test_accuracy_complex_rot_real_coefficients(op, dtype, c, s, incx, incy):
+    if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
+        pytest.skip("Device does not support float64")
+    n = 17
+    x = torch.randn(n * incx + 1, dtype=dtype, device=flag_blas.device)
+    y = torch.randn(n * incy + 1, dtype=dtype, device=flag_blas.device)
+    ref_x, ref_y = rot_reference(n, x, incx, y, incy, c, s)
+    getattr(flag_blas, op)(n, x, incx, y, incy, c, s)
+    # Include untouched stride gaps and the tail in the comparison.
+    blas_assert_close(x, ref_x, dtype)
+    blas_assert_close(y, ref_y, dtype)
+
+
+@pytest.mark.rot
+@pytest.mark.parametrize(
+    "op,dtype",
+    [
+        pytest.param("csrot", torch.complex64, marks=pytest.mark.csrot),
+        pytest.param("zdrot", torch.complex128, marks=pytest.mark.zdrot),
+    ],
+)
+def test_complex_rot_rejects_complex_s(op, dtype):
+    if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
+        pytest.skip("Device does not support float64")
+    x = torch.ones(1, dtype=dtype, device=flag_blas.device)
+    y = torch.ones_like(x)
+    with pytest.raises(TypeError):
+        getattr(flag_blas, op)(1, x, 1, y, 1, 0.8, 0.36 + 0.48j)

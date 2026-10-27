@@ -15,6 +15,7 @@
 DTYPE_MAP = {
     "torch.float16": "fp16",
     "torch.float32": "fp32",
+    "torch.float64": "fp64",
     "torch.bfloat16": "bf16",
     "torch.int16": "int16",
     "torch.int32": "int32",

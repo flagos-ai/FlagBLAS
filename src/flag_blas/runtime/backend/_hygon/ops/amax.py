@@ -73,17 +73,17 @@ def _amax(n, x, incx, result, dtype, common_name):
         )
 
 
-def samax(n, x, incx, result):
-    _amax(n, x, incx, result, torch.float32, "samax")
+def isamax(n, x, incx, result):
+    _amax(n, x, incx, result, torch.float32, "isamax")
 
 
-def damax(n, x, incx, result):
-    _amax(n, x, incx, result, torch.float64, "damax")
+def idamax(n, x, incx, result):
+    _amax(n, x, incx, result, torch.float64, "idamax")
 
 
-def camax(n, x, incx, result):
-    _amax(n, x, incx, result, torch.complex64, "camax")
+def icamax(n, x, incx, result):
+    _amax(n, x, incx, result, torch.complex64, "icamax")
 
 
-def zamax(n, x, incx, result):
-    _amax(n, x, incx, result, torch.complex128, "zamax")
+def izamax(n, x, incx, result):
+    _amax(n, x, incx, result, torch.complex128, "izamax")

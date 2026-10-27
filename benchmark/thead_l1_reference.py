@@ -32,16 +32,16 @@ from benchmark.conftest import Config, emit_record_logger
 
 _BASE = Path(__file__).resolve().parent / "baselines"
 _EQUIVALENT_OPS = {
-    "camax",
-    "zamax",
-    "camin",
-    "zamin",
+    "icamax",
+    "izamax",
+    "icamin",
+    "izamin",
     "caxpy",
     "zaxpy",
     "ccopy",
     "zcopy",
-    "crot",
-    "zrot",
+    "csrot",
+    "zdrot",
     "crotg",
     "zrotg",
     "cscal",
@@ -60,7 +60,9 @@ _EQUIVALENT_OPS = {
     "zdscal",
 }
 _FAMILIES = {
-    **{op: op[1:] for op in _EQUIVALENT_OPS},
+    **{op: op[2:] if op.startswith("i") else op[1:] for op in _EQUIVALENT_OPS},
+    "csrot": "rot",
+    "zdrot": "rot",
     "scasum": "asum",
     "dzasum": "asum",
     "scnrm2": "nrm2",
@@ -98,7 +100,7 @@ def case_parameters(bench, args, kwargs):
             _number(complex(alpha)) if op not in ("csscal", "zdscal") else alpha
         )
     if family == "rot":
-        params.update(c=kwargs["c"], s=_number(complex(kwargs["s"])))
+        params.update(c=kwargs["c"], s=kwargs["s"])
     return params
 
 

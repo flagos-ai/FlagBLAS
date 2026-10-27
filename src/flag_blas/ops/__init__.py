@@ -16,8 +16,8 @@
 BLAS Level 1, Level 2, and Level 3 operations
 """
 
-from flag_blas.ops.level1.amax import camax, damax, samax, zamax
-from flag_blas.ops.level1.amin import camin, damin, samin, zamin
+from flag_blas.ops.level1.amax import icamax, idamax, isamax, izamax
+from flag_blas.ops.level1.amin import icamin, idamin, isamin, izamin
 from flag_blas.ops.level1.asum import dasum, dzasum, sasum, scasum
 from flag_blas.ops.level1.axpy import caxpy, daxpy, saxpy, zaxpy
 from flag_blas.ops.level1.copy import ccopy, dcopy, scopy, zcopy
@@ -25,7 +25,7 @@ from flag_blas.ops.level1.dot import ddot, sdot
 from flag_blas.ops.level1.dotc import cdotc, zdotc
 from flag_blas.ops.level1.dotu import cdotu, zdotu
 from flag_blas.ops.level1.nrm2 import dnrm2, dznrm2, scnrm2, snrm2
-from flag_blas.ops.level1.rot import crot, drot, srot, zrot
+from flag_blas.ops.level1.rot import csrot, drot, srot, zdrot
 from flag_blas.ops.level1.rotg import crotg, drotg, srotg, zrotg
 from flag_blas.ops.level1.rotm import drotm, srotm
 from flag_blas.ops.level1.rotmg import drotmg, srotmg
@@ -94,15 +94,15 @@ from flag_blas.ops.level3.zgemm import zgemm
 
 __all__ = [
     # amax
-    "samax",
-    "damax",
-    "camax",
-    "zamax",
+    "isamax",
+    "idamax",
+    "icamax",
+    "izamax",
     # amin
-    "samin",
-    "damin",
-    "camin",
-    "zamin",
+    "isamin",
+    "idamin",
+    "icamin",
+    "izamin",
     # asum
     "dasum",
     "dzasum",
@@ -137,8 +137,8 @@ __all__ = [
     # rot
     "srot",
     "drot",
-    "crot",
-    "zrot",
+    "csrot",
+    "zdrot",
     "srotg",
     "drotg",
     "crotg",

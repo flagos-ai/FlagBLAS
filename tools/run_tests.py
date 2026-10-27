@@ -440,6 +440,8 @@ def _is_fp64_unsupported(reason):
 
 
 def _default_dtype_for_op(op):
+    if op.startswith("i") and op[2:] in {"amax", "amin"}:
+        op = op[1:]
     return BLAS_PREFIX_DTYPE.get(op[:1], "default")
 
 
@@ -598,7 +600,9 @@ def parse_benchmark_log(log_file, op):
                 previous_count = len(previous["details"])
                 previous_total = previous["speedup"] * previous_count
                 previous["details"].update(details)
-                previous["speedup"] = (previous_total + total) / (previous_count + count)
+                previous["speedup"] = (previous_total + total) / (
+                    previous_count + count
+                )
             else:
                 bench_res[dtype] = {
                     "result": "OK",
@@ -625,8 +629,9 @@ def run_accuracy_q(gpu_id, op):
     env = get_env(str(gpu_id))
 
     pytest_target = ""
-    if ENV_INFO.get("flag_blas", {}).get("vendor") == "ascend":
-        target = getattr(CFG, "ascend_accuracy_targets", {}).get(op)
+    vendor = ENV_INFO.get("flag_blas", {}).get("vendor")
+    if vendor in {"ascend", "hygon"}:
+        target = getattr(CFG, f"{vendor}_accuracy_targets", {}).get(op)
         if target:
             pytest_target = f"{target} "
 
@@ -686,6 +691,8 @@ def run_accuracy_q(gpu_id, op):
 
     result = parse_accuracy_data(result_file)
     result["exit_code"] = code
+    if vendor == "hygon" and code != 0 and result.get("status") == "Passed":
+        result["status"] = "Error"
     result["duration"] = dur
     result["data_file"] = str(result_file.relative_to(CFG.output_dir))
     return result
@@ -713,8 +720,9 @@ def run_benchmark_q(gpu_id, op):
             pass
 
     pytest_target = ""
-    if ENV_INFO["flag_blas"]["vendor"] == "ascend":
-        target = getattr(CFG, "ascend_performance_targets", {}).get(op)
+    vendor = ENV_INFO["flag_blas"]["vendor"]
+    if vendor in {"ascend", "hygon"}:
+        target = getattr(CFG, f"{vendor}_performance_targets", {}).get(op)
         if target:
             pytest_target = f"{target} "
     dur = time.time()
@@ -762,7 +770,7 @@ def run_benchmark_q(gpu_id, op):
         "data": {},
     }
     record.update(parse_benchmark_log(dest, op))
-    if ENV_INFO["flag_blas"]["vendor"] == "ascend" and code != 0:
+    if vendor in {"ascend", "hygon"} and code != 0:
         record["status"] = "Error"
     return record
 
@@ -978,17 +986,22 @@ def handle_interrupt(signum, frame):
 
 def get_ops_to_test():
     op_catalog = get_ops_from_inventory()
-    if ENV_INFO.get("flag_blas", {}).get("vendor") == "ascend":
-        CFG.ascend_accuracy_targets = {}
-        CFG.ascend_performance_targets = {}
+    vendor = ENV_INFO.get("flag_blas", {}).get("vendor")
+    if vendor in {"ascend", "hygon"}:
+        accuracy_targets = {}
+        performance_targets = {}
         for entry in op_catalog:
+            if vendor == "hygon" and "BLAS Level 1" not in entry.get("description", ""):
+                continue
             for label in entry.get("labels", []):
                 accuracy = ROOT / "tests" / f"test_{label}.py"
                 performance = ROOT / "benchmark" / f"test_{label}_perf.py"
                 if accuracy.is_file():
-                    CFG.ascend_accuracy_targets.setdefault(entry["id"], accuracy.name)
+                    accuracy_targets.setdefault(entry["id"], accuracy.name)
                 if performance.is_file():
-                    CFG.ascend_performance_targets.setdefault(entry["id"], performance.name)
+                    performance_targets.setdefault(entry["id"], performance.name)
+        setattr(CFG, f"{vendor}_accuracy_targets", accuracy_targets)
+        setattr(CFG, f"{vendor}_performance_targets", performance_targets)
     skip_cpu_tests = []
     for op in op_catalog:
         labels = op.get("labels", [])

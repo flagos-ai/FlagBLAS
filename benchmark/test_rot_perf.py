@@ -27,8 +27,6 @@ from flag_blas.utils import shape_utils
 IS_HYGON = flag_blas.vendor_name == "hygon"
 if IS_HYGON:
     from tests.hipblas_reference import (
-        HipComplex,
-        HipDoubleComplex,
         check_hipblas_status,
         get_hipblas_context,
         get_hipblas_library,
@@ -54,34 +52,21 @@ def load_cublas():
 _cublas = None if IS_HYGON else load_cublas()
 
 
-class cuComplex(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float)]
-
-
-class cuDoubleComplex(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
-
-
 def _rot_host_scalars(dtype, c, s):
     c = c.item() if isinstance(c, torch.Tensor) else c
     s = s.item() if isinstance(s, torch.Tensor) else s
-    if dtype == torch.float32:
-        return ctypes.c_float(c), ctypes.c_float(s)
-    if dtype == torch.float64:
-        return ctypes.c_double(c), ctypes.c_double(s)
-    if dtype == torch.complex64:
-        complex_type = HipComplex if IS_HYGON else cuComplex
-        return ctypes.c_float(c), complex_type(s.real, s.imag)
-    complex_type = HipDoubleComplex if IS_HYGON else cuDoubleComplex
-    return ctypes.c_double(c), complex_type(s.real, s.imag)
+    scalar_type = (
+        ctypes.c_float if dtype in (torch.float32, torch.complex64) else ctypes.c_double
+    )
+    return scalar_type(c), scalar_type(s)
 
 
 def _resolve_cublas_rot(dtype):
     symbol = {
         torch.float32: "cublasSrot_v2",
         torch.float64: "cublasDrot_v2",
-        torch.complex64: "cublasCrot_v2",
-        torch.complex128: "cublasZrot_v2",
+        torch.complex64: "cublasCsrot_v2",
+        torch.complex128: "cublasZdrot_v2",
     }[dtype]
     function = getattr(_cublas, symbol)
     function.argtypes = [
@@ -132,7 +117,7 @@ def blas_drot_wrapper(
     return x, y
 
 
-def blas_crot_wrapper(
+def blas_csrot_wrapper(
     x,
     y,
     c,
@@ -145,11 +130,11 @@ def blas_crot_wrapper(
     c_host=None,
     s_host=None,
 ):
-    flag_blas.crot(n, x, incx, y, incy, c, s)
+    flag_blas.csrot(n, x, incx, y, incy, c, s)
     return x, y
 
 
-def blas_zrot_wrapper(
+def blas_zdrot_wrapper(
     x,
     y,
     c,
@@ -162,7 +147,7 @@ def blas_zrot_wrapper(
     c_host=None,
     s_host=None,
 ):
-    flag_blas.zrot(n, x, incx, y, incy, c, s)
+    flag_blas.zdrot(n, x, incx, y, incy, c, s)
     return x, y
 
 
@@ -172,8 +157,8 @@ if IS_HYGON:
         symbol = {
             torch.float32: "hipblasSrot",
             torch.float64: "hipblasDrot",
-            torch.complex64: "hipblasCrot_v2",
-            torch.complex128: "hipblasZrot_v2",
+            torch.complex64: "hipblasCsrot",
+            torch.complex128: "hipblasZdrot",
         }[dtype]
         function = getattr(get_hipblas_library(), symbol)
         function.argtypes = [
@@ -240,8 +225,8 @@ if IS_HYGON:
     cublas_rot_reference = hipblas_rot_baseline
     blas_srot_wrapper = _hygon_rot_wrapper(blas_srot_wrapper)
     blas_drot_wrapper = _hygon_rot_wrapper(blas_drot_wrapper)
-    blas_crot_wrapper = _hygon_rot_wrapper(blas_crot_wrapper)
-    blas_zrot_wrapper = _hygon_rot_wrapper(blas_zrot_wrapper)
+    blas_csrot_wrapper = _hygon_rot_wrapper(blas_csrot_wrapper)
+    blas_zdrot_wrapper = _hygon_rot_wrapper(blas_zdrot_wrapper)
 
 else:
 
@@ -321,8 +306,8 @@ class RotBenchmark(Benchmark):
         x = args[0]
         incx = kwargs.get("incx", getattr(self, "incx", 1))
         n = kwargs.get("n", x.numel() // incx)
-        # CROT/ZROT use real c and complex s: twenty real FLOPs per pair.
-        return (20 if x.dtype.is_complex else 6) * n
+        # CSROT/ZDROT rotate real and imaginary components with real c and s.
+        return (12 if x.dtype.is_complex else 6) * n
 
 
 class RotStrideBenchmark(Benchmark):
@@ -379,8 +364,8 @@ class RotStrideBenchmark(Benchmark):
         x = args[0]
         incx = kwargs.get("incx", getattr(self, "incx", 1))
         n = kwargs.get("n", x.numel() // incx)
-        # CROT/ZROT use real c and complex s: twenty real FLOPs per pair.
-        return (20 if x.dtype.is_complex else 6) * n
+        # CSROT/ZDROT rotate real and imaginary components with real c and s.
+        return (12 if x.dtype.is_complex else 6) * n
 
 
 if IS_HYGON:
@@ -412,30 +397,30 @@ def test_perf_drot():
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.crot
-def test_perf_crot():
+@pytest.mark.csrot
+def test_perf_csrot():
     bench = RotBenchmark(
-        op_name="crot",
+        op_name="csrot",
         torch_op=cublas_rot_reference,
-        blas_op=blas_crot_wrapper,
+        blas_op=blas_csrot_wrapper,
         dtypes=[torch.complex64],
         c=0.8,
-        s=0.36 + 0.48j,
+        s=0.6,
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.zrot
-def test_perf_zrot():
+@pytest.mark.zdrot
+def test_perf_zdrot():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
     bench = RotBenchmark(
-        op_name="zrot",
+        op_name="zdrot",
         torch_op=cublas_rot_reference,
-        blas_op=blas_zrot_wrapper,
+        blas_op=blas_zdrot_wrapper,
         dtypes=[torch.complex128],
         c=0.8,
-        s=0.36 + 0.48j,
+        s=0.6,
     )
     run_correctness_then_benchmark(bench)
 
@@ -470,35 +455,35 @@ def test_perf_drot_stride(incx, incy):
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.crot
+@pytest.mark.csrot
 @pytest.mark.parametrize("incx,incy", [(2, 2), (2, 3), (3, 2), (3, 3)])
-def test_perf_crot_stride(incx, incy):
+def test_perf_csrot_stride(incx, incy):
     bench = RotStrideBenchmark(
-        op_name=f"crot_stride_incx{incx}_incy{incy}",
+        op_name=f"csrot_stride_incx{incx}_incy{incy}",
         torch_op=cublas_rot_reference,
-        blas_op=blas_crot_wrapper,
+        blas_op=blas_csrot_wrapper,
         dtypes=[torch.complex64],
         incx=incx,
         incy=incy,
         c=0.8,
-        s=0.36 + 0.48j,
+        s=0.6,
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.zrot
+@pytest.mark.zdrot
 @pytest.mark.parametrize("incx,incy", [(2, 2), (2, 3), (3, 2), (3, 3)])
-def test_perf_zrot_stride(incx, incy):
+def test_perf_zdrot_stride(incx, incy):
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
     bench = RotStrideBenchmark(
-        op_name=f"zrot_stride_incx{incx}_incy{incy}",
+        op_name=f"zdrot_stride_incx{incx}_incy{incy}",
         torch_op=cublas_rot_reference,
-        blas_op=blas_zrot_wrapper,
+        blas_op=blas_zdrot_wrapper,
         dtypes=[torch.complex128],
         incx=incx,
         incy=incy,
         c=0.8,
-        s=0.36 + 0.48j,
+        s=0.6,
     )
     run_correctness_then_benchmark(bench)

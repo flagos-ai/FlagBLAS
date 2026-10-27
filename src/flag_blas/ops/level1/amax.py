@@ -416,7 +416,7 @@ def amax_kernel_small_chunked_complex_nomask(
     key=["n", "INCX"],
 )
 @triton.jit
-def amax_kernel1_complex_zamax(
+def amax_kernel1_complex_izamax(
     x_ptr,
     mid_val_ptr,
     mid_idx_ptr,
@@ -462,7 +462,7 @@ def amax_kernel1_complex_zamax(
 
 @libentry()
 @triton.jit
-def amax_kernel1_complex_zamax_128_nomask(
+def amax_kernel1_complex_izamax_128_nomask(
     x_ptr,
     mid_val_ptr,
     mid_idx_ptr,
@@ -638,11 +638,11 @@ def _amax_impl(
                 x_real = torch.view_as_real(x)
                 if x.dtype == torch.complex128:
                     if incx > 1 and 2304 <= n <= 4096 and n % 128 == 0:
-                        amax_kernel1_complex_zamax_128_nomask[(grid_size, 1, 1)](
+                        amax_kernel1_complex_izamax_128_nomask[(grid_size, 1, 1)](
                             x_real, mid_val, mid_idx, n, incx, BLOCK_SIZE=128
                         )
                     else:
-                        amax_kernel1_complex_zamax[(grid_size, 1, 1)](
+                        amax_kernel1_complex_izamax[(grid_size, 1, 1)](
                             x_real, mid_val, mid_idx, n, incx
                         )
                 else:
@@ -655,29 +655,29 @@ def _amax_impl(
             amax_kernel2[(1, 1, 1)](mid_val, mid_idx, result, grid_size, block_mid)
 
 
-def samax(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
-    logger.debug("FLAG_BLAS SAMAX")
+def isamax(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
+    logger.debug("FLAG_BLAS ISAMAX")
     assert x.dtype == torch.float32, "x must be float32"
     assert result.dtype == torch.int32, "result must be int32"
     _amax_impl(n, x, incx, result, is_complex=False, val_dtype=torch.float32)
 
 
-def damax(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
-    logger.debug("FLAG_BLAS DAMAX")
+def idamax(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
+    logger.debug("FLAG_BLAS IDAMAX")
     assert x.dtype == torch.float64, "x must be float64"
     assert result.dtype == torch.int32, "result must be int32"
     _amax_impl(n, x, incx, result, is_complex=False, val_dtype=torch.float64)
 
 
-def camax(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
-    logger.debug("FLAG_BLAS CAMAX")
+def icamax(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
+    logger.debug("FLAG_BLAS ICAMAX")
     assert x.dtype == torch.complex64, "x must be complex64"
     assert result.dtype == torch.int32, "result must be int32"
     _amax_impl(n, x, incx, result, is_complex=True, val_dtype=torch.float32)
 
 
-def zamax(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
-    logger.debug("FLAG_BLAS ZAMAX")
+def izamax(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
+    logger.debug("FLAG_BLAS IZAMAX")
     assert x.dtype == torch.complex128, "x must be complex128"
     assert result.dtype == torch.int32, "result must be int32"
     _amax_impl(n, x, incx, result, is_complex=True, val_dtype=torch.float64)

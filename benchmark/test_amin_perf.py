@@ -35,23 +35,23 @@ else:
 STRIDES = [2, 3, 5]
 
 
-def gems_samin(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.samin(n, x, incx, result)
+def gems_isamin(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.isamin(n, x, incx, result)
     return result
 
 
-def gems_damin(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.damin(n, x, incx, result)
+def gems_idamin(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.idamin(n, x, incx, result)
     return result
 
 
-def gems_camin(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.camin(n, x, incx, result)
+def gems_icamin(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.icamin(n, x, incx, result)
     return result
 
 
-def gems_zamin(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.zamin(n, x, incx, result)
+def gems_izamin(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.izamin(n, x, incx, result)
     return result
 
 
@@ -91,10 +91,10 @@ if IS_HYGON:
     cublas_idamin = hipblas_amin_baseline
     cublas_icamin = hipblas_amin_baseline
     cublas_izamin = hipblas_amin_baseline
-    gems_samin = _hygon_amin_wrapper(gems_samin)
-    gems_damin = _hygon_amin_wrapper(gems_damin)
-    gems_camin = _hygon_amin_wrapper(gems_camin)
-    gems_zamin = _hygon_amin_wrapper(gems_zamin)
+    gems_isamin = _hygon_amin_wrapper(gems_isamin)
+    gems_idamin = _hygon_amin_wrapper(gems_idamin)
+    gems_icamin = _hygon_amin_wrapper(gems_icamin)
+    gems_izamin = _hygon_amin_wrapper(gems_izamin)
 
 else:
     if flag_blas.vendor_name == "thead":
@@ -114,8 +114,8 @@ else:
 
         cublas_isamin = _thead_amin_baseline(cublas.isamin)
         cublas_idamin = _thead_amin_baseline(cublas.idamin)
-        gems_samin = _thead_amin_wrapper(gems_samin)
-        gems_damin = _thead_amin_wrapper(gems_damin)
+        gems_isamin = _thead_amin_wrapper(gems_isamin)
+        gems_idamin = _thead_amin_wrapper(gems_idamin)
     else:
 
         def cublas_isamin(x, incx=1, n=None, handle=None, result=None):
@@ -204,104 +204,104 @@ elif flag_blas.vendor_name == "thead":
     AminBenchmark.correctness_reference = "PPU BLAS (host output)"
 
 
-@pytest.mark.samin
-def test_perf_samin():
+@pytest.mark.isamin
+def test_perf_isamin():
     bench = AminBenchmark(
-        op_name="samin",
+        op_name="isamin",
         torch_op=cublas_isamin,
-        gems_op=gems_samin,
+        gems_op=gems_isamin,
         dtypes=[torch.float32],
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.damin
-def test_perf_damin():
+@pytest.mark.idamin
+def test_perf_idamin():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
     bench = AminBenchmark(
-        op_name="damin",
+        op_name="idamin",
         torch_op=cublas_idamin,
-        gems_op=gems_damin,
+        gems_op=gems_idamin,
         dtypes=[torch.float64],
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.camin
-def test_perf_camin():
+@pytest.mark.icamin
+def test_perf_icamin():
     bench = AminBenchmark(
-        op_name="camin",
+        op_name="icamin",
         torch_op=cublas_icamin,
-        gems_op=gems_camin,
+        gems_op=gems_icamin,
         dtypes=[torch.complex64],
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.zamin
-def test_perf_zamin():
+@pytest.mark.izamin
+def test_perf_izamin():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
     bench = AminBenchmark(
-        op_name="zamin",
+        op_name="izamin",
         torch_op=cublas_izamin,
-        gems_op=gems_zamin,
+        gems_op=gems_izamin,
         dtypes=[torch.complex128],
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.samin
+@pytest.mark.isamin
 @pytest.mark.parametrize("incx", STRIDES)
-def test_perf_samin_stride(incx):
+def test_perf_isamin_stride(incx):
     bench = AminBenchmark(
-        op_name=f"samin_stride_incx{incx}",
+        op_name=f"isamin_stride_incx{incx}",
         torch_op=cublas_isamin,
-        gems_op=gems_samin,
+        gems_op=gems_isamin,
         dtypes=[torch.float32],
         incx=incx,
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.damin
+@pytest.mark.idamin
 @pytest.mark.parametrize("incx", STRIDES)
-def test_perf_damin_stride(incx):
+def test_perf_idamin_stride(incx):
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
     bench = AminBenchmark(
-        op_name=f"damin_stride_incx{incx}",
+        op_name=f"idamin_stride_incx{incx}",
         torch_op=cublas_idamin,
-        gems_op=gems_damin,
+        gems_op=gems_idamin,
         dtypes=[torch.float64],
         incx=incx,
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.camin
+@pytest.mark.icamin
 @pytest.mark.parametrize("incx", STRIDES)
-def test_perf_camin_stride(incx):
+def test_perf_icamin_stride(incx):
     bench = AminBenchmark(
-        op_name=f"camin_stride_incx{incx}",
+        op_name=f"icamin_stride_incx{incx}",
         torch_op=cublas_icamin,
-        gems_op=gems_camin,
+        gems_op=gems_icamin,
         dtypes=[torch.complex64],
         incx=incx,
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.zamin
+@pytest.mark.izamin
 @pytest.mark.parametrize("incx", STRIDES)
-def test_perf_zamin_stride(incx):
+def test_perf_izamin_stride(incx):
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
     bench = AminBenchmark(
-        op_name=f"zamin_stride_incx{incx}",
+        op_name=f"izamin_stride_incx{incx}",
         torch_op=cublas_izamin,
-        gems_op=gems_zamin,
+        gems_op=gems_izamin,
         dtypes=[torch.complex128],
         incx=incx,
     )

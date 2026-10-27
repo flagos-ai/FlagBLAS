@@ -16,7 +16,7 @@ import torch
 import triton
 import triton.language as tl
 
-from flag_blas.ops.level1.amax import samax as _common_samax
+from flag_blas.ops.level1.amax import isamax as _common_isamax
 from flag_blas.runtime import torch_device_fn
 from flag_blas.utils import libentry
 
@@ -77,11 +77,11 @@ def run_amax(n, x, result):
     max_finish[(1,)](values, indices, result, count, finish_block, num_warps=4)
 
 
-def samax(n, x, incx, result):
+def isamax(n, x, incx, result):
     assert x.dtype == torch.float32, "x must be float32"
     assert result.dtype == torch.int32, "result must be int32"
     if incx != 1 or n < 8388608:
-        return _common_samax(n, x, incx, result)
+        return _common_isamax(n, x, incx, result)
     assert x.dim() == 1, "x must be 1-dimensional"
     assert result.numel() == 1, "result must be a scalar tensor"
     assert x.numel() >= n, "x is too short"

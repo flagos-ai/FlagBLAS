@@ -110,9 +110,7 @@ _complex_dot_strided = libentry()(
     libtuner(
         configs=runtime.get_tuned_config("thead_l1_cdot_strided"),
         key=["N", "IX", "IY", "CONJ"],
-        reset_to_zero=["O"],
-        warmup=20,
-        rep=50,
+        reset_to_zero=["OUT"],
     )(_complex_dot_atomic.jit_function)
 )
 
@@ -121,9 +119,7 @@ _complex_dot_strided = libentry()(
 @libtuner(
     configs=runtime.get_tuned_config("thead_l1_zdot_pipelined"),
     key=["N", "IX", "IY", "CONJ"],
-    reset_to_zero=["O"],
-    warmup=20,
-    rep=50,
+    reset_to_zero=["OUT"],
 )
 @triton.jit
 def _complex_zdot_pipelined(

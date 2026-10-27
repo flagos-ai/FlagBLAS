@@ -1,9 +1,9 @@
+from .amax import icamax, idamax, isamax, izamax
+from .amin import icamin, idamin, isamin, izamin
+from .asum import dasum, dzasum, sasum, scasum
 from .bfgemm import bfgemm
 from .cgemm import cgemm
 from .dgemm import dgemm
-from .amax import camax, damax, samax, zamax
-from .amin import camin, damin, samin, zamin
-from .asum import dasum, dzasum, sasum, scasum
 from .dot import sdot
 from .dotc import cdotc, zdotc
 from .dotu import cdotu, zdotu
@@ -50,14 +50,14 @@ __all__ = [
     "dnrm2",
     "scnrm2",
     "dznrm2",
-    "samin",
-    "damin",
-    "camin",
-    "zamin",
-    "samax",
-    "damax",
-    "camax",
-    "zamax",
+    "isamin",
+    "idamin",
+    "icamin",
+    "izamin",
+    "isamax",
+    "idamax",
+    "icamax",
+    "izamax",
     "cgemv",
     "cgerc",
     "cgeru",
