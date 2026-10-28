@@ -448,6 +448,18 @@ def to_reference(inp, upcast=False):
     return ref_inp
 
 
+def gemm_randn(shape, dtype, device):
+    # torch_npu's randn/normal is unavailable for complex dtypes; build the
+    # complex tensors from real-valued randn instead (same trick as gemv).
+    if flag_blas.vendor_name == "ascend":
+        if dtype == torch.complex64:
+            values = torch.randn((*shape, 2), dtype=torch.float32, device=device)
+            return torch.view_as_complex(values)
+        if dtype == torch.complex128:
+            return torch.randn(shape, dtype=dtype).to(device)
+    return torch.randn(shape, dtype=dtype, device=device)
+
+
 def to_cpu_blas_tensor(inp):
     ref_inp = inp.detach()
     if ref_inp.is_complex():

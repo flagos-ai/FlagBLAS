@@ -26,6 +26,8 @@ from benchmark.performance_utils import Benchmark
 from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 from flag_blas.utils import shape_utils
 
+vendor_name = flag_blas.vendor_name
+
 # Multi-vendor GEMM reference: use the official BLAS library of the running
 # vendor when available, otherwise fall back to a torch.matmul reference.
 #
@@ -597,6 +599,41 @@ else:
     # cuPy (and its cuBLAS bindings) are imported with a guard at the top of
     # the module; vendors without cuPy use the ctypes / torch path instead.
     pass
+
+
+def _torch_reference_gemm(
+    A_col,
+    B_col,
+    C_col,
+    transa,
+    transb,
+    m,
+    n,
+    k,
+    alpha,
+    A_row,
+    B_row,
+    C_row,
+    lda_cublas,
+    ldb_cublas,
+    ldc_cublas,
+    lda_flag,
+    ldb_flag,
+    ldc_flag,
+    beta,
+    handle,
+    alpha_ptr,
+    beta_ptr,
+):
+    """torch/CANN GEMM baseline used on Ascend where cuBLAS is unavailable.
+
+    A_row/B_row/C_row are the row-major operands that FlagBLAS consumes.
+    ``transa``/``transb`` select whether the logical A/B matrices must be
+    transposed before the matmul, mirroring the cuBLAS semantics above.
+    """
+    a = A_row if transa == CUBLAS_OP_N else A_row.t()
+    b = B_row if transb == CUBLAS_OP_N else B_row.t()
+    return torch.addmm(C_row, a, b, beta=beta, alpha=alpha)
 
 
 GEMM_SHAPES = [
@@ -1296,6 +1333,278 @@ def gems_bfgemm_wrapper(
         ldc_flag,
     )
     return C_row
+
+
+# On Ascend, cupy/cuBLAS do not exist.  The aclblas C interface
+# (libacl_cblas.so, aclblasGemmEx/Hgemm) hard-codes the GEMM op, which is
+# absent from the CANN 9.0.0 OPP (no kernel/tiling/engine), so aclblas itself
+# cannot run on this stack.  The actual Ascend built-in BLAS GEMM is the CANN
+# MatMul op -- the exact kernel ``torch.addmm`` dispatches to on NPU tensors.
+# Drive it directly through the ACL aclopCompileAndExecuteV2 interface (with
+# cached desc/buf/attr) so the fp16 hgemm baseline is the raw CANN MatMul
+# kernel; fp32/bf16 have no verified ACL entry point and keep the torch path.
+if vendor_name == "ascend":
+    import ctypes
+
+    import torch_npu
+
+    _ACL_FP16 = 1
+    _ACL_ND = 2
+
+    _acl = ctypes.CDLL(
+        "/usr/local/Ascend/cann-9.0.0/aarch64-linux/lib64/libascendcl.so"
+    )
+    _acl_opc = ctypes.CDLL(
+        "/usr/local/Ascend/cann-9.0.0/aarch64-linux/lib64/libacl_op_compiler.so"
+    )
+    _acl.aclGetRecentErrMsg.restype = ctypes.c_char_p
+    _acl.aclCreateTensorDesc.restype = ctypes.c_void_p
+    _acl.aclCreateTensorDesc.argtypes = [
+        ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int
+    ]
+    _acl.aclCreateDataBuffer.restype = ctypes.c_void_p
+    _acl.aclCreateDataBuffer.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+    _acl.aclopCreateAttr.restype = ctypes.c_void_p
+    _acl.aclopSetAttrBool.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint8]
+    _acl_opc.aclopCompileAndExecuteV2.restype = ctypes.c_int
+    _acl_opc.aclopCompileAndExecuteV2.argtypes = [
+        ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
+        ctypes.c_char_p, ctypes.c_void_p,
+    ]
+
+    def _acl_make_desc(shape, dtype=_ACL_FP16):
+        dims = (ctypes.c_int64 * len(shape))(*shape)
+        return _acl.aclCreateTensorDesc(dtype, len(shape), dims, _ACL_ND)
+
+    def _acl_make_buf(t):
+        return _acl.aclCreateDataBuffer(
+            ctypes.c_void_p(t.data_ptr()), t.numel() * t.element_size()
+        )
+    # Ascend built-in BLAS C interface (libacl_cblas.so): the hgemm baseline
+    # calls aclblasHgemm directly.  aclblas is column-major; FlagBLAS operands
+    # are row-major, so the call computes C^T = B^T . A^T (operands and m/n
+    # swapped, trans flags kept).  lda/ldb/ldc must be -1 on this CANN version
+    # (strides derived internally, matching contiguous row-major buffers).
+    # NOTE: on CANN 9.0.0 / Atlas A2 (910B) the underlying "GEMM" op is not
+    # shipped in the OPP, so the direct call fails with 100024; in that case
+    # we warn once and fall back to the torch path so the benchmark runs.
+    _ACL_TRANS_N = 0
+    _ACL_TRANS_T = 1
+    _ACL_COMPUTE_HIGH_PRECISION = 0
+
+    _acl_cblas = ctypes.CDLL(
+        "/usr/local/Ascend/cann-9.0.0/aarch64-linux/lib64/libacl_cblas.so"
+    )
+    _acl_cblas.aclblasHgemm.restype = ctypes.c_int
+    _acl_cblas.aclblasHgemm.argtypes = [
+        ctypes.c_int,     # transA (aclTransType)
+        ctypes.c_int,     # transB
+        ctypes.c_int,     # transC
+        ctypes.c_int,     # m
+        ctypes.c_int,     # n
+        ctypes.c_int,     # k
+        ctypes.c_void_p,  # alpha (const aclFloat16 *, device memory)
+        ctypes.c_void_p,  # matrixA
+        ctypes.c_int,     # lda (-1: derived)
+        ctypes.c_void_p,  # matrixB
+        ctypes.c_int,     # ldb (-1: derived)
+        ctypes.c_void_p,  # beta (const aclFloat16 *, device memory)
+        ctypes.c_void_p,  # matrixC
+        ctypes.c_int,     # ldc (-1: derived)
+        ctypes.c_int,     # computeType (aclComputeType)
+        ctypes.c_void_p,  # stream
+    ]
+
+    _ACLBLAS_HGEMM_OK = None  # None: unprobed, True: works, False: broken
+    _ACLBLAS_SCALARS = {}
+
+    def _aclblas_fp16_scalar(value):
+        """Device fp16 scalar for alpha/beta (aclblas reads them on-device)."""
+        key = float(value)
+        scalar = _ACLBLAS_SCALARS.get(key)
+        if scalar is None:
+            scalar = torch.tensor([key], dtype=torch.float16, device="npu")
+            _ACLBLAS_SCALARS[key] = scalar
+        return scalar
+
+    class _MatMulPlan:
+        """Cached ACL desc/buf/attr for one (shape, trans, tensor) combo.
+
+        The ctypes arrays are built directly from the aclCreateTensorDesc /
+        aclCreateDataBuffer return values; keeping the raw pointers in plain
+        python lists and rebuilding the arrays from them later reliably
+        SIGSEGVs inside aclopCompileAndExecuteV2 on this CANN version.
+        """
+
+        __slots__ = ("in_desc", "in_buf", "out_desc", "out_buf", "attr", "keep")
+
+        def __init__(self, x1, x2, x3, y, tx1, tx2):
+            self.in_desc = (ctypes.c_void_p * 3)(
+                _acl_make_desc(list(x1.shape)),
+                _acl_make_desc(list(x2.shape)),
+                _acl_make_desc(list(x3.shape)),
+            )
+            self.in_buf = (ctypes.c_void_p * 3)(
+                _acl_make_buf(x1), _acl_make_buf(x2), _acl_make_buf(x3)
+            )
+            self.out_desc = (ctypes.c_void_p * 1)(_acl_make_desc(list(y.shape)))
+            self.out_buf = (ctypes.c_void_p * 1)(_acl_make_buf(y))
+            self.attr = _acl.aclopCreateAttr()
+            _acl.aclopSetAttrBool(self.attr, b"transpose_x1", tx1)
+            _acl.aclopSetAttrBool(self.attr, b"transpose_x2", tx2)
+            # keep the tensors alive: x3/y are plan-owned, x1/x2 borrowed.
+            self.keep = (x1, x2, x3, y)
+
+        def run(self, stream):
+            return _acl_opc.aclopCompileAndExecuteV2(
+                b"MatMul", 3, self.in_desc, self.in_buf, 1,
+                self.out_desc, self.out_buf, self.attr, 0, 0, None,
+                ctypes.c_void_p(stream),
+            )
+
+    _MATMUL_PLANS = {}
+
+    def _acl_matmul_gemm(
+        A_col,
+        B_col,
+        C_col,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_row,
+        B_row,
+        C_row,
+        lda_cublas,
+        ldb_cublas,
+        ldc_cublas,
+        lda_flag,
+        ldb_flag,
+        ldc_flag,
+        beta,
+        handle,
+        alpha_ptr,
+        beta_ptr,
+    ):
+        """Ascend built-in BLAS (CANN MatMul op) fp16 GEMM baseline.
+
+        Mirrors torch.addmm(C_row, a, b, beta, alpha) for the hgemm benchmark
+        defaults (alpha=1.0, beta=0.0) by feeding a dedicated all-zero C
+        buffer to MatMul (Y = A @ B + C).  Non-default alpha/beta fall back to
+        torch.addmm because the MatMul op ignores its alpha/beta attributes.
+        """
+        if alpha != 1.0 or beta != 0.0:
+            a = A_row if transa == CUBLAS_OP_N else A_row.t()
+            b = B_row if transb == CUBLAS_OP_N else B_row.t()
+            return torch.addmm(C_row, a, b, beta=beta, alpha=alpha)
+
+        key = (m, n, k, transa, transb, A_row.data_ptr(), B_row.data_ptr())
+        plan = _MATMUL_PLANS.get(key)
+        stream = torch_npu.npu.current_stream().npu_stream
+        if plan is None:
+            # A_row/B_row are contiguous (m,k)/(k,m) and (k,n)/(n,k); the
+            # transpose flags let the kernel build the logical operands.
+            x1 = A_row
+            x2 = B_row
+            x3 = torch.zeros(m, n, dtype=torch.float16, device="npu")
+            y = torch.empty(m, n, dtype=torch.float16, device="npu")
+            plan = _MatMulPlan(
+                x1,
+                x2,
+                x3,
+                y,
+                1 if transa == CUBLAS_OP_T else 0,
+                1 if transb == CUBLAS_OP_T else 0,
+            )
+            _MATMUL_PLANS[key] = plan
+        r = plan.run(stream)
+        if r != 0:
+            raise RuntimeError(
+                f"MatMul aclopCompileAndExecuteV2 failed ret={r} "
+                f"{_acl.aclGetRecentErrMsg()}"
+            )
+        return plan.keep[3]
+
+    def _acl_cblas_hgemm(
+        A_col,
+        B_col,
+        C_col,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        A_row,
+        B_row,
+        C_row,
+        lda_cublas,
+        ldb_cublas,
+        ldc_cublas,
+        lda_flag,
+        ldb_flag,
+        ldc_flag,
+        beta,
+        handle,
+        alpha_ptr,
+        beta_ptr,
+    ):
+        """hgemm baseline: direct call into libacl_cblas.so (aclblasHgemm).
+
+        aclblas is column-major while FlagBLAS operands are row-major, so the
+        call computes C^T = B^T . A^T: operand order and m/n are swapped and
+        the trans flags are kept.  lda/ldb/ldc must be -1 on this CANN version
+        (strides are derived internally, which matches the contiguous
+        row-major FlagBLAS buffers exactly).  When the underlying GEMM op is
+        absent from the OPP (CANN 9.0.0 / Atlas A2), the first call warns once
+        and the torch (addmm) path is used instead.
+        """
+        global _ACLBLAS_HGEMM_OK
+        if _ACLBLAS_HGEMM_OK is not False:
+            stream = torch_npu.npu.current_stream().npu_stream
+            alpha_dev = _aclblas_fp16_scalar(alpha)
+            beta_dev = _aclblas_fp16_scalar(beta)
+            ret = _acl_cblas.aclblasHgemm(
+                _ACL_TRANS_T if transb == CUBLAS_OP_T else _ACL_TRANS_N,
+                _ACL_TRANS_T if transa == CUBLAS_OP_T else _ACL_TRANS_N,
+                _ACL_TRANS_N,
+                int(n),
+                int(m),
+                int(k),
+                ctypes.c_void_p(alpha_dev.data_ptr()),
+                ctypes.c_void_p(B_row.data_ptr()),
+                -1,
+                ctypes.c_void_p(A_row.data_ptr()),
+                -1,
+                ctypes.c_void_p(beta_dev.data_ptr()),
+                ctypes.c_void_p(C_row.data_ptr()),
+                -1,
+                _ACL_COMPUTE_HIGH_PRECISION,
+                ctypes.c_void_p(stream),
+            )
+            if ret == 0:
+                _ACLBLAS_HGEMM_OK = True
+                return C_row
+            if _ACLBLAS_HGEMM_OK is None:
+                _ACLBLAS_HGEMM_OK = False
+                print(
+                    "[gemm_perf_common] libacl_cblas.so aclblasHgemm direct "
+                    f"call failed ret={ret}: {_acl.aclGetRecentErrMsg()!r}; "
+                    "the GEMM op is absent from this CANN OPP -- falling "
+                    "back to the torch (addmm) path for the hgemm baseline."
+                )
+        a = A_row if transa == CUBLAS_OP_N else A_row.t()
+        b = B_row if transb == CUBLAS_OP_N else B_row.t()
+        return torch.addmm(C_row, a, b, beta=beta, alpha=alpha)
+
+    cublas_sgemm = _torch_reference_gemm
+    cublas_hgemm = _acl_cblas_hgemm
+    cublas_bfgemm = _torch_reference_gemm
+    cublas_bfgemm_reference = _torch_reference_gemm
 
 
 class GemmBenchmark(Benchmark):

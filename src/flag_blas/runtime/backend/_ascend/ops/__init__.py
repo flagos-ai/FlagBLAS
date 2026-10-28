@@ -1,4 +1,5 @@
 from .gbmv import cgbmv, sgbmv
+from .gemm import bfgemm, cgemm, dgemm, hgemm, sgemm, zgemm
 from .gemv import bfgemv, cgemv, hgemv, sgemv
 from .ger import cgerc, cgeru, sger
 from .group_gemm import group_bfgemm, group_hgemm, group_tf32gemm
@@ -65,4 +66,10 @@ __all__ = [
     "group_tf32gemm",
     "strmv",
     "ctrmv",
+    "sgemm",
+    "hgemm",
+    "bfgemm",
+    "dgemm",
+    "cgemm",
+    "zgemm",
 ]
