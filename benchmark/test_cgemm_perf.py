@@ -33,6 +33,8 @@ from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 if IS_HYGON:
     from benchmark.gemm_perf_common import _load_hipblas
 
+IS_THEAD = flag_blas.vendor_name == "thead"
+
 
 def cgemm_reference(
     A_col,
@@ -171,6 +173,15 @@ def _run_cgemm_benchmark(op_name, transa, transb):
         bench.run()
         return
 
+    if IS_THEAD:
+        # MMAO has no cublasCgemm: time FlagBLAS only and compare it with the
+        # saved H100 cuBLAS timings (same method as the T-Head Level 2 paths).
+        # Accuracy is covered by tests/test_cgemm.py.
+        from benchmark.thead_l2_reference import run_thead_gemm
+
+        run_thead_gemm(bench)
+        return
+
     bench.init_user_config()
     if not Config.skip_correctness:
         for cur_dtype in bench.to_bench_dtypes:
@@ -183,36 +194,20 @@ def _run_cgemm_benchmark(op_name, transa, transb):
 
 
 @pytest.mark.cgemm
-@pytest.mark.skipif(
-    flag_blas.vendor_name == "thead",
-    reason="cublasCgemm not supported on T-Head (Zhenwu) platform",
-)
 def test_perf_cgemm_nn():
     _run_cgemm_benchmark("cgemm", CUBLAS_OP_N, CUBLAS_OP_N)
 
 
 @pytest.mark.cgemm
-@pytest.mark.skipif(
-    flag_blas.vendor_name == "thead",
-    reason="cublasCgemm not supported on T-Head (Zhenwu) platform",
-)
 def test_perf_cgemm_tn():
     _run_cgemm_benchmark("cgemm_tn", CUBLAS_OP_T, CUBLAS_OP_N)
 
 
 @pytest.mark.cgemm
-@pytest.mark.skipif(
-    flag_blas.vendor_name == "thead",
-    reason="cublasCgemm not supported on T-Head (Zhenwu) platform",
-)
 def test_perf_cgemm_nt():
     _run_cgemm_benchmark("cgemm_nt", CUBLAS_OP_N, CUBLAS_OP_T)
 
 
 @pytest.mark.cgemm
-@pytest.mark.skipif(
-    flag_blas.vendor_name == "thead",
-    reason="cublasCgemm not supported on T-Head (Zhenwu) platform",
-)
 def test_perf_cgemm_tt():
     _run_cgemm_benchmark("cgemm_tt", CUBLAS_OP_T, CUBLAS_OP_T)

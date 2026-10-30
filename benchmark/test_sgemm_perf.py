@@ -24,19 +24,53 @@ from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 # default tolerance.
 SGEMM_TOLERANCE = 1e-4 if flag_blas.vendor_name == "thead" else 1.3e-6
 
+IS_ASCEND = flag_blas.vendor_name == "ascend"
 
-@pytest.mark.sgemm
-def test_perf_sgemm_nn():
-    bench = GemmBenchmark(
-        op_name="sgemm",
+if IS_ASCEND:
+    from benchmark.ascend_l2_reference import AscendL2Benchmark
+
+    class SgemmBenchmark(AscendL2Benchmark, GemmBenchmark):
+        """Ascend GEMM benchmark against the saved H100 cuBLAS baseline.
+
+        Ascend has no callable official BLAS, so only the FlagBLAS call is
+        timed. ``latency_base``/``gbps_base`` come from
+        benchmark/baselines/h100_l3.json (core shapes only) and the speedup is
+        normalized by the H100/Ascend conversion factor; see
+        benchmark/ascend_l2_reference.py. The default assumption is the memory
+        bound factor, override it with FLAGBLAS_L2_BOTTLENECK=vector when
+        scoring the compute-bound cubic shapes.
+        """
+
+        metric_family = "gemm"
+
+        def set_more_shapes(self):
+            # Only the core GEMM shapes have saved H100 timings, so an Ascend
+            # run never appends the comprehensive-level extra shapes.
+            return None
+
+else:
+
+    class SgemmBenchmark(GemmBenchmark):
+        pass
+
+
+def _run_sgemm_benchmark(op_name, transa, transb):
+    bench = SgemmBenchmark(
+        op_name=op_name,
         torch_op=cublas_sgemm,
         gems_op=gems_sgemm_wrapper,
         dtypes=[torch.float32],
-        transa=CUBLAS_OP_N,
-        transb=CUBLAS_OP_N,
+        transa=transa,
+        transb=transb,
     )
+    if IS_ASCEND:
+        # Accuracy is covered by tests/test_sgemm.py; the performance case only
+        # times FlagBLAS and compares it with the saved H100 cuBLAS timings.
+        bench.run()
+        return
+
     bench.init_user_config()
-    for cur_dtype in bench.dtypes:
+    for cur_dtype in bench.to_bench_dtypes:
         for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
             torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
             gems_result = gems_sgemm_wrapper(A, B, C.clone(), **kwargs)
@@ -45,69 +79,23 @@ def test_perf_sgemm_nn():
                 torch_result, gems_result, k, tolerance=SGEMM_TOLERANCE
             )
     bench.run()
+
+
+@pytest.mark.sgemm
+def test_perf_sgemm_nn():
+    _run_sgemm_benchmark("sgemm", CUBLAS_OP_N, CUBLAS_OP_N)
 
 
 @pytest.mark.sgemm
 def test_perf_sgemm_tn():
-    bench = GemmBenchmark(
-        op_name="sgemm_tn",
-        torch_op=cublas_sgemm,
-        gems_op=gems_sgemm_wrapper,
-        dtypes=[torch.float32],
-        transa=CUBLAS_OP_T,
-        transb=CUBLAS_OP_N,
-    )
-    bench.init_user_config()
-    for cur_dtype in bench.dtypes:
-        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
-            torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
-            gems_result = gems_sgemm_wrapper(A, B, C.clone(), **kwargs)
-            k = kwargs.get("k", 0)
-            bench.validate_results(
-                torch_result, gems_result, k, tolerance=SGEMM_TOLERANCE
-            )
-    bench.run()
+    _run_sgemm_benchmark("sgemm_tn", CUBLAS_OP_T, CUBLAS_OP_N)
 
 
 @pytest.mark.sgemm
 def test_perf_sgemm_nt():
-    bench = GemmBenchmark(
-        op_name="sgemm_nt",
-        torch_op=cublas_sgemm,
-        gems_op=gems_sgemm_wrapper,
-        dtypes=[torch.float32],
-        transa=CUBLAS_OP_N,
-        transb=CUBLAS_OP_T,
-    )
-    bench.init_user_config()
-    for cur_dtype in bench.dtypes:
-        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
-            torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
-            gems_result = gems_sgemm_wrapper(A, B, C.clone(), **kwargs)
-            k = kwargs.get("k", 0)
-            bench.validate_results(
-                torch_result, gems_result, k, tolerance=SGEMM_TOLERANCE
-            )
-    bench.run()
+    _run_sgemm_benchmark("sgemm_nt", CUBLAS_OP_N, CUBLAS_OP_T)
 
 
 @pytest.mark.sgemm
 def test_perf_sgemm_tt():
-    bench = GemmBenchmark(
-        op_name="sgemm_tt",
-        torch_op=cublas_sgemm,
-        gems_op=gems_sgemm_wrapper,
-        dtypes=[torch.float32],
-        transa=CUBLAS_OP_T,
-        transb=CUBLAS_OP_T,
-    )
-    bench.init_user_config()
-    for cur_dtype in bench.dtypes:
-        for A, B, C, kwargs in bench.get_input_iter(cur_dtype):
-            torch_result = cublas_sgemm(A, B, C.clone(), **kwargs)
-            gems_result = gems_sgemm_wrapper(A, B, C.clone(), **kwargs)
-            k = kwargs.get("k", 0)
-            bench.validate_results(
-                torch_result, gems_result, k, tolerance=SGEMM_TOLERANCE
-            )
-    bench.run()
+    _run_sgemm_benchmark("sgemm_tt", CUBLAS_OP_T, CUBLAS_OP_T)
