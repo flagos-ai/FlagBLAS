@@ -37,6 +37,8 @@ IS_HYGON = flag_blas.vendor_name == "hygon"
 
 if IS_HYGON:
     from .hipblas_reference import check_hipblas_status, get_hipblas_context
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp, cublas
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
@@ -46,6 +48,10 @@ COMPLEX_SCALARS = [1.0 + 2.0j, -0.5 + 1.5j]
 
 
 def load_cublas():
+    if flag_blas.vendor_name == "mthreads":
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -128,6 +134,8 @@ def cublas_csscal_reference(n, alpha, x, incx):
         return
 
     handle = cp.cuda.device.get_cublas_handle()
+    if flag_blas.vendor_name == "mthreads":
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
     alpha_c = ctypes.c_float(alpha)
     status = _cublas.cublasCsscal_v2(
         ctypes.c_void_p(handle),
@@ -148,6 +156,8 @@ def cublas_zdscal_reference(n, alpha, x, incx):
         return
 
     handle = cp.cuda.device.get_cublas_handle()
+    if flag_blas.vendor_name == "mthreads":
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
     alpha_c = ctypes.c_double(alpha)
     status = _cublas.cublasZdscal_v2(
         ctypes.c_void_p(handle),

@@ -32,11 +32,17 @@ if IS_HYGON:
         get_hipblas_context,
         get_hipblas_library,
     )
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp
 else:
     import cupy as cp
 
 
 def load_cublas():
+    if flag_blas.vendor_name == "mthreads":
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:

@@ -30,6 +30,13 @@ if IS_HYGON:
 
     from tests.accuracy_utils import get_l1_hipblas_context
     from tests.hipblas_reference import check_hipblas_status, get_hipblas_library
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import (
+        cp,
+        cublas,
+        mublas_index_baseline,
+        mublas_index_op,
+    )
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
@@ -96,6 +103,12 @@ if IS_HYGON:
     cublas_izamax = hipblas_amax_baseline
     blas_izamax_wrapper = _hygon_amax_wrapper(blas_izamax_wrapper)
 
+elif flag_blas.vendor_name == "mthreads":
+    cublas_isamax = mublas_index_baseline(cublas.isamax)
+    cublas_idamax = mublas_index_baseline(cublas.idamax)
+    cublas_icamax = mublas_index_baseline(cublas.icamax)
+    cublas_izamax = mublas_index_baseline(cublas.izamax)
+
 else:
 
     def cublas_isamax(x, incx=1, n=None, handle=None, result=None):
@@ -115,7 +128,22 @@ else:
         return result
 
 
+if flag_blas.vendor_name == "mthreads":
+    blas_isamax_wrapper = mublas_index_op(blas_isamax_wrapper)
+    blas_idamax_wrapper = mublas_index_op(blas_idamax_wrapper)
+    blas_icamax_wrapper = mublas_index_op(blas_icamax_wrapper)
+    blas_izamax_wrapper = mublas_index_op(blas_izamax_wrapper)
+
+
 class AmaxBenchmark(Benchmark):
+    def validate_results(self, reference_result, blas_result, dtype, reduce_dim=1):
+        if flag_blas.vendor_name == "mthreads":
+            reference_result = reference_result.cpu()
+            blas_result = blas_result.cpu()
+        return super().validate_results(
+            reference_result, blas_result, dtype, reduce_dim=reduce_dim
+        )
+
     def set_more_metrics(self):
         return ["gbps"]
 
@@ -127,7 +155,10 @@ class AmaxBenchmark(Benchmark):
             c_func = _resolve_hipblas_amax(cur_dtype)
         else:
             handle = cp.cuda.device.get_cublas_handle()
-            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
+            if flag_blas.vendor_name == "mthreads":
+                cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+            else:
+                cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
 
         for shape in self.shapes:
             inp = torch.randn(shape, dtype=cur_dtype, device=self.device)
@@ -141,6 +172,10 @@ class AmaxBenchmark(Benchmark):
                 kwargs = {"n": n, "handle": handle, "result": result}
                 if IS_HYGON:
                     kwargs["c_func"] = c_func
+                if flag_blas.vendor_name == "mthreads":
+                    kwargs["host_result"] = torch.empty(
+                        1, dtype=torch.int32, device="cpu"
+                    )
                 yield inp, kwargs
 
     def get_gbps(self, args, latency):
@@ -161,6 +196,14 @@ class AmaxStrideBenchmark(Benchmark):
         super().__init__(*args, **kwargs)
         self.incx = incx
 
+    def validate_results(self, reference_result, blas_result, dtype, reduce_dim=1):
+        if flag_blas.vendor_name == "mthreads":
+            reference_result = reference_result.cpu()
+            blas_result = blas_result.cpu()
+        return super().validate_results(
+            reference_result, blas_result, dtype, reduce_dim=reduce_dim
+        )
+
     def set_more_metrics(self):
         return ["gbps"]
 
@@ -172,7 +215,10 @@ class AmaxStrideBenchmark(Benchmark):
             c_func = _resolve_hipblas_amax(cur_dtype)
         else:
             handle = cp.cuda.device.get_cublas_handle()
-            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
+            if flag_blas.vendor_name == "mthreads":
+                cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+            else:
+                cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
 
         for shape in self.shapes:
             n = shape[0]
@@ -191,6 +237,10 @@ class AmaxStrideBenchmark(Benchmark):
                 }
                 if IS_HYGON:
                     kwargs["c_func"] = c_func
+                if flag_blas.vendor_name == "mthreads":
+                    kwargs["host_result"] = torch.empty(
+                        1, dtype=torch.int32, device="cpu"
+                    )
                 yield inp, kwargs
 
     def get_gbps(self, args, latency):

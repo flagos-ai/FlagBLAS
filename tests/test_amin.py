@@ -33,6 +33,8 @@ if IS_HYGON:
 
     from tests.accuracy_utils import get_l1_hipblas_context
     from tests.hipblas_reference import check_hipblas_status, get_hipblas_library
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp, cublas
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
@@ -157,8 +159,10 @@ else:
             raise ValueError(f"Unsupported dtype for cuBLAS: {dtype}")
 
         handle = cp.cuda.device.get_cublas_handle()
-        if flag_blas.vendor_name == "thead" and not x.is_complex():
-            # PPU real AMIN requires host memory for its output index.
+        if flag_blas.vendor_name == "mthreads" or (
+            flag_blas.vendor_name == "thead" and not x.is_complex()
+        ):
+            # Use the supported host output index for this vendor interface.
             host_result = torch.empty(1, dtype=torch.int32, device="cpu")
             previous_mode = cublas.getPointerMode(handle)
             try:

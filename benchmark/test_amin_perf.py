@@ -27,6 +27,13 @@ if IS_HYGON:
 
     from tests.accuracy_utils import get_l1_hipblas_context
     from tests.hipblas_reference import check_hipblas_status, get_hipblas_library
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import (
+        cp,
+        cublas,
+        mublas_index_baseline,
+        mublas_index_op,
+    )
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
@@ -96,6 +103,12 @@ if IS_HYGON:
     gems_icamin = _hygon_amin_wrapper(gems_icamin)
     gems_izamin = _hygon_amin_wrapper(gems_izamin)
 
+elif flag_blas.vendor_name == "mthreads":
+    cublas_isamin = mublas_index_baseline(cublas.isamin)
+    cublas_idamin = mublas_index_baseline(cublas.idamin)
+    cublas_icamin = mublas_index_baseline(cublas.icamin)
+    cublas_izamin = mublas_index_baseline(cublas.izamin)
+
 else:
     if flag_blas.vendor_name == "thead":
 
@@ -135,6 +148,13 @@ else:
         return result
 
 
+if flag_blas.vendor_name == "mthreads":
+    gems_isamin = mublas_index_op(gems_isamin)
+    gems_idamin = mublas_index_op(gems_idamin)
+    gems_icamin = mublas_index_op(gems_icamin)
+    gems_izamin = mublas_index_op(gems_izamin)
+
+
 class AminBenchmark(Benchmark):
     def __init__(self, *args, incx=1, **kwargs):
         super().__init__(*args, **kwargs)
@@ -151,7 +171,9 @@ class AminBenchmark(Benchmark):
             c_func = _resolve_hipblas_amin(cur_dtype)
         else:
             handle = cp.cuda.device.get_cublas_handle()
-            if flag_blas.vendor_name == "thead" and not cur_dtype.is_complex:
+            if flag_blas.vendor_name == "mthreads" or (
+                flag_blas.vendor_name == "thead" and not cur_dtype.is_complex
+            ):
                 cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
             else:
                 cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
@@ -170,13 +192,17 @@ class AminBenchmark(Benchmark):
             }
             if IS_HYGON:
                 kwargs["c_func"] = c_func
-            if flag_blas.vendor_name == "thead" and not cur_dtype.is_complex:
+            if flag_blas.vendor_name == "mthreads" or (
+                flag_blas.vendor_name == "thead" and not cur_dtype.is_complex
+            ):
                 # Allocate outside the timer; FlagBLAS retains its device output.
                 kwargs["host_result"] = torch.empty(1, dtype=torch.int32, device="cpu")
             yield x, kwargs
 
     def validate_results(self, reference_result, blas_result, dtype, reduce_dim=1):
-        if flag_blas.vendor_name == "thead" and not dtype.is_complex:
+        if flag_blas.vendor_name == "mthreads" or (
+            flag_blas.vendor_name == "thead" and not dtype.is_complex
+        ):
             # The vendor API returns a host index; FlagBLAS returns a device index.
             reference_result = reference_result.cpu()
             blas_result = blas_result.cpu()

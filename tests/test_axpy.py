@@ -41,6 +41,8 @@ if IS_HYGON:
         check_hipblas_status,
         get_hipblas_context,
     )
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp, cublas
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas

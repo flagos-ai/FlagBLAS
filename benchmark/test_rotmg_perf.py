@@ -10,7 +10,9 @@ from benchmark.performance_utils import Benchmark, run_correctness_then_benchmar
 from tests.test_rotmg import ROTMG_CASES
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
-if not IS_HYGON:
+if flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp
+elif not IS_HYGON:
     import cupy as cp
 if IS_HYGON:
     from tests.accuracy_utils import get_l1_hipblas_context
@@ -21,6 +23,10 @@ CUBLAS_POINTER_MODE_DEVICE = 1
 
 
 def load_cublas():
+    if flag_blas.vendor_name == "mthreads":
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
