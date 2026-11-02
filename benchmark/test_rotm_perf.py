@@ -10,7 +10,9 @@ from benchmark.attri_util import L1_STRIDE_SHAPES, L1_VECTOR_SHAPES
 from benchmark.performance_utils import Benchmark, run_correctness_then_benchmark
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
-if not IS_HYGON:
+if flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp
+elif not IS_HYGON:
     import cupy as cp
 if IS_HYGON:
     from tests.hipblas_reference import (
@@ -24,6 +26,10 @@ ROTM_FLAGS = [-2.0, -1.0, 0.0, 1.0]
 
 
 def load_cublas():
+    if flag_blas.vendor_name == "mthreads":
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:

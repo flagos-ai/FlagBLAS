@@ -14,7 +14,6 @@ import os
 
 import torch
 
-
 MUBLAS_POINTER_MODE_HOST = 0
 MUBLAS_POINTER_MODE_DEVICE = 1
 _MUBLAS_GEMM_EX_SYMBOL = (
@@ -60,6 +59,7 @@ class _MuBLASLibrary:
         if symbol == "mublasGemmEx":
             symbol = _MUBLAS_GEMM_EX_SYMBOL
         function = getattr(self._raw, symbol)
+
         # The benchmark's CuPy calls pass data/scalar pointers as Python
         # integers. ctypes defaults integer arguments to C ``int`` and
         # truncates 64-bit device addresses. Distinguish ordinary BLAS enum/
@@ -67,6 +67,7 @@ class _MuBLASLibrary:
         def call(*args):
             values = list(args)
             lname = name.lower()
+
             def enum_value(value):
                 return value.value if isinstance(value, ctypes._SimpleCData) else value
 
@@ -78,7 +79,18 @@ class _MuBLASLibrary:
                 values[1] = {0: 111, 1: 112, 2: 113}.get(raw, raw)
             if len(values) > 1 and any(
                 token in lname
-                for token in ("hemv", "hbmv", "hpmv", "symv", "spmv", "sbmv", "her", "syr", "spr", "hpr")
+                for token in (
+                    "hemv",
+                    "hbmv",
+                    "hpmv",
+                    "symv",
+                    "spmv",
+                    "sbmv",
+                    "her",
+                    "syr",
+                    "spr",
+                    "hpr",
+                )
             ):
                 raw = enum_value(values[1])
                 values[1] = {0: 122, 1: 121}.get(raw, raw)
@@ -118,7 +130,11 @@ class _MuBLASLibrary:
                         converted.append(value)
             function.argtypes = argtypes
             function.restype = ctypes.c_int
-            return function(*converted)
+            status = function(*converted)
+            if status != 0:
+                message = f"{symbol} failed with muBLAS status {status}"
+                raise RuntimeError(message)
+            return status
 
         return call
 
@@ -170,6 +186,20 @@ class _CublasCompat:
             return lambda handle, mode: load_mublas().mublasSetPointerMode(
                 ctypes.c_void_p(int(handle)), mode
             )
+        if name in {"getPointerMode", "getPointerMode_v2"}:
+
+            def get_mode(handle):
+                mode = ctypes.c_int()
+                status = load_mublas().mublasGetPointerMode(
+                    ctypes.c_void_p(int(handle)), ctypes.byref(mode)
+                )
+                if status:
+                    raise RuntimeError(
+                        f"mublasGetPointerMode failed with status {status}"
+                    )
+                return mode.value
+
+            return get_mode
         if name in {"setStream", "setStream_v2"}:
             return lambda handle, stream: load_mublas().mublasSetStream(
                 ctypes.c_void_p(int(handle)), ctypes.c_void_p(int(stream))
@@ -214,3 +244,20 @@ cp = _CuPyCompat()
 
 
 __all__ = ["cp", "cublas", "load_mublas", "get_mublas_handle"]
+
+
+def mublas_index_baseline(function):
+    """Use the supported host index output without allocations in the timer."""
+
+    def call(x, incx=1, n=None, handle=None, result=None, host_result=None):
+        function(handle, n, x.data_ptr(), incx, host_result.data_ptr())
+        return host_result
+
+    return call
+
+
+def mublas_index_op(function):
+    def call(x, incx=1, n=None, handle=None, result=None, host_result=None):
+        return function(x, incx=incx, n=n, handle=handle, result=result)
+
+    return call

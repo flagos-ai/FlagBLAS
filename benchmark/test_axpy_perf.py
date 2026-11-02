@@ -108,6 +108,8 @@ if IS_HYGON:
         _HIPBLAS_HANDLES.clear()
 
     atexit.register(_destroy_hipblas_handles)
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp, cublas
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas

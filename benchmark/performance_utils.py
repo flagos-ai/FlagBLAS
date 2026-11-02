@@ -645,6 +645,11 @@ class Benchmark:
 
 
 def run_correctness_then_benchmark(bench):
+    if (
+        flag_blas.vendor_name == "mthreads"
+        and getattr(bench, "correctness_reference", "cuBLAS") == "cuBLAS"
+    ):
+        bench.correctness_reference = "muBLAS"
     if flag_blas.vendor_name == "thead":
         from benchmark.thead_l1_reference import needs_h100_l1_reference, run_thead_l1
 

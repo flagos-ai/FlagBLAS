@@ -38,11 +38,17 @@ if IS_HYGON:
         get_hipblas_context,
         get_hipblas_library,
     )
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp
 else:
     import cupy as cp
 
 
 def load_cublas():
+    if flag_blas.vendor_name == "mthreads":
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -64,6 +70,8 @@ def cublas_rot_reference(n, x, incx, y, incy, c, s):
         return x, y
 
     handle = cp.cuda.device.get_cublas_handle()
+    if flag_blas.vendor_name == "mthreads":
+        _cublas.cublasSetPointerMode_v2(ctypes.c_void_p(handle), 0)
     dtype = x.dtype
 
     c_val = c.item() if isinstance(c, torch.Tensor) else c

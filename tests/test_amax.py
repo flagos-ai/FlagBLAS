@@ -37,6 +37,8 @@ if IS_HYGON:
     from tests.accuracy_utils import get_l1_hipblas_context
 
     from .hipblas_reference import check_hipblas_status
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp, cublas
 else:
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
@@ -88,6 +90,17 @@ def cublas_amax_reference(n, x, incx, result):
         raise ValueError(f"Unsupported dtype for cuBLAS: {dtype}")
 
     handle = cp.cuda.device.get_cublas_handle()
+    if flag_blas.vendor_name == "mthreads":
+        # Device index outputs are not written by muBLAS for large reductions.
+        host_result = torch.empty(1, dtype=torch.int32, device="cpu")
+        previous_mode = cublas.getPointerMode(handle)
+        try:
+            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+            func(handle, n, x.data_ptr(), incx, host_result.data_ptr())
+        finally:
+            cublas.setPointerMode(handle, previous_mode)
+        result.copy_(host_result)
+        return
     cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
 
     func(handle, n, x.data_ptr(), incx, result.data_ptr())
