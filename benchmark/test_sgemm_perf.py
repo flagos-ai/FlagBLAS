@@ -27,18 +27,20 @@ SGEMM_TOLERANCE = 1e-4 if flag_blas.vendor_name == "thead" else 1.3e-6
 IS_ASCEND = flag_blas.vendor_name == "ascend"
 
 if IS_ASCEND:
-    from benchmark.ascend_l2_reference import AscendL2Benchmark
+    from benchmark.ascend_l3_reference import AscendL3Benchmark
 
-    class SgemmBenchmark(AscendL2Benchmark, GemmBenchmark):
+    class SgemmBenchmark(AscendL3Benchmark, GemmBenchmark):
         """Ascend GEMM benchmark against the saved H100 cuBLAS baseline.
 
         Ascend has no callable official BLAS, so only the FlagBLAS call is
         timed. ``latency_base``/``gbps_base`` come from
         benchmark/baselines/h100_l3.json (core shapes only) and the speedup is
         normalized by the H100/Ascend conversion factor; see
-        benchmark/ascend_l2_reference.py. The default assumption is the memory
-        bound factor, override it with FLAGBLAS_L2_BOTTLENECK=vector when
-        scoring the compute-bound cubic shapes.
+        benchmark/ascend_l3_reference.py. sgemm is scored with the FP32 vector
+        factor because the H100 cuBLAS baseline is compute-bound on CUDA cores
+        (large shapes reach ~75% of the 67 TFLOPS FP32 peak at 1-3% of HBM
+        bandwidth); pass FLAGBLAS_L3_BOTTLENECK=memory to score it as
+        bandwidth-bound.
         """
 
         metric_family = "gemm"
