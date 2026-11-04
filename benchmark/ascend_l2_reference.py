@@ -39,7 +39,17 @@ def randn(size, *, dtype, device):
 
 
 class AscendL2Reference:
-    """Saved cuBLAS timings and explicit resource-normalization assumptions."""
+    """Saved cuBLAS timings and explicit resource-normalization assumptions.
+
+    The default reference set is ``h100.json`` (Level 2) plus ``h100_l3.json``
+    (Level 3 GEMM, e.g. sgemm). ``FLAGBLAS_L2_REFERENCE_FILE`` may override it
+    with one or more comma-separated paths relative to the project root.
+    """
+
+    DEFAULT_REFERENCE_FILES = (
+        "benchmark/baselines/h100.json",
+        "benchmark/baselines/h100_l3.json",
+    )
 
     def __init__(self):
         self.mode = os.environ.get("FLAGBLAS_L2_REFERENCE", "h100")
@@ -52,19 +62,25 @@ class AscendL2Reference:
         self.cases = {}
         self.case_fields = {}
         self.factor = None
-        self.path = None
+        self.paths = ()
         self.baseline_id = None
         self.calibration = None
         if self.mode == "none":
             return
         project = Path(__file__).resolve().parents[1]
-        relative = os.environ.get(
-            "FLAGBLAS_L2_REFERENCE_FILE",
-            "benchmark/baselines/h100.json",
+        override = os.environ.get("FLAGBLAS_L2_REFERENCE_FILE")
+        relative_files = (
+            [name.strip() for name in override.split(",") if name.strip()]
+            if override
+            else list(self.DEFAULT_REFERENCE_FILES)
         )
-        self.path = project / relative
-        self.baseline_id = self.path.stem
-        rows = json.loads(self.path.read_text())
+        self.paths = tuple(project / name for name in relative_files)
+        self.baseline_id = "+".join(path.stem for path in self.paths)
+        rows = []
+        for path in self.paths:
+            if not path.is_file():
+                raise ValueError(f"L2 baseline file is missing: {path}")
+            rows.extend(json.loads(path.read_text()))
         if not rows:
             raise ValueError("L2 baseline is empty")
         for saved in rows:
@@ -128,7 +144,9 @@ class AscendL2Reference:
             )
             return
         print(
-            f"[conversion] baseline={self.baseline_id}; file={self.path}; reference=cuBLAS saved timings"
+            f"[conversion] baseline={self.baseline_id}; "
+            f"files={', '.join(str(path) for path in self.paths)}; "
+            "reference=cuBLAS saved timings"
         )
         print(
             "[conversion] H100 SXM theoretical / Ascend910B4-1 measured resource capacity"
