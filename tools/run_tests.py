@@ -991,8 +991,6 @@ def get_ops_to_test():
         accuracy_targets = {}
         performance_targets = {}
         for entry in op_catalog:
-            if vendor == "hygon" and "BLAS Level 1" not in entry.get("description", ""):
-                continue
             for label in entry.get("labels", []):
                 accuracy = ROOT / "tests" / f"test_{label}.py"
                 performance = ROOT / "benchmark" / f"test_{label}_perf.py"
