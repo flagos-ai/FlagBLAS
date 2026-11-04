@@ -13,6 +13,16 @@ RUN dnf install -y \
         || echo "pyproject-rpm-macros unavailable; spec uses pip fallback") \
     && dnf clean all
 
+# openEuler images define %dist as empty (official .oe* tags are injected by
+# the distro build service); reconstruct it so local/CI builds get a
+# distro-tagged Release like official packages.
+RUN if [ -z "$(rpm --eval '%{?dist}')" ]; then \
+        . /etc/os-release && \
+        case "${ID}" in \
+            openEuler) echo "%dist .oe$(echo "${VERSION_ID}" | tr -d '.')" >> /root/.rpmmacros ;; \
+        esac; \
+    fi
+
 RUN rpmdev-setuptree
 
 COPY . /workspace/FlagBLAS
