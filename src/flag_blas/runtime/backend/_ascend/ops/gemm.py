@@ -243,6 +243,13 @@ def _sgemm_padded(
         _pad2d_kernel[((triton.cdiv(b_dst_rows, COPY_BM) * b_gn),)](
             B, Bp, b_rows, b_cols, b_dst_rows, b_dst_cols, GRID_N=b_gn,
             BLOCK_M=COPY_BM, BLOCK_N=COPY_BN)
+        if not beta_is_zero:
+            # Cp is a reused workspace, so seed the (m, n) block with the real
+            # C for the beta*C term (the padding region stays 0).
+            c_gn = triton.cdiv(np_, COPY_BN)
+            _pad2d_kernel[((triton.cdiv(mp, COPY_BM) * c_gn),)](
+                C, Cp, m, n, mp, np_, GRID_N=c_gn,
+                BLOCK_M=COPY_BM, BLOCK_N=COPY_BN)
         # Fully aligned GEMM: no masks anywhere (mp/np_/kp are tile multiples).
         grid = (triton.cdiv(mp, bm2) * triton.cdiv(np_, bn2),)
         _sgemm_kernel[grid](
