@@ -18,10 +18,12 @@ FP32/FP64 rates because no reliable published nominal vector specification
 is available; it is a diagnostic scenario, not the default GEMV score.
 Logical FLOP and byte counts are displayed only; they do not enter the score.
 
-c/zgemm follow the same method because MMAO exposes no cublasCgemm/cublasZgemm:
-their reference rows live in benchmark/baselines/h100_l3.json and are scored
-with the same conversion factors (vector_fp32/vector_fp64 for the compute-bound
-cubic shapes).
+c/zgemm follow the same method because MMAO exposes no cublasCgemm/cublasZgemm,
+but they are Level 3 operators: their reference rows live in
+benchmark/baselines/h100_l3.json and they read the ``FLAGBLAS_L3_*`` environment
+variables (vector_fp32/vector_fp64 for the compute-bound cubic shapes).  Level 2
+rows stay in h100.json and keep using ``FLAGBLAS_L2_*``, so the two levels do
+not interfere with each other.
 """
 
 import gc
@@ -86,15 +88,19 @@ def _scalar(value):
 
 class THeadGemvReference:
     def __init__(
-        self, ops=None, reference_label="c/zgemv", reference_file="h100.json"
+        self,
+        ops=None,
+        reference_label="c/zgemv",
+        reference_file="h100.json",
+        env_prefix="FLAGBLAS_L2",
     ):
         self.reference_label = reference_label
-        self.bottleneck = os.environ.get("FLAGBLAS_L2_BOTTLENECK", "memory")
-        self.threshold = float(os.environ.get("FLAGBLAS_L2_THRESHOLD", "0.8"))
+        self.bottleneck = os.environ.get(f"{env_prefix}_BOTTLENECK", "memory")
+        self.threshold = float(os.environ.get(f"{env_prefix}_THRESHOLD", "0.8"))
         if self.bottleneck not in ("memory", "vector"):
-            raise ValueError("T-Head L2 bottleneck must be memory or vector")
+            raise ValueError("T-Head reference bottleneck must be memory or vector")
         if not math.isfinite(self.threshold) or self.threshold <= 0:
-            raise ValueError("T-Head L2 threshold must be finite and positive")
+            raise ValueError("T-Head reference threshold must be finite and positive")
         self.hardware = json.loads((_BASE / "hardware.json").read_text())["thead"]
         self.baseline_id = Path(reference_file).stem
         self.cases = {}
@@ -802,6 +808,8 @@ class THeadGemmReference(THeadGemvReference):
 
     MMAO exposes no cublasCgemm/cublasZgemm, so the reference rows come from the
     Level 3 baseline file; the matching key includes both transposition flags.
+    Level 3 must not be affected by Level 2 tuning, so this path reads the
+    ``FLAGBLAS_L3_*`` environment variables instead of ``FLAGBLAS_L2_*``.
     """
 
     def __init__(self):
@@ -809,6 +817,7 @@ class THeadGemmReference(THeadGemvReference):
             ops=_THEAD_GEMM_OPS,
             reference_label="c/zgemm",
             reference_file="h100_l3.json",
+            env_prefix="FLAGBLAS_L3",
         )
 
     @staticmethod

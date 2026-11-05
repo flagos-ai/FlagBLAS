@@ -41,15 +41,16 @@ def randn(size, *, dtype, device):
 class AscendL2Reference:
     """Saved cuBLAS timings and explicit resource-normalization assumptions.
 
-    The default reference set is ``h100.json`` (Level 2) plus ``h100_l3.json``
-    (Level 3 GEMM, e.g. sgemm). ``FLAGBLAS_L2_REFERENCE_FILE`` may override it
-    with one or more comma-separated paths relative to the project root.
+    This reference set is ``h100.json`` only.  Level 3 GEMM
+    (sgemm/hgemm/cgemm) is scored by ``ascend_l3_reference.py`` against
+    ``h100_l3.json`` with its own environment variables and conversion factor,
+    so changing one level never changes the other.
+
+    ``FLAGBLAS_L2_REFERENCE_FILE`` may override it with one or more
+    comma-separated paths relative to the project root.
     """
 
-    DEFAULT_REFERENCE_FILES = (
-        "benchmark/baselines/h100.json",
-        "benchmark/baselines/h100_l3.json",
-    )
+    DEFAULT_REFERENCE_FILES = ("benchmark/baselines/h100.json",)
 
     def __init__(self):
         self.mode = os.environ.get("FLAGBLAS_L2_REFERENCE", "h100")

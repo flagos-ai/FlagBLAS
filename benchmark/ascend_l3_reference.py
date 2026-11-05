@@ -14,6 +14,12 @@
 
 """Level 3 (GEMM) scoring against saved H100 cuBLAS timings on Ascend.
 
+This module owns the sgemm/hgemm/cgemm baseline (``h100_l3.json``) only.
+Level 2 operators are scored by ``ascend_l2_reference.py`` against
+``h100.json``; the two paths use separate baseline files, environment
+variables (``FLAGBLAS_L3_*`` vs ``FLAGBLAS_L2_*``) and conversion factors, so
+tuning or extending one level does not change the other.
+
 Kept separate from ``ascend_l2_reference`` because Level 3 is compute-bound:
 the saved H100 cuBLAS sgemm baseline runs on FP32 CUDA cores (large shapes
 reach ~75% of the 67 TFLOPS FP32 peak while using 1-3% of HBM bandwidth), so
@@ -40,14 +46,20 @@ class AscendL3Reference:
 
     The reference set is ``h100_l3.json``; ``FLAGBLAS_L3_REFERENCE_FILE`` may
     override it with one or more comma-separated paths relative to the project
-    root.
+    root.  The resource assumption defaults to ``vector`` (FP32 GEMM) but the
+    benchmark class may request another calibrated scenario, e.g. hgemm uses
+    ``tensor_fp16`` because fp16 GEMM runs on H100 Tensor Cores;
+    ``FLAGBLAS_L3_BOTTLENECK`` always wins over the per-op default.
     """
 
     DEFAULT_REFERENCE_FILES = ("benchmark/baselines/h100_l3.json",)
+    BOTTLENECK_CHOICES = ("memory", "vector", "tensor_fp16", "tensor_bf16")
 
-    def __init__(self):
+    def __init__(self, default_bottleneck="vector"):
         self.mode = os.environ.get("FLAGBLAS_L3_REFERENCE", "h100")
-        self.bottleneck = os.environ.get("FLAGBLAS_L3_BOTTLENECK", "vector")
+        self.bottleneck = os.environ.get(
+            "FLAGBLAS_L3_BOTTLENECK", default_bottleneck
+        )
         self.threshold = float(os.environ.get("FLAGBLAS_L3_THRESHOLD", "0.8"))
         if self.mode not in ("none", "h100"):
             raise ValueError("L3 reference must be none or h100")
@@ -94,8 +106,10 @@ class AscendL3Reference:
         self.calibration = json.loads(
             (project / "benchmark/baselines/hardware.json").read_text()
         )["ascend"]
-        if self.bottleneck not in ("memory", "vector"):
-            raise ValueError("L3 supports memory or vector assumptions")
+        if self.bottleneck not in self.BOTTLENECK_CHOICES:
+            raise ValueError(
+                "L3 supports memory, vector, tensor_fp16 or tensor_bf16 assumptions"
+            )
         resource = self.calibration[self.bottleneck]
         self.factor = resource["h100_theoretical"] / resource["ascend_measured"]
         override = os.environ.get("FLAGBLAS_L3_CONVERSION_FACTOR")
@@ -169,6 +183,11 @@ class AscendL3Reference:
 class AscendL3Benchmark(Benchmark):
     """Use saved L3 reference timings with the normal FlagBLAS timer on Ascend."""
 
+    # Resource assumption used when FLAGBLAS_L3_BOTTLENECK is not set.  FP32
+    # GEMMs (sgemm/cgemm) are CUDA-core bound; fp16 GEMM (hgemm) is Tensor-Core
+    # bound and overrides this with "tensor_fp16".
+    default_bottleneck = "vector"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.metrics = list(self.DEFAULT_METRICS)
@@ -178,7 +197,7 @@ class AscendL3Benchmark(Benchmark):
         if Config.query:
             return super().run()
         self.init_user_config()
-        reference = AscendL3Reference()
+        reference = AscendL3Reference(default_bottleneck=self.default_bottleneck)
         reference.describe()
         if Config.mode == BenchMode.KERNEL:
             # do_bench estimates iteration counts around cache.zero_() as well
