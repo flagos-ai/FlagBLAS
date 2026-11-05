@@ -629,6 +629,65 @@ def _bfgemm_kernel(
             tl.store(c_ptrs, (alpha * acc + beta * c_vals).to(tl.bfloat16), mask=c_mask)
 
 
+def _bfgemm_padded(
+    transa, transb, m, n, k, alpha, beta, A, B, C, ldc, beta_is_zero,
+    bm, bn, bk, nw, gm,
+):
+    """Pad A/B/C up to tile multiples, run the unmasked bfgemm kernel, then
+    slice the valid (m, n) block back into C.
+
+    Same treatment as ``_hgemm_padded``: odd shapes (511^3, 1023^3, 4095^3,
+    8191^3, ...) lose a lot to masked loads in the plain kernel, while the two
+    extra copies are cheap by comparison.
+    """
+    mp = triton.cdiv(m, bm) * bm
+    np_ = triton.cdiv(n, bn) * bn
+    kp = triton.cdiv(k, bk) * bk
+    bm2, bn2, bk2, nw2, gm2 = _select_gemm_config_f16(transa, transb, mp, np_, kp)
+    Ap, Bp, Cp = _pad_workspace(A.device, mp, np_, kp, A.dtype)
+    with torch_device_fn.device(A.device):
+        a_rows = m if transa == 0 else k
+        a_cols = k if transa == 0 else m
+        a_dst_rows = mp if transa == 0 else kp
+        a_dst_cols = kp if transa == 0 else mp
+        a_gn = triton.cdiv(a_dst_cols, COPY_BN)
+        _pad2d_kernel[((triton.cdiv(a_dst_rows, COPY_BM) * a_gn),)](
+            A, Ap, a_rows, a_cols, a_dst_rows, a_dst_cols, GRID_N=a_gn,
+            BLOCK_M=COPY_BM, BLOCK_N=COPY_BN)
+        b_rows = k if transb == 0 else n
+        b_cols = n if transb == 0 else k
+        b_dst_rows = kp if transb == 0 else np_
+        b_dst_cols = np_ if transb == 0 else kp
+        b_gn = triton.cdiv(b_dst_cols, COPY_BN)
+        _pad2d_kernel[((triton.cdiv(b_dst_rows, COPY_BM) * b_gn),)](
+            B, Bp, b_rows, b_cols, b_dst_rows, b_dst_cols, GRID_N=b_gn,
+            BLOCK_M=COPY_BM, BLOCK_N=COPY_BN)
+        if not beta_is_zero:
+            # Cp is a reused workspace, so seed the (m, n) block with the real
+            # C for the beta*C term (the padding region stays 0).
+            c_gn = triton.cdiv(np_, COPY_BN)
+            _pad2d_kernel[((triton.cdiv(mp, COPY_BM) * c_gn),)](
+                C, Cp, m, n, mp, np_, GRID_N=c_gn,
+                BLOCK_M=COPY_BM, BLOCK_N=COPY_BN)
+        # Fully aligned GEMM: no masks anywhere (mp/np_/kp are tile multiples).
+        grid = (triton.cdiv(mp, bm2) * triton.cdiv(np_, bn2),)
+        _bfgemm_kernel[grid](
+            Ap, Bp, Cp, alpha, beta, mp, np_, kp,
+            kp if transa == 0 else mp,
+            np_ if transb == 0 else kp,
+            np_,
+            TRANS_A=transa, TRANS_B=transb, BETA_IS_ZERO=beta_is_zero,
+            ALPHA_IS_ONE=(alpha == 1.0),
+            BLOCK_M=bm2, BLOCK_N=bn2, BLOCK_K=bk2, GROUP_M=gm2,
+            num_warps=nw2,
+        )
+        # Copy the valid (m, n) block back into C.
+        c_gn = triton.cdiv(n, COPY_BN)
+        _slice2d_kernel[((triton.cdiv(m, COPY_BM) * c_gn),)](
+            Cp, C, m, n, np_, ldc, GRID_N=c_gn,
+            BLOCK_M=COPY_BM, BLOCK_N=COPY_BN)
+
+
 def bfgemm(
     transa: int,
     transb: int,
@@ -665,9 +724,21 @@ def bfgemm(
         return
 
     beta_is_zero = beta == 0.0
-    block_m, block_n, block_k, num_warps, group_m = _select_gemm_config(
+    # bf16 shares the fp16 tile table: both operands are 16-bit, so the larger
+    # (128, 256, 256)-class tiles that fit the 128KB Unified Buffer for fp16
+    # apply here too.  The fp32 table in _select_gemm_config leaves ~30% on the
+    # table for the large cubic shapes.
+    block_m, block_n, block_k, num_warps, group_m = _select_gemm_config_f16(
         transa, transb, m, n, k
     )
+
+    if _should_pad(m, n, k, block_m, block_n, block_k):
+        _bfgemm_padded(
+            transa, transb, m, n, k, alpha, beta, A, B, C, ldc,
+            beta_is_zero, block_m, block_n, block_k, num_warps, group_m,
+        )
+        return
+
     grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
 
     with torch_device_fn.device(A.device):
@@ -852,11 +923,16 @@ def dgemm(
 
 
 # ---------------------------------------------------------------------------
-# cgemm (complex64) -- real/imag split with fp32 tl.dot.
+# cgemm (complex64) -- real/imag planes with fp32 tl.dot.
 #
-# complex64 is handled by the same fp32 split kernel as zgemm (four fp32
-# tl.dot products for (re+i*im)@(re+i*im)); the alpha/beta epilogue runs on
-# the host in complex64.
+# The complex product is assembled from four fp32 products
+# (re += Ar@Br - Ai@Bi, im += Ar@Bi + Ai@Br).  Operands are deinterleaved into
+# contiguous fp32 planes with one coalesced pass each, the GEMM keeps two
+# accumulators (real/imag) so a 128x128 tile fits the Unified Buffer, and the
+# result is re-interleaved into C with one contiguous copy.  Strided (stride-2)
+# accesses into complex buffers are avoided end to end: on Ascend each of them
+# is several times slower than a contiguous pass and dominated the mid-size
+# shapes.
 # ---------------------------------------------------------------------------
 def _complex_scalar_parts(value: ScalarType):
     value = value.item() if isinstance(value, torch.Tensor) else value
@@ -920,7 +996,7 @@ def _select_gemm_config(transa, transb, m, n, k, fp64_split=False):
     back to shape-class heuristics.
     """
     if fp64_split:
-        # the split kernels (dgemm/zgemm/cgemm) keep 2-4 fp32 accumulators
+        # the split kernels (dgemm/zgemm) keep 2-4 fp32 accumulators
         # plus hi/lo operand tiles, so use small blocks to stay inside UB.
         if max(m, n, k) <= 128:
             block_m, block_n, block_k, num_warps, group_m = 16, 16, 32, 4, 1
@@ -1115,6 +1191,170 @@ def _select_gemm_config_f16(transa, transb, m, n, k):
     return block_m, block_n, block_k, num_warps, group_m
 
 
+# Deinterleave tile: 4096 complex elements (8192 fp32) per program.
+CG_DEINT_BLOCK = 4096
+
+
+@triton.jit
+def _cgemm_deint_kernel(src, dst_r, dst_i, total, BLOCK: tl.constexpr):
+    """Split interleaved complex data (re, im, re, im, ...) into fp32 planes.
+
+    The load is contiguous (2*BLOCK fp32 elements) and ``tl.split`` removes the
+    interleave in registers.  Loading with a stride-2 offset instead compiles
+    to a ~50x slower kernel on this backend.
+    """
+    pid = tl.program_id(0)
+    base = pid * 2 * BLOCK
+    offs2 = tl.arange(0, 2 * BLOCK)
+    pairs = tl.load(
+        src + base + offs2, mask=(base + offs2) < 2 * total, other=0.0
+    )
+    re, im = tl.split(tl.reshape(pairs, (BLOCK, 2)))
+    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    mask = offs < total
+    tl.store(dst_r + offs, re, mask=mask)
+    tl.store(dst_i + offs, im, mask=mask)
+
+
+@triton.jit
+def _cgemm_planes_kernel(
+    ar_ptr,
+    ai_ptr,
+    br_ptr,
+    bi_ptr,
+    gr_ptr,
+    gi_ptr,
+    m,
+    n,
+    k,
+    lda,
+    ldb,
+    TRANS_A: tl.constexpr,
+    TRANS_B: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    GROUP_M: tl.constexpr,
+):
+    """Complex GEMM on separated fp32 real/imag planes.
+
+    Two accumulators (real and imag) are updated by four fp32 ``tl.dot``
+    calls: re += Ar@Br - Ai@Bi, im += Ar@Bi + Ai@Br.  Halving the number of
+    accumulators (versus four separate products) is what makes the 128x128
+    tile fit the Unified Buffer.
+    """
+    pid = tl.program_id(0)
+    grid_m = tl.cdiv(m, BLOCK_M)
+    grid_n = tl.cdiv(n, BLOCK_N)
+    width = GROUP_M * grid_n
+    group_id = pid // width
+    group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
+    pid_m = group_id * GROUP_M + (pid % group_size)
+    pid_n = (pid % width) // group_size
+
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+    mask_m = offs_m < m
+    mask_n = offs_n < n
+
+    if TRANS_A == 0:
+        a_ptrs = ar_ptr + offs_m[:, None] * lda + offs_k[None, :]
+        ai_ptrs = ai_ptr + offs_m[:, None] * lda + offs_k[None, :]
+        a_adv = BLOCK_K
+    else:
+        a_ptrs = ar_ptr + offs_k[:, None] * lda + offs_m[None, :]
+        ai_ptrs = ai_ptr + offs_k[:, None] * lda + offs_m[None, :]
+        a_adv = BLOCK_K * lda
+    if TRANS_B == 0:
+        b_ptrs = br_ptr + offs_k[:, None] * ldb + offs_n[None, :]
+        bi_ptrs = bi_ptr + offs_k[:, None] * ldb + offs_n[None, :]
+        b_adv = BLOCK_K * ldb
+    else:
+        b_ptrs = br_ptr + offs_n[:, None] * ldb + offs_k[None, :]
+        bi_ptrs = bi_ptr + offs_n[:, None] * ldb + offs_k[None, :]
+        b_adv = BLOCK_K
+
+    acc_r = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+    acc_i = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+    for kk in range(0, k, BLOCK_K):
+        km = (kk + offs_k) < k
+        if TRANS_A == 0:
+            amask = mask_m[:, None] & km[None, :]
+            ar = tl.load(a_ptrs, mask=amask, other=0.0)
+            ai = tl.load(ai_ptrs, mask=amask, other=0.0)
+        else:
+            amask = km[:, None] & mask_m[None, :]
+            ar = tl.trans(tl.load(a_ptrs, mask=amask, other=0.0))
+            ai = tl.trans(tl.load(ai_ptrs, mask=amask, other=0.0))
+        if TRANS_B == 0:
+            bmask = km[:, None] & mask_n[None, :]
+            br = tl.load(b_ptrs, mask=bmask, other=0.0)
+            bi = tl.load(bi_ptrs, mask=bmask, other=0.0)
+        else:
+            bmask = mask_n[:, None] & km[None, :]
+            br = tl.trans(tl.load(b_ptrs, mask=bmask, other=0.0))
+            bi = tl.trans(tl.load(bi_ptrs, mask=bmask, other=0.0))
+        if TRANS_A == 2:
+            ai = -ai
+        if TRANS_B == 2:
+            bi = -bi
+        acc_r = tl.dot(ar, br, acc_r)
+        acc_r = tl.dot(-ai, bi, acc_r)
+        acc_i = tl.dot(ar, bi, acc_i)
+        acc_i = tl.dot(ai, br, acc_i)
+        a_ptrs += a_adv
+        ai_ptrs += a_adv
+        b_ptrs += b_adv
+        bi_ptrs += b_adv
+
+    cmask = mask_m[:, None] & mask_n[None, :]
+    tl.store(gr_ptr + offs_m[:, None] * n + offs_n[None, :], acc_r, mask=cmask)
+    tl.store(gi_ptr + offs_m[:, None] * n + offs_n[None, :], acc_i, mask=cmask)
+
+
+def _select_cgemm_config(transa, transb, m, n, k):
+    """Tile config for :func:`_cgemm_planes_kernel`.
+
+    Tuned on Ascend 910B4 with mspti kernel timing: (128, 128, 32) is the
+    largest tile whose two fp32 accumulators plus four operand tiles fit the
+    192KB Unified Buffer, and it wins for every shape with max dimension > 256
+    (all four transposition variants).  Small shapes prefer (64, 64, 64),
+    where a 128x128 tile mostly wastes lanes.
+    """
+    if max(m, n, k) <= 256:
+        return 64, 64, 64, 4, 1
+    block_m, block_n, block_k, num_warps, group_m = 128, 128, 32, 4, 1
+    # Keep the launch inside the coreDim limit for very large shapes.
+    while triton.cdiv(m, block_m) * triton.cdiv(n, block_n) * num_warps > 65535:
+        if num_warps > 1:
+            num_warps //= 2
+            continue
+        break
+    return block_m, block_n, block_k, num_warps, group_m
+
+
+def _deinterleave_complex(x):
+    """Return contiguous fp32 (real, imag) planes for a complex64 tensor."""
+    rows, cols = x.shape
+    out_r = torch.empty(rows, cols, dtype=torch.float32, device=x.device)
+    out_i = torch.empty(rows, cols, dtype=torch.float32, device=x.device)
+    total = rows * cols
+    if total == 0:
+        return out_r, out_i
+    grid = (triton.cdiv(total, CG_DEINT_BLOCK),)
+    with torch_device_fn.device(x.device):
+        _cgemm_deint_kernel[grid](
+            torch.view_as_real(x).reshape(-1),
+            out_r,
+            out_i,
+            total,
+            BLOCK=CG_DEINT_BLOCK,
+            num_warps=4,
+        )
+    return out_r, out_i
+
+
 def cgemm(
     transa: int,
     transb: int,
@@ -1151,40 +1391,44 @@ def cgemm(
         return
 
     beta_is_zero = beta_r == 0.0 and beta_i == 0.0
-    block_m, block_n, block_k, num_warps, group_m = _select_gemm_config(
+    alpha_is_one = alpha_r == 1.0 and alpha_i == 0.0
+    block_m, block_n, block_k, num_warps, group_m = _select_cgemm_config(
         transa, transb, m, n, k
     )
     grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
 
-    A_flat = torch.view_as_real(A)  # fp32 (m,k,2)
-    B_flat = torch.view_as_real(B)  # fp32 (k,n,2)
-    Ar = A_flat[..., 0].contiguous()
-    Ai = A_flat[..., 1].contiguous()
-    Br = B_flat[..., 0].contiguous()
-    Bi = B_flat[..., 1].contiguous()
+    Ar, Ai = _deinterleave_complex(A)
+    Br, Bi = _deinterleave_complex(B)
     G_r = torch.empty(m, n, dtype=torch.float32, device=A.device)
     G_i = torch.empty(m, n, dtype=torch.float32, device=A.device)
 
     with torch_device_fn.device(A.device):
-        _zgemm_split_kernel[grid](
-            Ar, Ai, Br, Bi, G_r, G_i, m, n, k, lda, ldb, n,
+        _cgemm_planes_kernel[grid](
+            Ar, Ai, Br, Bi, G_r, G_i, m, n, k, lda, ldb,
             transa, transb,
             BLOCK_M=block_m, BLOCK_N=block_n, BLOCK_K=block_k,
             GROUP_M=group_m, num_warps=num_warps,
         )
 
-    # epilogue in complex64 on host
-    C_parts = torch.view_as_real(C)  # fp32 (m,n,2)
-    Cr = C_parts[..., 0]
-    Ci = C_parts[..., 1]
+    # complex alpha/beta epilogue on host
     if beta_is_zero:
-        new_r = alpha_r * G_r - alpha_i * G_i
-        new_i = alpha_r * G_i + alpha_i * G_r
+        if alpha_is_one:
+            out_r, out_i = G_r, G_i
+        else:
+            out_r = alpha_r * G_r - alpha_i * G_i
+            out_i = alpha_r * G_i + alpha_i * G_r
     else:
-        new_r = alpha_r * G_r - alpha_i * G_i + beta_r * Cr - beta_i * Ci
-        new_i = alpha_r * G_i + alpha_i * G_r + beta_r * Ci + beta_i * Cr
-    Cr.copy_(new_r)
-    Ci.copy_(new_i)
+        C_parts = torch.view_as_real(C)  # fp32 (m,n,2)
+        Cr = C_parts[..., 0]
+        Ci = C_parts[..., 1]
+        out_r = alpha_r * G_r - alpha_i * G_i + beta_r * Cr - beta_i * Ci
+        out_i = alpha_r * G_i + alpha_i * G_r + beta_r * Ci + beta_i * Cr
+
+    # Re-interleave through a fresh contiguous buffer: stride-2 stores through
+    # a view of C are ~20x slower than one contiguous copy on Ascend.
+    C.view(torch.float32).view(m, 2 * n).copy_(
+        torch.stack([out_r, out_i], dim=-1).reshape(m, 2 * n)
+    )
 
 
 # ---------------------------------------------------------------------------

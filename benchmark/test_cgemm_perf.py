@@ -34,6 +34,7 @@ if IS_HYGON:
     from benchmark.gemm_perf_common import _load_hipblas
 
 IS_THEAD = flag_blas.vendor_name == "thead"
+IS_ASCEND = flag_blas.vendor_name == "ascend"
 
 
 def cgemm_reference(
@@ -149,12 +150,42 @@ def gems_cgemm_wrapper(
     return C_row
 
 
-class CgemmBenchmark(GemmBenchmark):
-    DEFAULT_SHAPE_FILES = os.path.join(os.path.dirname(__file__), "core_shapes.yaml")
-    DEFAULT_SHAPE_DESC = "M, N, K"
+if IS_ASCEND:
+    from benchmark.ascend_l3_reference import AscendL3Benchmark
 
-    def set_more_shapes(self):
-        return None
+    class CgemmBenchmark(AscendL3Benchmark, GemmBenchmark):
+        """Ascend complex64 GEMM benchmark against the saved H100 cuBLAS baseline.
+
+        Ascend has no callable official complex GEMM, so only the FlagBLAS call
+        is timed. ``latency_base``/``gbps_base`` come from
+        benchmark/baselines/h100_l3.json (core shapes only) and the speedup is
+        normalized by the H100/Ascend conversion factor; see
+        benchmark/ascend_l3_reference.py. cgemm runs as two fp32 GEMMs
+        (real/imaginary split), so it keeps the same FP32 vector assumption as
+        sgemm.
+        """
+
+        metric_family = "gemm"
+        DEFAULT_SHAPE_FILES = os.path.join(
+            os.path.dirname(__file__), "core_shapes.yaml"
+        )
+        DEFAULT_SHAPE_DESC = "M, N, K"
+
+        def set_more_shapes(self):
+            # Only the core cgemm shapes have saved H100 timings, so an Ascend
+            # run never appends the comprehensive-level extra shapes.
+            return None
+
+else:
+
+    class CgemmBenchmark(GemmBenchmark):
+        DEFAULT_SHAPE_FILES = os.path.join(
+            os.path.dirname(__file__), "core_shapes.yaml"
+        )
+        DEFAULT_SHAPE_DESC = "M, N, K"
+
+        def set_more_shapes(self):
+            return None
 
 
 def _run_cgemm_benchmark(op_name, transa, transb):
@@ -180,6 +211,13 @@ def _run_cgemm_benchmark(op_name, transa, transb):
         from benchmark.thead_l2_reference import run_thead_gemm
 
         run_thead_gemm(bench)
+        return
+
+    if IS_ASCEND:
+        # Ascend has no callable official complex GEMM either: time FlagBLAS
+        # only and score it against the saved H100 cuBLAS cgemm rows. Accuracy
+        # is covered by tests/test_cgemm.py.
+        bench.run()
         return
 
     bench.init_user_config()

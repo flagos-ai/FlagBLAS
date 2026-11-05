@@ -1607,6 +1607,21 @@ if vendor_name == "ascend":
     cublas_bfgemm_reference = _torch_reference_gemm
 
 
+def _randn_gemm_input(shape, dtype, device):
+    """Random GEMM operand, including complex dtypes.
+
+    ``torch.randn`` with a complex dtype is not supported on every backend
+    (Ascend's aclnnInplaceNormal rejects DT_COMPLEX64), so complex tensors are
+    built from two real draws with the matching component precision.
+    """
+    if not dtype.is_complex:
+        return torch.randn(shape, dtype=dtype, device=device)
+    real_dtype = torch.float64 if dtype == torch.complex128 else torch.float32
+    real = torch.randn(shape, dtype=real_dtype, device=device)
+    imag = torch.randn(shape, dtype=real_dtype, device=device)
+    return torch.complex(real, imag)
+
+
 class GemmBenchmark(Benchmark):
     DEFAULT_SHAPE_DESC = "M, N, K"
 
@@ -1686,22 +1701,22 @@ class GemmBenchmark(Benchmark):
         for shape in self.shapes:
             m, n, k = shape
             if self.transa == CUBLAS_OP_N:
-                A_col = torch.randn(k, m, dtype=cur_dtype, device=self.device).t()
+                A_col = _randn_gemm_input((k, m), cur_dtype, self.device).t()
                 lda_cublas, lda_flag = m, k
             else:
-                A_col = torch.randn(m, k, dtype=cur_dtype, device=self.device).t()
+                A_col = _randn_gemm_input((m, k), cur_dtype, self.device).t()
                 lda_cublas, lda_flag = k, m
             A_row = A_col.contiguous()
 
             if self.transb == CUBLAS_OP_N:
-                B_col = torch.randn(n, k, dtype=cur_dtype, device=self.device).t()
+                B_col = _randn_gemm_input((n, k), cur_dtype, self.device).t()
                 ldb_cublas, ldb_flag = k, n
             else:
-                B_col = torch.randn(k, n, dtype=cur_dtype, device=self.device).t()
+                B_col = _randn_gemm_input((k, n), cur_dtype, self.device).t()
                 ldb_cublas, ldb_flag = n, k
             B_row = B_col.contiguous()
 
-            C_col = torch.randn(n, m, dtype=cur_dtype, device=self.device).t()
+            C_col = _randn_gemm_input((n, m), cur_dtype, self.device).t()
             C_row = C_col.contiguous()
             ldc_cublas, ldc_flag = m, n
 
