@@ -31,12 +31,14 @@ from benchmark.gemm_perf_common import (
 from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 
 pytestmark = pytest.mark.skipif(
-    flag_blas.vendor_name == "iluvatar",
-    reason="zgemm is not supported on Iluvatar",
+    flag_blas.vendor_name in ("iluvatar", "ascend"),
+    reason="zgemm requires fp64 (complex128), which is not supported on Iluvatar/Ascend",
 )
 
 if IS_HYGON:
     from benchmark.gemm_perf_common import _load_hipblas
+
+IS_THEAD = flag_blas.vendor_name == "thead"
 
 
 def zgemm_reference(
@@ -176,6 +178,15 @@ def _run_zgemm_benchmark(op_name, transa, transb):
         bench.run()
         return
 
+    if IS_THEAD:
+        # MMAO has no cublasZgemm: time FlagBLAS only and compare it with the
+        # saved H100 cuBLAS timings (same method as the T-Head Level 2 paths).
+        # Accuracy is covered by tests/test_zgemm.py.
+        from benchmark.thead_l2_reference import run_thead_gemm
+
+        run_thead_gemm(bench)
+        return
+
     bench.init_user_config()
     if not Config.skip_correctness:
         for cur_dtype in bench.to_bench_dtypes:
@@ -188,36 +199,20 @@ def _run_zgemm_benchmark(op_name, transa, transb):
 
 
 @pytest.mark.zgemm
-@pytest.mark.skipif(
-    flag_blas.vendor_name == "thead",
-    reason="cublasZgemm not supported on T-Head (Zhenwu) platform",
-)
 def test_perf_zgemm_nn():
     _run_zgemm_benchmark("zgemm", CUBLAS_OP_N, CUBLAS_OP_N)
 
 
 @pytest.mark.zgemm
-@pytest.mark.skipif(
-    flag_blas.vendor_name == "thead",
-    reason="cublasZgemm not supported on T-Head (Zhenwu) platform",
-)
 def test_perf_zgemm_tn():
     _run_zgemm_benchmark("zgemm_tn", CUBLAS_OP_T, CUBLAS_OP_N)
 
 
 @pytest.mark.zgemm
-@pytest.mark.skipif(
-    flag_blas.vendor_name == "thead",
-    reason="cublasZgemm not supported on T-Head (Zhenwu) platform",
-)
 def test_perf_zgemm_nt():
     _run_zgemm_benchmark("zgemm_nt", CUBLAS_OP_N, CUBLAS_OP_T)
 
 
 @pytest.mark.zgemm
-@pytest.mark.skipif(
-    flag_blas.vendor_name == "thead",
-    reason="cublasZgemm not supported on T-Head (Zhenwu) platform",
-)
 def test_perf_zgemm_tt():
     _run_zgemm_benchmark("zgemm_tt", CUBLAS_OP_T, CUBLAS_OP_T)

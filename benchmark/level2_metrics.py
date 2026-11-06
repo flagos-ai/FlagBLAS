@@ -1,5 +1,9 @@
 """Logical work and useful-byte models shared by all Level 2 benchmarks.
 
+GEMV/GBMV/SYMV/... families use the Level 2 counts described below. The GEMM
+family (used when an Ascend GEMM is compared with the saved H100 baseline) uses
+the plain 2*m*n*k / A+B+2C model so both sides share one numerator.
+
 These are algorithmic rates, not hardware instruction or DRAM counters. A real
 add/multiply/divide costs 1 FLOP, a complex multiply 6 and add 2. Complex division
 costs 11 (the textbook real/imaginary formula); conjugation, assignment, casts
@@ -27,7 +31,11 @@ MV = frozenset({"gemv", "gbmv", "symv", "hemv", "spmv", "hpmv", "sbmv", "hbmv"})
 TRIANGULAR = frozenset({"trmv", "tpmv", "tbmv", "trsv", "tpsv", "tbsv"})
 RANK1 = frozenset({"syr", "spr", "her", "hpr"})
 RANK2 = frozenset({"syr2", "spr2", "her2", "hpr2"})
-FAMILIES = MV | TRIANGULAR | RANK1 | RANK2 | {"ger"}
+# Level 3 GEMM: one multiply plus one add per element of the k-reduction, i.e.
+# 2*m*n*k FLOPs (alpha/beta scaling is not modeled, same as the GEMM benchmark
+# tolerances). Useful bytes are A + B + read/write of C.
+GEMM = frozenset({"gemm"})
+FAMILIES = MV | TRIANGULAR | RANK1 | RANK2 | GEMM | {"ger"}
 
 
 def triangle_elements(n, k=None):
@@ -49,7 +57,7 @@ def _dimensions(family, parameters):
     if family not in FAMILIES:
         raise ValueError(f"Unknown Level 2 operator: {family}")
     n = parameters["n"]
-    m = parameters["m"] if family in {"gemv", "gbmv", "ger"} else n
+    m = parameters["m"] if family in {"gemv", "gbmv", "ger"} | GEMM else n
     return m, n
 
 
@@ -73,6 +81,9 @@ def level2_flops(family, args, parameters):
     m, n = _dimensions(family, parameters)
     if m <= 0 or n <= 0:
         return 0
+    if family in GEMM:
+        k = parameters.get("k", 0)
+        return 2 * m * n * k if k > 0 else 0
     complex_data = args[0].dtype.is_complex
     multiply, add = (6, 2) if complex_data else (1, 1)
     mac = multiply + add
@@ -133,6 +144,16 @@ def level2_bytes(family, args, parameters, *, reference=False):
     m, n = _dimensions(family, parameters)
     if m <= 0 or n <= 0:
         return 0
+    if family in GEMM:
+        k = parameters.get("k", 0)
+        if k <= 0:
+            return 0
+        a, b, c = args[0], args[1], args[2]
+        return (
+            m * k * a.element_size()
+            + k * n * b.element_size()
+            + 2 * m * n * c.element_size()
+        )
     matrix, x = _io_tensors(family, args, parameters, reference=reference)[:2]
     matrix_size, x_size = matrix.element_size(), x.element_size()
     alpha, beta = parameters.get("alpha", 1), parameters.get("beta", 0)

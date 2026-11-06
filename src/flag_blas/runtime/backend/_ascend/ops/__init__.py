@@ -1,3 +1,5 @@
+from .bfgemm import bfgemm
+from .cgemm import cgemm
 from .gbmv import cgbmv, sgbmv
 from .gemv import bfgemv, cgemv, hgemv, sgemv
 from .ger import cgerc, cgeru, sger
@@ -6,10 +8,12 @@ from .hbmv import chbmv
 from .hemv import chemv
 from .her import cher
 from .her2 import cher2
+from .hgemm import hgemm
 from .hpmv import chpmv
 from .hpr import chpr
 from .hpr2 import chpr2
 from .sbmv import ssbmv
+from .sgemm import sgemm
 from .spmv import sspmv
 from .spr import sspr
 from .spr2 import sspr2
@@ -65,4 +69,8 @@ __all__ = [
     "group_tf32gemm",
     "strmv",
     "ctrmv",
+    "sgemm",
+    "hgemm",
+    "bfgemm",
+    "cgemm",
 ]

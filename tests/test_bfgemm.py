@@ -445,19 +445,29 @@ def test_bfgemm_alpha_beta(alpha, beta):
     C_col = torch.randn(n, m, dtype=dtype, device=device).t()
     C_row = C_col.contiguous()
 
-    cublas_bfgemm_reference(
-        CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_col, m, B_col, k, beta, C_col, m
-    )
+    if TO_CPU:
+        A_ref = A_row.to("cpu").to(torch.float64)
+        B_ref = B_row.to("cpu").to(torch.float64)
+        C_ref = C_col.contiguous().to("cpu").to(torch.float64)
+        C_ref = blas.dgemm(
+            alpha,
+            A_ref.numpy(),
+            B_ref.numpy(),
+            beta,
+            c=C_ref.numpy(),
+            trans_b=CUBLAS_OP_N,
+            trans_a=CUBLAS_OP_N,
+        )
+    else:
+        cublas_bfgemm_reference(
+            CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_col, m, B_col, k, beta, C_col, m
+        )
     flag_blas.bfgemm(
         CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A_row, k, B_row, n, beta, C_row, n
     )
-
     if TO_CPU:
         utils.blas_assert_close(
-            C_row,
-            torch.tensor(C_col.contiguous().to("cpu")),
-            torch.bfloat16,
-            reduce_dim=k,
+            C_row, torch.tensor(C_ref), torch.bfloat16, reduce_dim=k
         )
     else:
         utils.blas_assert_close(C_row, C_col.contiguous(), torch.bfloat16, reduce_dim=k)
