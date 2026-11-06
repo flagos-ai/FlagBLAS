@@ -31,8 +31,8 @@ from benchmark.gemm_perf_common import (
 from flag_blas.ops import CUBLAS_OP_N, CUBLAS_OP_T
 
 pytestmark = pytest.mark.skipif(
-    flag_blas.vendor_name == "iluvatar",
-    reason="zgemm is not supported on Iluvatar",
+    flag_blas.vendor_name in ("iluvatar", "ascend"),
+    reason="zgemm requires fp64 (complex128), which is not supported on Iluvatar/Ascend",
 )
 
 if IS_HYGON:

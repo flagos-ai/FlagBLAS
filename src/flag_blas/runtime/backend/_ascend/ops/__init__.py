@@ -1,6 +1,5 @@
 from .bfgemm import bfgemm
 from .cgemm import cgemm
-from .dgemm import dgemm
 from .gbmv import cgbmv, sgbmv
 from .gemv import bfgemv, cgemv, hgemv, sgemv
 from .ger import cgerc, cgeru, sger
@@ -27,7 +26,6 @@ from .tpmv import ctpmv, stpmv
 from .tpsv import ctpsv, stpsv
 from .trmv import ctrmv, strmv
 from .trsv import ctrsv, strsv
-from .zgemm import zgemm
 
 __all__ = [
     "sgbmv",
@@ -74,7 +72,5 @@ __all__ = [
     "sgemm",
     "hgemm",
     "bfgemm",
-    "dgemm",
     "cgemm",
-    "zgemm",
 ]

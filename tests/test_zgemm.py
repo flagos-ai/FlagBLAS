@@ -27,8 +27,8 @@ from . import accuracy_utils as utils
 from .conftest import TO_CPU
 
 pytestmark = pytest.mark.skipif(
-    flag_blas.vendor_name == "iluvatar",
-    reason="zgemm is not supported on Iluvatar",
+    flag_blas.vendor_name in ("iluvatar", "ascend"),
+    reason="zgemm requires fp64 (complex128), which is not supported on Iluvatar/Ascend",
 )
 
 # cuPy/cuBLAS are only available on CUDA-capable vendors; on other backends the
