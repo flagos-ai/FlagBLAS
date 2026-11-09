@@ -89,9 +89,7 @@ def _do_bench_ascend(fn, warmup=1000, rep=100):
     except Exception as e:
         # Fall back to the wall-clock do_bench if mspti is unavailable.
         print(f"[_do_bench_ascend] mspti failed, fallback: {e}", flush=True)
-        return triton.testing.do_bench(
-            fn, warmup=warmup, rep=rep, return_mode="median"
-        )
+        return triton.testing.do_bench(fn, warmup=warmup, rep=rep, return_mode="median")
 
 
 def SkipVersion(module_name, skip_pattern):
@@ -270,38 +268,6 @@ class Benchmark:
                         self.shapes = self.DEFAULT_SHAPES
 
             self.shapes = [tuple(shape) for shape in self.shapes]
-            # Use a partial Ascend-only shape overlay for the default core benchmark.
-            if (
-                vendor_name == "ascend"
-                and Config.bench_level == BenchLevel.CORE
-                and not Config.query
-                and os.path.realpath(shape_file_path)
-                == os.path.realpath(
-                    os.path.join(os.path.dirname(__file__), "core_shapes.yaml")
-                )
-            ):
-                overlay_path = os.path.join(
-                    os.path.dirname(__file__), "core_shapes_ascend_l2.yaml"
-                )
-                with open(overlay_path, "r") as overlay_file:
-                    overlay = yaml.safe_load(overlay_file) or {}
-                keys = [self.op_name]
-                if hasattr(self, "trans"):
-                    keys.insert(0, f"{self.op_name}@trans={self.trans}")
-                if (
-                    self.op_name == "csymv"
-                    and hasattr(self, "uplo")
-                    and os.environ.get("FLAGBLAS_ASCEND_TOOLS_CSYMV_SHAPES") == "1"
-                ):
-                    keys.insert(0, f"{self.op_name}@uplo={self.uplo}")
-                keys.extend(cls.__name__ for cls in type(self).__mro__)
-                for key in keys:
-                    if key in overlay:
-                        shapes = overlay[key]["shapes"]
-                        if not isinstance(shapes, list) or not shapes:
-                            raise ValueError(f"Invalid Ascend core shapes for {key}")
-                        self.shapes = [tuple(shape) for shape in shapes]
-                        break
             if vendor_name == "kunlunxin":
                 if self.op_name in ["isin", "nonzero"]:
                     # isin oom  # nonzero oot
@@ -691,6 +657,11 @@ class Benchmark:
 
 
 def run_correctness_then_benchmark(bench):
+    if flag_blas.vendor_name == "ascend":
+        from benchmark.ascend_l2_reference import ASCEND_L1_FAMILIES, run_ascend_l1
+
+        if bench.op_name.split("_", 1)[0] in ASCEND_L1_FAMILIES:
+            return run_ascend_l1(bench)
     if (
         flag_blas.vendor_name == "mthreads"
         and getattr(bench, "correctness_reference", "cuBLAS") == "cuBLAS"

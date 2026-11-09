@@ -26,6 +26,9 @@ from .accuracy_utils import (
     L1_STRIDE_SHAPES,
     ROT_SHAPES,
     blas_assert_close,
+    l1_ones,
+    l1_ones_like,
+    l1_randn,
     to_cpu_blas_tensor,
     to_reference,
 )
@@ -40,7 +43,7 @@ if IS_HYGON:
     )
 elif flag_blas.vendor_name == "mthreads":
     from benchmark.mublas_compat import cp
-else:
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
 
 
@@ -62,7 +65,7 @@ def load_cublas():
     raise RuntimeError("Cannot find libcublas.so in the system")
 
 
-_cublas = None if IS_HYGON else load_cublas()
+_cublas = None if IS_HYGON or flag_blas.vendor_name == "ascend" else load_cublas()
 
 
 def cublas_rot_reference(n, x, incx, y, incy, c, s):
@@ -252,8 +255,8 @@ def test_accuracy_rot_real(dtype, shape):
     n = shape[0]
     incx = 1
     incy = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     c, s = get_c_s(dtype, flag_blas.device)
 
@@ -284,8 +287,8 @@ def test_accuracy_rot_complex(dtype, shape):
     n = shape[0]
     incx = 1
     incy = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     c, s = get_c_s(dtype, flag_blas.device)
 
@@ -317,8 +320,8 @@ def test_accuracy_rot_empty_tensor(dtype):
     ):
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(0, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(0, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(0, dtype=dtype, device=flag_blas.device)
     ref_x = to_reference(x).clone()
     ref_y = to_reference(y).clone()
 
@@ -354,8 +357,8 @@ def test_accuracy_rot_different_n_real(dtype, n, vec_size):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     c, s = get_c_s(dtype, flag_blas.device)
 
@@ -385,8 +388,8 @@ def test_accuracy_rot_different_n_complex(dtype, n, vec_size):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     c, s = get_c_s(dtype, flag_blas.device)
 
@@ -416,8 +419,8 @@ def test_accuracy_rot_different_n_with_stride_real(dtype, shape, incx, incy):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     c, s = get_c_s(dtype, flag_blas.device)
 
@@ -447,8 +450,8 @@ def test_accuracy_rot_different_n_with_stride_complex(dtype, shape, incx, incy):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     c, s = get_c_s(dtype, flag_blas.device)
 
@@ -477,8 +480,8 @@ def test_accuracy_complex_rot_real_coefficients(op, dtype, c, s, incx, incy):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
     n = 17
-    x = torch.randn(n * incx + 1, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy + 1, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx + 1, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy + 1, dtype=dtype, device=flag_blas.device)
     ref_x, ref_y = rot_reference(n, x, incx, y, incy, c, s)
     getattr(flag_blas, op)(n, x, incx, y, incy, c, s)
     # Include untouched stride gaps and the tail in the comparison.
@@ -497,7 +500,7 @@ def test_accuracy_complex_rot_real_coefficients(op, dtype, c, s, incx, incy):
 def test_complex_rot_rejects_complex_s(op, dtype):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
-    x = torch.ones(1, dtype=dtype, device=flag_blas.device)
-    y = torch.ones_like(x)
+    x = l1_ones(1, dtype=dtype, device=flag_blas.device)
+    y = l1_ones_like(x)
     with pytest.raises(TypeError):
         getattr(flag_blas, op)(1, x, 1, y, 1, 0.8, 0.36 + 0.48j)

@@ -20,7 +20,7 @@ from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-from .accuracy_utils import DOTC_SHAPES, L1_PAIR_STRIDES, blas_assert_close
+from .accuracy_utils import DOTC_SHAPES, L1_PAIR_STRIDES, blas_assert_close, l1_randn
 from .conftest import TO_CPU
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
@@ -31,7 +31,7 @@ if IS_HYGON:
     from .hipblas_reference import check_hipblas_status
 elif flag_blas.vendor_name == "mthreads":
     from benchmark.mublas_compat import cp, cublas
-else:
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -127,8 +127,8 @@ def test_accuracy_dotc_complex(dtype, shape, incx, incy):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(1 + (n - 1) * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(1 + (n - 1) * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(1 + (n - 1) * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(1 + (n - 1) * incy, dtype=dtype, device=flag_blas.device)
 
     ref_x = x.clone()
     ref_y = y.clone()
@@ -156,8 +156,8 @@ def test_accuracy_dotc_empty_tensor(dtype):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(0, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(0, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(0, dtype=dtype, device=flag_blas.device)
     result = torch.empty(1, dtype=dtype, device=flag_blas.device)
 
     n = 0
@@ -186,8 +186,8 @@ def test_accuracy_dotc_different_n(dtype, n, vec_size):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     ref_x = x.clone()
     ref_y = y.clone()
@@ -217,8 +217,8 @@ def test_dotc_incx_incy_validation(dtype, incx, incy):
         pytest.skip("Device does not support float64")
 
     n = 5
-    x = torch.randn(10, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(10, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(10, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(10, dtype=dtype, device=flag_blas.device)
     result = torch.zeros(1, dtype=dtype, device=flag_blas.device)
 
     with pytest.raises(AssertionError):

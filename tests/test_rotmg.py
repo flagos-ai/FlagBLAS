@@ -10,7 +10,7 @@ import torch
 
 import flag_blas
 
-from .accuracy_utils import blas_assert_close, to_reference
+from .accuracy_utils import blas_assert_close, l1_randn, to_reference
 from .conftest import TO_CPU
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
@@ -312,10 +312,10 @@ def test_rotmg_rejects_bad_shapes(dtype):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    d1 = torch.randn(1, dtype=dtype, device=flag_blas.device)
-    d2 = torch.randn(1, dtype=dtype, device=flag_blas.device)
-    x1 = torch.randn(2, dtype=dtype, device=flag_blas.device)
-    y1 = torch.randn(1, dtype=dtype, device=flag_blas.device)
+    d1 = l1_randn(1, dtype=dtype, device=flag_blas.device)
+    d2 = l1_randn(1, dtype=dtype, device=flag_blas.device)
+    x1 = l1_randn(2, dtype=dtype, device=flag_blas.device)
+    y1 = l1_randn(1, dtype=dtype, device=flag_blas.device)
     param = torch.empty(5, dtype=dtype, device=flag_blas.device)
 
     with pytest.raises(AssertionError):
@@ -367,10 +367,10 @@ def test_rotmg_rejects_bad_param_shape(dtype):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    d1 = torch.randn(1, dtype=dtype, device=flag_blas.device)
-    d2 = torch.randn(1, dtype=dtype, device=flag_blas.device)
-    x1 = torch.randn(1, dtype=dtype, device=flag_blas.device)
-    y1 = torch.randn(1, dtype=dtype, device=flag_blas.device)
+    d1 = l1_randn(1, dtype=dtype, device=flag_blas.device)
+    d2 = l1_randn(1, dtype=dtype, device=flag_blas.device)
+    x1 = l1_randn(1, dtype=dtype, device=flag_blas.device)
+    y1 = l1_randn(1, dtype=dtype, device=flag_blas.device)
     param = torch.empty(4, dtype=dtype, device=flag_blas.device)
 
     with pytest.raises(AssertionError, match="param must have exactly five elements"):
@@ -383,11 +383,15 @@ def test_rotmg_rejects_bad_param_shape(dtype):
 @pytest.mark.srotmg
 @pytest.mark.rotmg
 def test_srotmg_rejects_mismatched_param_dtype():
-    d1 = torch.randn(1, dtype=torch.float32, device=flag_blas.device)
-    d2 = torch.randn(1, dtype=torch.float32, device=flag_blas.device)
-    x1 = torch.randn(1, dtype=torch.float32, device=flag_blas.device)
-    y1 = torch.randn(1, dtype=torch.float32, device=flag_blas.device)
-    param = torch.empty(5, dtype=torch.float64, device=flag_blas.device)
+    d1 = l1_randn(1, dtype=torch.float32, device=flag_blas.device)
+    d2 = l1_randn(1, dtype=torch.float32, device=flag_blas.device)
+    x1 = l1_randn(1, dtype=torch.float32, device=flag_blas.device)
+    y1 = l1_randn(1, dtype=torch.float32, device=flag_blas.device)
+    param = torch.empty(
+        5,
+        dtype=torch.float16 if flag_blas.vendor_name == "ascend" else torch.float64,
+        device=flag_blas.device,
+    )
 
     with pytest.raises(AssertionError, match="param must be float32"):
         flag_blas.srotmg(d1, d2, x1, y1, param)
@@ -396,10 +400,10 @@ def test_srotmg_rejects_mismatched_param_dtype():
 @pytest.mark.srotmg
 @pytest.mark.rotmg
 def test_srotmg_rejects_non_scalar_d1():
-    d1 = torch.randn(2, dtype=torch.float32, device=flag_blas.device)
-    d2 = torch.randn(1, dtype=torch.float32, device=flag_blas.device)
-    x1 = torch.randn(1, dtype=torch.float32, device=flag_blas.device)
-    y1 = torch.randn(1, dtype=torch.float32, device=flag_blas.device)
+    d1 = l1_randn(2, dtype=torch.float32, device=flag_blas.device)
+    d2 = l1_randn(1, dtype=torch.float32, device=flag_blas.device)
+    x1 = l1_randn(1, dtype=torch.float32, device=flag_blas.device)
+    y1 = l1_randn(1, dtype=torch.float32, device=flag_blas.device)
     param = torch.empty(5, dtype=torch.float32, device=flag_blas.device)
 
     with pytest.raises(AssertionError, match="d1 must have exactly one element"):

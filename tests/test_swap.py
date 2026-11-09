@@ -21,7 +21,7 @@ from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-from .accuracy_utils import L1_PAIR_STRIDES, SWAP_SHAPES, blas_assert_close
+from .accuracy_utils import L1_PAIR_STRIDES, SWAP_SHAPES, blas_assert_close, l1_randn
 from .conftest import TO_CPU
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
@@ -30,7 +30,7 @@ if IS_HYGON:
     from .hipblas_reference import check_hipblas_status, get_hipblas_context
 elif flag_blas.vendor_name == "mthreads":
     from benchmark.mublas_compat import cp
-else:
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
 
 
@@ -52,7 +52,7 @@ def load_cublas():
     raise RuntimeError("Cannot find libcublas.so in the system")
 
 
-_cublas = None if IS_HYGON else load_cublas()
+_cublas = None if IS_HYGON or flag_blas.vendor_name == "ascend" else load_cublas()
 
 
 def _get_cublas_func(*names):
@@ -170,8 +170,8 @@ def test_accuracy_swap_real(dtype, shape, incx, incy):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     ref_x = x.clone()
     ref_y = y.clone()
@@ -206,8 +206,8 @@ def test_accuracy_swap_complex(dtype, shape, incx, incy):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     ref_x = x.clone()
     ref_y = y.clone()
@@ -244,8 +244,8 @@ def test_accuracy_swap_empty_tensor(dtype):
     ):
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(0, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(0, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(0, dtype=dtype, device=flag_blas.device)
     n = 0
 
     if dtype == torch.float32:
@@ -283,8 +283,8 @@ def test_accuracy_swap_different_n_real(dtype, n, vec_size):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     ref_x = x.clone()
     ref_y = y.clone()
@@ -319,8 +319,8 @@ def test_accuracy_swap_different_n_complex(dtype, n, vec_size):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     ref_x = x.clone()
     ref_y = y.clone()

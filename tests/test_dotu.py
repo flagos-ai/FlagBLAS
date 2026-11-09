@@ -20,7 +20,13 @@ from scipy.linalg import blas as cpu_blas
 
 import flag_blas
 
-from .accuracy_utils import DOTU_SHAPES, L1_PAIR_STRIDES, blas_assert_close
+from .accuracy_utils import (
+    DOTU_SHAPES,
+    L1_PAIR_STRIDES,
+    blas_assert_close,
+    l1_ones,
+    l1_randn,
+)
 from .conftest import TO_CPU
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
@@ -31,7 +37,7 @@ if IS_HYGON:
     from .hipblas_reference import check_hipblas_status
 elif flag_blas.vendor_name == "mthreads":
     from benchmark.mublas_compat import cp, cublas
-else:
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -132,8 +138,8 @@ def test_accuracy_dotu_complex(dtype, shape, incx, incy):
         pytest.skip("Device does not support float64/complex128")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     result = torch.zeros(1, dtype=dtype, device=flag_blas.device)
     ref_result = torch.zeros(1, dtype=dtype, device=flag_blas.device)
@@ -161,9 +167,9 @@ def test_accuracy_dotu_empty_tensor(dtype):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64/complex128")
 
-    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(0, dtype=dtype, device=flag_blas.device)
-    result = torch.ones(1, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(0, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(0, dtype=dtype, device=flag_blas.device)
+    result = l1_ones(1, dtype=dtype, device=flag_blas.device)
     n = 0
 
     if dtype == torch.complex64:
@@ -192,8 +198,8 @@ def test_accuracy_dotu_different_n(dtype, n, vec_size):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64/complex128")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     result = torch.zeros(1, dtype=dtype, device=flag_blas.device)
     ref_result = torch.zeros(1, dtype=dtype, device=flag_blas.device)

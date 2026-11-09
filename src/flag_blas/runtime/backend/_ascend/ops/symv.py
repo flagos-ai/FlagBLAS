@@ -20,11 +20,13 @@ CSYMV uses packed complex reads in a row-owned small-matrix kernel and a
 triangular panel for larger matrices. Neither path allocates a workspace.
 """
 
+import math
 from typing import Union
 
 import torch
 import triton
 import triton.language as tl
+from triton.language.extra.cann import extension as _symv_ext
 
 from flag_blas import runtime
 from flag_blas.ops.level2.symv import (
@@ -35,6 +37,8 @@ from flag_blas.ops.level2.symv import (
 )
 from flag_blas.runtime import torch_device_fn
 from flag_blas.utils import libentry, libtuner
+
+from .hemv import _run_complex_packed
 
 ScalarType = Union[float, int, complex, torch.Tensor]
 
@@ -82,7 +86,7 @@ def _triangular_tile_ids(tile_id, UPLO: tl.constexpr):
 
 def _triangular_grid(n, max_programs=_MAX_CORE_DIM):
     def grid(meta):
-        tiles = triton.cdiv(n, meta["BLOCK_SIZE"])
+        tiles = (n + meta["BLOCK_SIZE"] - 1) // meta["BLOCK_SIZE"]
         return (min(tiles * (tiles + 1) // 2, max_programs),)
 
     return grid
@@ -245,12 +249,21 @@ def csymv_kernel(
 @libentry()
 @triton.jit
 def _csymv_packed_rows_kernel(
-    A, X, Y,
-    AR: tl.float32, AI: tl.float32,
-    BR: tl.float32, BI: tl.float32,
-    N: tl.constexpr, LDA: tl.constexpr, IX: tl.constexpr,
-    IY: tl.constexpr, UPLO: tl.constexpr, ZERO: tl.constexpr,
-    BM: tl.constexpr, BK: tl.constexpr,
+    A,
+    X,
+    Y,
+    AR: tl.float32,
+    AI: tl.float32,
+    BR: tl.float32,
+    BI: tl.float32,
+    N: tl.constexpr,
+    LDA: tl.constexpr,
+    IX: tl.constexpr,
+    IY: tl.constexpr,
+    UPLO: tl.constexpr,
+    ZERO: tl.constexpr,
+    BM: tl.constexpr,
+    BK: tl.constexpr,
 ):
     first = tl.program_id(0) * BM
     rows = first + tl.arange(0, BM)
@@ -269,18 +282,22 @@ def _csymv_packed_rows_kernel(
     for start in range(direct_begin, direct_end, BK):
         cols = start + ks
         col_mask = cols < N
-        xp = tl.load(X + cols[:, None] * IX * 2 + lane[None, :],
-                     col_mask[:, None], 0)
+        xp = tl.load(X + cols[:, None] * IX * 2 + lane[None, :], col_mask[:, None], 0)
         xr, xi = tl.split(xp)
         if UPLO == 0:
-            mask = ((rows[:, None] < N) & col_mask[None, :]
-                    & (rows[:, None] >= cols[None, :]))
+            mask = (
+                (rows[:, None] < N)
+                & col_mask[None, :]
+                & (rows[:, None] >= cols[None, :])
+            )
         else:
-            mask = ((rows[:, None] < N) & col_mask[None, :]
-                    & (rows[:, None] <= cols[None, :]))
+            mask = (
+                (rows[:, None] < N)
+                & col_mask[None, :]
+                & (rows[:, None] <= cols[None, :])
+            )
         off = (rows[:, None] * LDA + cols[None, :]) * 2
-        ap = tl.load(A + off[:, :, None] + lane[None, None, :],
-                     mask[:, :, None], 0)
+        ap = tl.load(A + off[:, :, None] + lane[None, None, :], mask[:, :, None], 0)
         ar, ai = tl.split(ap)
         rr += ar * xr[None, :] - ai * xi[None, :]
         ri += ar * xi[None, :] + ai * xr[None, :]
@@ -288,18 +305,22 @@ def _csymv_packed_rows_kernel(
     for start in range(mirror_begin, mirror_end, BK):
         cols = start + ks
         col_mask = cols < N
-        xp = tl.load(X + cols[:, None] * IX * 2 + lane[None, :],
-                     col_mask[:, None], 0)
+        xp = tl.load(X + cols[:, None] * IX * 2 + lane[None, :], col_mask[:, None], 0)
         xr, xi = tl.split(xp)
         if UPLO == 0:
-            mask = ((rows[None, :] < N) & col_mask[:, None]
-                    & (cols[:, None] > rows[None, :]))
+            mask = (
+                (rows[None, :] < N)
+                & col_mask[:, None]
+                & (cols[:, None] > rows[None, :])
+            )
         else:
-            mask = ((rows[None, :] < N) & col_mask[:, None]
-                    & (cols[:, None] < rows[None, :]))
+            mask = (
+                (rows[None, :] < N)
+                & col_mask[:, None]
+                & (cols[:, None] < rows[None, :])
+            )
         off = (cols[:, None] * LDA + rows[None, :]) * 2
-        ap = tl.load(A + off[:, :, None] + lane[None, None, :],
-                     mask[:, :, None], 0)
+        ap = tl.load(A + off[:, :, None] + lane[None, None, :], mask[:, :, None], 0)
         avr, avi = tl.split(ap)
         ar, ai = tl.trans(avr), tl.trans(avi)
         rr += ar * xr[None, :] - ai * xi[None, :]
@@ -321,29 +342,47 @@ def _csymv_packed_rows_kernel(
 @libentry()
 @triton.jit
 def _csymv_scale_kernel(
-    Y, BR: tl.float32, BI: tl.float32,
-    N: tl.constexpr, IY: tl.constexpr, ZERO: tl.constexpr,
+    Y,
+    BR: tl.float32,
+    BI: tl.float32,
+    N: tl.constexpr,
+    IY: tl.constexpr,
+    ZERO: tl.constexpr,
     BM: tl.constexpr,
 ):
     rows = tl.program_id(0) * BM + tl.arange(0, BM)
+    lanes = tl.arange(0, 2)
     yr = tl.full((BM,), 0, tl.float32)
     yi = tl.full((BM,), 0, tl.float32)
     if not ZERO:
-        oldr = tl.load(Y + rows * IY * 2, rows < N, 0)
-        oldi = tl.load(Y + rows * IY * 2 + 1, rows < N, 0)
+        # Load and store complex pairs together to keep GM transfers contiguous.
+        packed = tl.load(
+            Y + rows[:, None] * IY * 2 + lanes[None, :], rows[:, None] < N, 0
+        )
+        oldr, oldi = tl.split(packed)
         yr = BR * oldr - BI * oldi
         yi = BR * oldi + BI * oldr
-    tl.store(Y + rows * IY * 2, yr, rows < N)
-    tl.store(Y + rows * IY * 2 + 1, yi, rows < N)
+    tl.store(
+        Y + rows[:, None] * IY * 2 + lanes[None, :], tl.join(yr, yi), rows[:, None] < N
+    )
 
 
 @libentry()
 @triton.jit
 def _csymv_packed_panel_kernel(
-    A, X, Y, AR: tl.float32, AI: tl.float32,
-    N: tl.constexpr, LDA: tl.constexpr, IX: tl.constexpr,
-    IY: tl.constexpr, UPLO: tl.constexpr,
-    BM: tl.constexpr, BK: tl.constexpr, REVERSE: tl.constexpr,
+    A,
+    X,
+    Y,
+    AR: tl.float32,
+    AI: tl.float32,
+    N: tl.constexpr,
+    LDA: tl.constexpr,
+    IX: tl.constexpr,
+    IY: tl.constexpr,
+    UPLO: tl.constexpr,
+    BM: tl.constexpr,
+    BK: tl.constexpr,
+    REVERSE: tl.constexpr,
     COL_FIRST: tl.constexpr,
 ):
     if REVERSE:
@@ -353,8 +392,7 @@ def _csymv_packed_panel_kernel(
     rows = first + tl.arange(0, BM)
     k = tl.arange(0, BK)
     lane = tl.arange(0, 2)
-    xp = tl.load(X + rows[:, None] * IX * 2 + lane[None, :],
-                 rows[:, None] < N, 0)
+    xp = tl.load(X + rows[:, None] * IX * 2 + lane[None, :], rows[:, None] < N, 0)
     xrr, xri = tl.split(xp)
     rr = tl.full((BM,), 0, tl.float32)
     ri = tl.full((BM,), 0, tl.float32)
@@ -366,21 +404,23 @@ def _csymv_packed_panel_kernel(
         begin, end = diag_end, N
     for start in range(begin, end, BK):
         cols = start + k
-        xc = tl.load(X + cols[:, None] * IX * 2 + lane[None, :],
-                     cols[:, None] < N, 0)
+        xc = tl.load(X + cols[:, None] * IX * 2 + lane[None, :], cols[:, None] < N, 0)
         xcr, xci = tl.split(xc)
         off = (rows[:, None] * LDA + cols[None, :]) * 2
         mask = (rows[:, None] < N) & (cols[None, :] < N)
-        ap = tl.load(A + off[:, :, None] + lane[None, None, :],
-                     mask[:, :, None], 0)
+        ap = tl.load(A + off[:, :, None] + lane[None, None, :], mask[:, :, None], 0)
         ar, ai = tl.split(ap)
         if COL_FIRST:
             cr = tl.sum(ar * xrr[:, None] - ai * xri[:, None], 0)
             ci = tl.sum(ar * xri[:, None] + ai * xrr[:, None], 0)
             yr = AR * cr - AI * ci
             yi = AR * ci + AI * cr
-            tl.atomic_add(Y + cols[:, None] * IY * 2 + lane[None, :],
-                          tl.join(yr, yi), cols[:, None] < N, sem="relaxed")
+            tl.atomic_add(
+                Y + cols[:, None] * IY * 2 + lane[None, :],
+                tl.join(yr, yi),
+                cols[:, None] < N,
+                sem="relaxed",
+            )
         rr += tl.sum(ar * xcr[None, :] - ai * xci[None, :], 1)
         ri += tl.sum(ar * xci[None, :] + ai * xcr[None, :], 1)
         if not COL_FIRST:
@@ -388,17 +428,19 @@ def _csymv_packed_panel_kernel(
             ci = tl.sum(ar * xri[:, None] + ai * xrr[:, None], 0)
             yr = AR * cr - AI * ci
             yi = AR * ci + AI * cr
-            tl.atomic_add(Y + cols[:, None] * IY * 2 + lane[None, :],
-                          tl.join(yr, yi), cols[:, None] < N, sem="relaxed")
+            tl.atomic_add(
+                Y + cols[:, None] * IY * 2 + lane[None, :],
+                tl.join(yr, yi),
+                cols[:, None] < N,
+                sem="relaxed",
+            )
     for start in range(diag_begin, diag_end, BK):
         cols = start + k
-        xc = tl.load(X + cols[:, None] * IX * 2 + lane[None, :],
-                     cols[:, None] < N, 0)
+        xc = tl.load(X + cols[:, None] * IX * 2 + lane[None, :], cols[:, None] < N, 0)
         xcr, xci = tl.split(xc)
         off = (rows[:, None] * LDA + cols[None, :]) * 2
         mask = (rows[:, None] < N) & (cols[None, :] < N)
-        ap = tl.load(A + off[:, :, None] + lane[None, None, :],
-                     mask[:, :, None], 0)
+        ap = tl.load(A + off[:, :, None] + lane[None, None, :], mask[:, :, None], 0)
         ar, ai = tl.split(ap)
         if UPLO == 0:
             valid = rows[:, None] >= cols[None, :]
@@ -413,12 +455,20 @@ def _csymv_packed_panel_kernel(
         ci = tl.sum(ar * xri[:, None] + ai * xrr[:, None], 0)
         yr = AR * cr - AI * ci
         yi = AR * ci + AI * cr
-        tl.atomic_add(Y + cols[:, None] * IY * 2 + lane[None, :],
-                      tl.join(yr, yi), cols[:, None] < N, sem="relaxed")
+        tl.atomic_add(
+            Y + cols[:, None] * IY * 2 + lane[None, :],
+            tl.join(yr, yi),
+            cols[:, None] < N,
+            sem="relaxed",
+        )
     yr = AR * rr - AI * ri
     yi = AR * ri + AI * rr
-    tl.atomic_add(Y + rows[:, None] * IY * 2 + lane[None, :],
-                  tl.join(yr, yi), rows[:, None] < N, sem="relaxed")
+    tl.atomic_add(
+        Y + rows[:, None] * IY * 2 + lane[None, :],
+        tl.join(yr, yi),
+        rows[:, None] < N,
+        sem="relaxed",
+    )
 
 
 def ssymv(
@@ -438,10 +488,20 @@ def ssymv(
         # autotune pool can exceed Ascend's local-memory budget here.
         assert A.dtype == torch.float32 == x.dtype == y.dtype
         _check_common(A, x, y, uplo, n, lda, incx, incy)
-        alpha = float(alpha.item() if isinstance(alpha, torch.Tensor) else alpha)
-        beta = float(beta.item() if isinstance(beta, torch.Tensor) else beta)
+        if type(alpha) is not float:
+            alpha = float(alpha.item() if isinstance(alpha, torch.Tensor) else alpha)
+        if type(beta) is not float:
+            beta = float(beta.item() if isinstance(beta, torch.Tensor) else beta)
         if alpha == 0 and beta == 1:
             return
+        if (
+            4096 <= n <= 16384
+            and lda == n
+            and incx == incy == 1
+            and alpha != 0
+            and (n % 256 == 0 or uplo == 0 or n % 8 != 0)
+        ):
+            return _ssymv_packed_launch(uplo, n, alpha, A, lda, x, incx, beta, y, incy)
         if beta != 1:
             _ssymv_rows_launch(
                 uplo, n, 1.0, A, lda, x, incx, beta, y, incy, kind="scale"
@@ -464,6 +524,133 @@ def ssymv(
     _ssymv_rows_launch(uplo, n, alpha, A, lda, x, incx, beta, y, incy)
 
 
+@triton.jit
+def _csymv_compensated_add(ah, al, bh, bl):
+    # Keep the low-order error of each FP32 addition (TwoSum).
+    s = ah + bh
+    v = s - ah
+    e = (ah - (s - v)) + (bh - v)
+    e = e + (al + bl)
+    h = s + e
+    low = e - (h - s)
+    finite = tl.abs(s) < float("inf")
+    h = tl.where(finite, h, s)
+    low = tl.where(finite, low, 0.0)
+    return h, low
+
+
+@triton.jit
+def _csymv_compensated_product(a, b):
+    h = a * b
+    # Split the significand into two 12-bit parts without the intermediate
+    # overflow that a 4097*x split can produce for large finite inputs.
+    ah = (a.to(tl.int32, bitcast=True) & -4096).to(tl.float32, bitcast=True)
+    bh = (b.to(tl.int32, bitcast=True) & -4096).to(tl.float32, bitcast=True)
+    al = a - ah
+    bl = b - bh
+    low = ((ah * bh - h) + ah * bl + al * bh) + al * bl
+    low = tl.where(tl.abs(h) < float("inf"), low, 0.0)
+    return h, low
+
+
+@triton.jit
+def _csymv_compensated_scale(ah, al, b):
+    h, low = _csymv_compensated_product(ah, b)
+    low += al * b
+    return _csymv_compensated_add(h, low, 0.0, 0.0)
+
+
+@triton.jit
+def _csymv_compensated_sum(h, low, BM: tl.constexpr, BK: tl.constexpr):
+    k = tl.arange(0, BK)
+    for step in tl.static_range(0, 8):
+        if (1 << step) < BK:
+            index = tl.broadcast_to(k[None, :] ^ (1 << step), (BM, BK))
+            other_h = tl.gather(h, index, 1)
+            other_l = tl.gather(low, index, 1)
+            h, low = _csymv_compensated_add(h, low, other_h, other_l)
+    return tl.sum(tl.where(k[None, :] == 0, h, 0.0), 1), tl.sum(
+        tl.where(k[None, :] == 0, low, 0.0), 1
+    )
+
+
+@triton.jit
+def _csymv_compensated_rows_kernel(
+    A,
+    X,
+    Y,
+    AR: tl.float32,
+    AI: tl.float32,
+    BR: tl.float32,
+    BI: tl.float32,
+    N: tl.constexpr,
+    LDA: tl.constexpr,
+    IX: tl.constexpr,
+    IY: tl.constexpr,
+    U: tl.constexpr,
+    ZERO: tl.constexpr,
+    BM: tl.constexpr,
+    BK: tl.constexpr,
+):
+    rows = tl.program_id(0) * BM + tl.arange(0, BM)
+    k = tl.arange(0, BK)
+    if (
+        N * LDA * 2 >= 2147483648
+        or N * IX * 2 >= 2147483648
+        or N * IY * 2 >= 2147483648
+    ):
+        rows = rows.to(tl.int64)
+        k = k.to(tl.int64)
+    rh = tl.full((BM,), 0.0, tl.float32)
+    rl = tl.full((BM,), 0.0, tl.float32)
+    ih = tl.full((BM,), 0.0, tl.float32)
+    il = tl.full((BM,), 0.0, tl.float32)
+    for start in range(tl.cdiv(N, BK)):
+        cols = start * BK + k
+        direct = (
+            rows[:, None] >= cols[None, :] if U == 0 else rows[:, None] <= cols[None, :]
+        )
+        offsets = tl.where(
+            direct,
+            rows[:, None] * LDA + cols[None, :],
+            cols[None, :] * LDA + rows[:, None],
+        )
+        valid = (rows[:, None] < N) & (cols[None, :] < N)
+        ar = tl.load(A + offsets * 2, valid, 0.0)
+        ai = tl.load(A + offsets * 2 + 1, valid, 0.0)
+        xr = tl.load(X + cols * (2 * IX), cols < N, 0.0)
+        xi = tl.load(X + cols * (2 * IX) + 1, cols < N, 0.0)
+        rrh, rrl = _csymv_compensated_product(ar, xr[None, :])
+        rih, ril = _csymv_compensated_product(ai, xi[None, :])
+        prh, prl = _csymv_compensated_add(rrh, rrl, -rih, -ril)
+        irh, irl = _csymv_compensated_product(ar, xi[None, :])
+        iih, iil = _csymv_compensated_product(ai, xr[None, :])
+        pih, pil = _csymv_compensated_add(irh, irl, iih, iil)
+        srh, srl = _csymv_compensated_sum(prh, prl, BM, BK)
+        sih, sil = _csymv_compensated_sum(pih, pil, BM, BK)
+        rh, rl = _csymv_compensated_add(rh, rl, srh, srl)
+        ih, il = _csymv_compensated_add(ih, il, sih, sil)
+    a, b = _csymv_compensated_scale(rh, rl, AR)
+    c, d = _csymv_compensated_scale(ih, il, AI)
+    yrh, yrl = _csymv_compensated_add(a, b, -c, -d)
+    a, b = _csymv_compensated_scale(rh, rl, AI)
+    c, d = _csymv_compensated_scale(ih, il, AR)
+    yih, yil = _csymv_compensated_add(a, b, c, d)
+    if not ZERO:
+        yr = tl.load(Y + rows * (2 * IY), rows < N, 0.0)
+        yi = tl.load(Y + rows * (2 * IY) + 1, rows < N, 0.0)
+        a, b = _csymv_compensated_product(yr, BR)
+        c, d = _csymv_compensated_product(yi, BI)
+        e, f = _csymv_compensated_add(a, b, -c, -d)
+        yrh, yrl = _csymv_compensated_add(yrh, yrl, e, f)
+        a, b = _csymv_compensated_product(yr, BI)
+        c, d = _csymv_compensated_product(yi, BR)
+        e, f = _csymv_compensated_add(a, b, c, d)
+        yih, yil = _csymv_compensated_add(yih, yil, e, f)
+    tl.store(Y + rows * (2 * IY), yrh + yrl, rows < N)
+    tl.store(Y + rows * (2 * IY) + 1, yih + yil, rows < N)
+
+
 def csymv(
     uplo: int,
     n: int,
@@ -481,10 +668,53 @@ def csymv(
     if n == 0:
         return
 
-    ar, ai, br, bi = _complex_scalars(alpha, beta)
+    if type(alpha) is complex and type(beta) is complex:
+        ar, ai, br, bi = alpha.real, alpha.imag, beta.real, beta.imag
+    else:
+        ar, ai, br, bi = _complex_scalars(alpha, beta)
+    # Large coefficients amplify FP32 product/reduction rounding. Retain the
+    # low-order terms and scale the completed dot product only once.
+    if (
+        (ar != 0.0 or ai != 0.0)
+        and max(abs(ar), abs(ai), abs(br), abs(bi)) > 64.0
+        and all(math.isfinite(v) for v in (ar, ai, br, bi))
+    ):
+        with torch_device_fn.device(A.device):
+            _csymv_compensated_rows_kernel[((n + 8 - 1) // 8,)](
+                torch.view_as_real(A),
+                torch.view_as_real(x),
+                torch.view_as_real(y),
+                ar,
+                ai,
+                br,
+                bi,
+                n,
+                lda,
+                incx,
+                incy,
+                uplo,
+                br == 0.0 and bi == 0.0,
+                8,
+                32,
+                num_warps=1,
+                num_stages=1,
+                multibuffer=False,
+                # Error-free transforms require each operation to round
+                # separately; reassociation/fusion destroys the residual.
+                enable_fp_fusion=False,
+            )
+        return
     if lda == n and incx == incy == 1 and (ar != 0 or ai != 0):
-        if 128 <= n <= 1024 or n in (1536, 2048):
-            _csymv_packed_rows_launch(
+        if 3072 <= n <= 16384:
+            return _run_complex_packed(
+                uplo, n, ar, ai, br, bi, A, lda, x, incx, y, incy, False
+            )
+        if 128 <= n < 4096 and (n <= 2048 or n % 64 == 0):
+            _csymv_packed_rows_launch(A, x, y, ar, ai, br, bi, n, lda, incx, incy, uplo)
+            return
+        # Aligned panels and their one-element tails share the packed-X path.
+        if 4095 <= n <= 8192 and n % 128 in (0, 127):
+            _csymv_cached_panel_launch(
                 A, x, y, ar, ai, br, bi, n, lda, incx, incy, uplo
             )
             return
@@ -493,18 +723,37 @@ def csymv(
             x_real = torch.view_as_real(x)
             y_real = torch.view_as_real(y)
             col_first = uplo == 1 and n >= 6144
-            bm, bk = ((32, 128) if col_first else
-                      (16, 128 if n < 4095 else 256))
+            bm, bk = (32, 128) if col_first else (16, 128 if n < 4095 else 256)
             with torch_device_fn.device(A.device):
                 if br != 1.0 or bi != 0.0:
-                    _csymv_scale_kernel[(triton.cdiv(n, 256),)](
-                        y_real, br, bi, n, incy, br == 0 and bi == 0, 256,
-                        num_warps=1, num_stages=1,
+                    _csymv_scale_kernel[((n + 256 - 1) // 256,)](
+                        y_real,
+                        br,
+                        bi,
+                        n,
+                        incy,
+                        br == 0 and bi == 0,
+                        256,
+                        num_warps=1,
+                        num_stages=1,
                     )
-                _csymv_packed_panel_kernel[(triton.cdiv(n, bm),)](
-                    A_real, x_real, y_real, ar, ai, n, lda, incx, incy,
-                    uplo, bm, bk, uplo == 0, col_first,
-                    num_warps=1, num_stages=1,
+                _csymv_packed_panel_kernel[((n + bm - 1) // bm,)](
+                    A_real,
+                    x_real,
+                    y_real,
+                    ar,
+                    ai,
+                    n,
+                    lda,
+                    incx,
+                    incy,
+                    uplo,
+                    bm,
+                    bk,
+                    uplo == 0,
+                    col_first,
+                    num_warps=1,
+                    num_stages=1,
                 )
             return
     y_view = _strided_y(y, n, incy)
@@ -544,35 +793,57 @@ def csymv(
         )
 
 
-_CSYMV_PACKED_ROWS_CACHE = {}
+_CSYMV_PACKED_CACHE = {}
 
 
 def _csymv_packed_rows_launch(A, X, Y, ar, ai, br, bi, n, lda, incx, incy, uplo):
-    device = A.device.index
+    kernel, bm, bk, warps = _csymv_rows_plan(n)
+    values = (ar, ai, br, bi, n, lda, incx, incy, uplo, br == 0 and bi == 0, bm, bk)
+    _csymv_cached_launch(
+        (A, X, Y),
+        values,
+        kernel,
+        (n + bm - 1) // bm,
+        warps,
+        False if kernel is _csymv_lifetime_rows_kernel else None,
+    )
+
+
+def _csymv_cached_panel_launch(A, X, Y, ar, ai, br, bi, n, lda, incx, incy, uplo):
+    if br != 1.0 or bi != 0.0:
+        _csymv_cached_launch(
+            (Y,),
+            (br, bi, n, incy, br == 0 and bi == 0, 256),
+            _csymv_scale_kernel,
+            (n + 256 - 1) // 256,
+        )
+    bm, bk = 32, 128
+    _csymv_cached_launch(
+        (A, X, Y),
+        (ar, ai, n, lda, incx, incy, uplo, bm, bk, uplo == 0, uplo == 1),
+        _csymv_cached_panel_kernel,
+        (n + bm - 1) // bm,
+        multibuffer=False,
+    )
+
+
+def _csymv_cached_launch(tensors, values, kernel, grid, warps=1, multibuffer=None):
+    device = tensors[0].device.index
     if device != _current_device():
-        with torch_device_fn.device(A.device):
-            return _csymv_packed_rows_launch(
-                A, X, Y, ar, ai, br, bi, n, lda, incx, incy, uplo
+        with torch_device_fn.device(tensors[0].device):
+            return _csymv_cached_launch(
+                tensors, values, kernel, grid, warps, multibuffer
             )
-    tensors = (A, X, Y)
     pointers = tuple(t.data_ptr() for t in tensors)
-    if uplo == 1 and n in (128, 192, 255):
-        bm, bk, warps = 16, 64, 1
-    elif 512 <= n <= 1024:
-        bm, bk, warps = 32, 64, 2
-    elif n == 2048:
-        bm, bk, warps = 32, 64, 8 if uplo == 0 else 4
-    else:
-        bm, bk, warps = 16, 128, 4
-    values = (ar, ai, br, bi, n, lda, incx, incy, uplo,
-              br == 0 and bi == 0, bm, bk)
-    key = (device, *values, warps, *(p % 16 for p in pointers))
-    cached = _CSYMV_PACKED_ROWS_CACHE.get(key)
-    grid = triton.cdiv(n, bm)
+    key = (device, kernel, *values, warps, multibuffer, *(p % 16 for p in pointers))
+    cached = _CSYMV_PACKED_CACHE.get(key)
     if cached is None:
-        real_tensors = tuple(torch.view_as_real(t) for t in tensors)
-        compiled, _ = _csymv_packed_rows_kernel[(grid,)](
-            *real_tensors, *values, num_warps=warps, num_stages=1
+        real_tensors = tuple(
+            torch.view_as_real(t) if t.is_complex() else t for t in tensors
+        )
+        options = {} if multibuffer is None else {"multibuffer": multibuffer}
+        compiled, _ = kernel[(grid,)](
+            *real_tensors, *values, num_warps=warps, num_stages=1, **options
         )
         run = compiled.run
         special = (
@@ -580,9 +851,9 @@ def _csymv_packed_rows_launch(A, X, Y, ar, ai, br, bi, n, lda, incx, incy, uplo)
             or getattr(run, "enable_msprof_register_tensor", False)
             or getattr(compiled.metadata, "debug_enabled", False)
         )
-        if len(_CSYMV_PACKED_ROWS_CACHE) >= 512:
-            _CSYMV_PACKED_ROWS_CACHE.clear()
-        _CSYMV_PACKED_ROWS_CACHE[key] = (compiled, run, special)
+        if len(_CSYMV_PACKED_CACHE) >= 512:
+            _CSYMV_PACKED_CACHE.clear()
+        _CSYMV_PACKED_CACHE[key] = (compiled, run, special)
         return
 
     compiled, run, special = cached
@@ -596,7 +867,9 @@ def _csymv_packed_rows_launch(A, X, Y, ar, ai, br, bi, n, lda, incx, incy, uplo)
         type(exit) is not _HOOK_CHAIN_TYPE or bool(exit.calls)
     )
     if special or has_enter or has_exit:
-        real_tensors = tuple(torch.view_as_real(t) for t in tensors)
+        real_tensors = tuple(
+            torch.view_as_real(t) if t.is_complex() else t for t in tensors
+        )
         compiled[(grid, 1, 1)](*real_tensors, *values, stream=stream)
         return
     args = []
@@ -612,8 +885,17 @@ def _csymv_packed_rows_launch(A, X, Y, ar, ai, br, bi, n, lda, incx, incy, uplo)
     )
     launch = run.launch if direct else run
     registered = launch(
-        grid, 1, 1, stream, compiled.function, compiled.packed_metadata,
-        None, None, None, *args, *values,
+        grid,
+        1,
+        1,
+        stream,
+        compiled.function,
+        compiled.packed_metadata,
+        None,
+        None,
+        None,
+        *args,
+        *values,
     )
     if direct:
         _ascend_driver_utils.TRITON_PROFILER_REGISTERED = registered == 1
@@ -673,7 +955,7 @@ def _csymv_direct_launch(A, X, Y, ar, ai, n, lda, incx, incy, uplo, core_limit):
         return
 
     compiled, run, special, block_size = cached
-    tiles = triton.cdiv(n, block_size)
+    tiles = (n + block_size - 1) // block_size
     grid = min(tiles * (tiles + 1) // 2, core_limit)
     values = (ar, ai, n, lda, incx, incy, uplo, block_size)
     stream = _current_raw_stream(device)
@@ -910,8 +1192,10 @@ def _ssymv_rows_launch(uplo, n, alpha, A, lda, x, incx, beta, y, incy, kind="row
     _check_common(A, x, y, uplo, n, lda, incx, incy)
     if n == 0:
         return
-    alpha = float(alpha.item() if isinstance(alpha, torch.Tensor) else alpha)
-    beta = float(beta.item() if isinstance(beta, torch.Tensor) else beta)
+    if type(alpha) is not float:
+        alpha = float(alpha.item() if isinstance(alpha, torch.Tensor) else alpha)
+    if type(beta) is not float:
+        beta = float(beta.item() if isinstance(beta, torch.Tensor) else beta)
     if alpha == 0 and beta == 1:
         return
     assert A.device.type == "npu"
@@ -928,24 +1212,24 @@ def _ssymv_rows_launch(uplo, n, alpha, A, lda, x, incx, beta, y, incy, kind="row
     if cached is None:
         if kind == "scale":
             bm, bk = 256, 1
-            compiled, _ = _ssymv_scale_kernel[(triton.cdiv(n, bm),)](
+            compiled, _ = _ssymv_scale_kernel[((n + bm - 1) // bm,)](
                 A, x, y, *values, bm, bk, num_warps=1, num_stages=1
             )
         elif kind == "panel_strided":
             bm, bk = 8, 32
-            compiled, _ = _ssymv_panel_kernel[(triton.cdiv(n, bm),)](
+            compiled, _ = _ssymv_panel_kernel[((n + bm - 1) // bm,)](
                 A, x, y, *values, bm, bk, num_warps=1, num_stages=1
             )
         elif alpha == 0:
             # Scaling needs no configuration search and must not tune the
             # shared matrix-vector pool using an empty reduction.
             bm, bk = 32, 128
-            compiled, _ = _ssymv_rows_kernel[(triton.cdiv(n, bm),)](
+            compiled, _ = _ssymv_rows_kernel[((n + bm - 1) // bm,)](
                 A, x, y, *values, bm, bk, num_warps=1, num_stages=1
             )
         elif kind == "rows" and uplo == 1 and n in (192, 255):
             bm, bk = 32, 128
-            compiled, _ = _ssymv_rows_kernel[(triton.cdiv(n, bm),)](
+            compiled, _ = _ssymv_rows_kernel[((n + bm - 1) // bm,)](
                 A, x, y, *values, bm, bk, num_warps=1, num_stages=1
             )
         elif (
@@ -956,12 +1240,12 @@ def _ssymv_rows_launch(uplo, n, alpha, A, lda, x, incx, beta, y, incy, kind="row
             and incx == incy == 1
         ):
             bm, bk = 32, 256
-            compiled, _ = _ssymv_panel_kernel[(triton.cdiv(n, bm),)](
+            compiled, _ = _ssymv_panel_kernel[((n + bm - 1) // bm,)](
                 A, x, y, *values, bm, bk, num_warps=1, num_stages=1
             )
         else:
             compiled, meta = _ssymv_rows_entry(device, kind)[
-                lambda config: (triton.cdiv(n, config["BM"]),)
+                lambda config: ((n + config["BM"] - 1) // config["BM"],)
             ](A, x, y, *values)
             bm, bk = meta["BM"], meta["BK"]
         run = compiled.run
@@ -976,7 +1260,7 @@ def _ssymv_rows_launch(uplo, n, alpha, A, lda, x, incx, beta, y, incy, kind="row
         return
     compiled, run, special, bm, bk = cached
     values = (*values, bm, bk)
-    grid = triton.cdiv(n, bm)
+    grid = (n + bm - 1) // bm
     stream = _current_raw_stream(device)
     knobs = triton.knobs.runtime
     enter, exit = knobs.launch_enter_hook, knobs.launch_exit_hook
@@ -1016,3 +1300,458 @@ def _ssymv_rows_launch(uplo, n, alpha, A, lda, x, incx, beta, y, incy, kind="row
     )
     if direct:
         _ascend_driver_utils.TRITON_PROFILER_REGISTERED = registered == 1
+
+
+@libentry()
+@triton.jit
+def _csymv_rows_no_transpose_kernel(
+    A,
+    X,
+    Y,
+    AR: tl.float32,
+    AI: tl.float32,
+    BR: tl.float32,
+    BI: tl.float32,
+    N: tl.constexpr,
+    LDA: tl.constexpr,
+    IX: tl.constexpr,
+    IY: tl.constexpr,
+    UPLO: tl.constexpr,
+    ZERO: tl.constexpr,
+    BM: tl.constexpr,
+    BK: tl.constexpr,
+):
+    first = tl.program_id(0) * BM
+    rows = first + tl.arange(0, BM)
+    ks = tl.arange(0, BK)
+    lanes = tl.arange(0, 2)
+    dr = tl.full((BM, BK), 0, tl.float32)
+    di = tl.full((BM, BK), 0, tl.float32)
+    mr = tl.full((BK, BM), 0, tl.float32)
+    mi = tl.full((BK, BM), 0, tl.float32)
+    if UPLO == 0:
+        (db, de) = (0, tl.minimum(first + BM, N))
+        (mb, me) = (first, N)
+    else:
+        (db, de) = (first, N)
+        (mb, me) = (0, tl.minimum(first + BM, N))
+    # Read rectangles, then discard the unused triangle before multiplication.
+    for start in range(db, de, BK):
+        cols = start + ks
+        xp = tl.load(X + cols[:, None] * IX * 2 + lanes[None, :], cols[:, None] < N, 0)
+        (xr, xi) = tl.split(xp)
+        off = (rows[:, None] * LDA + cols[None, :]) * 2
+        ap = tl.load(
+            A + off[:, :, None] + lanes[None, None, :],
+            ((rows[:, None] < N) & (cols[None, :] < N))[:, :, None],
+            0,
+        )
+        (ar, ai) = tl.split(ap)
+        if UPLO == 0:
+            valid = rows[:, None] >= cols[None, :]
+        else:
+            valid = rows[:, None] <= cols[None, :]
+        ar = tl.where(valid, ar, 0)
+        ai = tl.where(valid, ai, 0)
+        vr = ar * xr[None, :] - ai * xi[None, :]
+        vi = ar * xi[None, :] + ai * xr[None, :]
+        dr += vr
+        di += vi
+    # Retain the mirrored tile layout and reduce along its other axis.
+    for start in range(mb, me, BK):
+        cols = start + ks
+        xp = tl.load(X + cols[:, None] * IX * 2 + lanes[None, :], cols[:, None] < N, 0)
+        (xr, xi) = tl.split(xp)
+        off = (cols[:, None] * LDA + rows[None, :]) * 2
+        ap = tl.load(
+            A + off[:, :, None] + lanes[None, None, :],
+            ((cols[:, None] < N) & (rows[None, :] < N))[:, :, None],
+            0,
+        )
+        (ar, ai) = tl.split(ap)
+        if UPLO == 0:
+            valid = cols[:, None] > rows[None, :]
+        else:
+            valid = cols[:, None] < rows[None, :]
+        ar = tl.where(valid, ar, 0)
+        ai = tl.where(valid, ai, 0)
+        vr = ar * xr[:, None] - ai * xi[:, None]
+        vi = ar * xi[:, None] + ai * xr[:, None]
+        mr += vr
+        mi += vi
+    # Finish both reductions once per output block instead of per tile.
+    (sr, si) = (tl.sum(dr, 1) + tl.sum(mr, 0), tl.sum(di, 1) + tl.sum(mi, 0))
+    yr = AR * sr - AI * si
+    yi = AR * si + AI * sr
+    if not ZERO:
+        yv = tl.load(Y + rows[:, None] * IY * 2 + lanes[None, :], rows[:, None] < N, 0)
+        (oldr, oldi) = tl.split(yv)
+        yr += BR * oldr - BI * oldi
+        yi += BR * oldi + BI * oldr
+    tl.store(
+        Y + rows[:, None] * IY * 2 + lanes[None, :], tl.join(yr, yi), rows[:, None] < N
+    )
+
+
+@libentry()
+@triton.jit
+def _csymv_lifetime_rows_kernel(
+    A,
+    X,
+    Y,
+    AR: tl.float32,
+    AI: tl.float32,
+    BR: tl.float32,
+    BI: tl.float32,
+    N: tl.constexpr,
+    LDA: tl.constexpr,
+    IX: tl.constexpr,
+    IY: tl.constexpr,
+    UPLO: tl.constexpr,
+    ZERO: tl.constexpr,
+    BM: tl.constexpr,
+    BK: tl.constexpr,
+):
+    first = tl.program_id(0) * BM
+    rows = first + tl.arange(0, BM)
+    ks = tl.arange(0, BK)
+    lane = tl.arange(0, 2)
+    dr = tl.full((BM, BK), 0, tl.float32)
+    di = tl.full((BM, BK), 0, tl.float32)
+    if UPLO == 0:
+        (db, de) = (0, tl.minimum(first + BM, N))
+        (mb, me) = (first, N)
+    else:
+        (db, de) = (first, N)
+        (mb, me) = (0, tl.minimum(first + BM, N))
+    for start in range(db, de, BK):
+        cols = start + ks
+        xp = tl.load(X + cols[:, None] * IX * 2 + lane[None, :], cols[:, None] < N, 0)
+        (xr, xi) = tl.split(xp)
+        ap = tl.load(
+            A
+            + (rows[:, None] * LDA + cols[None, :])[:, :, None] * 2
+            + lane[None, None, :],
+            ((rows[:, None] < N) & (cols[None, :] < N))[:, :, None],
+            0,
+        )
+        (ar, ai) = tl.split(ap)
+        if UPLO == 0:
+            valid = rows[:, None] >= cols[None, :]
+        else:
+            valid = rows[:, None] <= cols[None, :]
+        ar = tl.where(valid, ar, 0)
+        ai = tl.where(valid, ai, 0)
+        dr += ar * xr[None, :] - ai * xi[None, :]
+        di += ar * xi[None, :] + ai * xr[None, :]
+    # Release direct accumulators before allocating the mirrored tile state.
+    (sr, si) = (tl.sum(dr, 1), tl.sum(di, 1))
+    mr = tl.full((BK, BM), 0, tl.float32)
+    mi = tl.full((BK, BM), 0, tl.float32)
+    for start in range(mb, me, BK):
+        cols = start + ks
+        xp = tl.load(X + cols[:, None] * IX * 2 + lane[None, :], cols[:, None] < N, 0)
+        (xr, xi) = tl.split(xp)
+        ap = tl.load(
+            A
+            + (cols[:, None] * LDA + rows[None, :])[:, :, None] * 2
+            + lane[None, None, :],
+            ((cols[:, None] < N) & (rows[None, :] < N))[:, :, None],
+            0,
+        )
+        (ar, ai) = tl.split(ap)
+        if UPLO == 0:
+            valid = cols[:, None] > rows[None, :]
+        else:
+            valid = cols[:, None] < rows[None, :]
+        ar = tl.where(valid, ar, 0)
+        ai = tl.where(valid, ai, 0)
+        mr += ar * xr[:, None] - ai * xi[:, None]
+        mi += ar * xi[:, None] + ai * xr[:, None]
+    sr += tl.sum(mr, 0)
+    si += tl.sum(mi, 0)
+    yr = AR * sr - AI * si
+    yi = AR * si + AI * sr
+    if not ZERO:
+        yp = tl.load(Y + rows[:, None] * IY * 2 + lane[None, :], rows[:, None] < N, 0)
+        (oldr, oldi) = tl.split(yp)
+        yr += BR * oldr - BI * oldi
+        yi += BR * oldi + BI * oldr
+    tl.store(
+        Y + rows[:, None] * IY * 2 + lane[None, :], tl.join(yr, yi), rows[:, None] < N
+    )
+
+
+@libentry()
+@triton.jit
+def _csymv_cached_panel_kernel(
+    A,
+    X,
+    Y,
+    AR: tl.float32,
+    AI: tl.float32,
+    N: tl.constexpr,
+    LDA: tl.constexpr,
+    IX: tl.constexpr,
+    IY: tl.constexpr,
+    UPLO: tl.constexpr,
+    BM: tl.constexpr,
+    BK: tl.constexpr,
+    REVERSE: tl.constexpr,
+    COL_FIRST: tl.constexpr,
+):
+    if REVERSE:
+        first = (tl.cdiv(N, BM) - 1 - tl.program_id(0)) * BM
+    else:
+        first = tl.program_id(0) * BM
+    rows = first + tl.arange(0, BM)
+    k = tl.arange(0, BK)
+    lane = tl.arange(0, 2)
+    # Keep packed X in on-chip UB; dispatch bounds this storage to 64 KiB.
+    xn = tl.arange(0, 2 * triton.next_power_of_2(N))
+    fullx = tl.load(X + xn, xn < N * 2, 0)
+    xrows = tl.reshape(
+        _symv_ext.extract_slice(fullx, [first * 2], [BM * 2], [1]), (BM, 2)
+    )
+    xrr, xri = tl.split(xrows)
+    rr = tl.full((BM,), 0, tl.float32)
+    ri = tl.full((BM,), 0, tl.float32)
+    diag_begin = first // BK * BK
+    diag_end = tl.cdiv(first + BM, BK) * BK
+    if UPLO == 0:
+        begin, end = 0, diag_begin
+    else:
+        begin, end = diag_end, N
+    count = tl.cdiv(end - begin, BK)
+    # Stagger atomic destinations while visiting every off-diagonal tile once.
+    shift = (tl.program_id(0) * 7) % tl.maximum(count, 1)
+    for step in range(count):
+        start = begin + ((step + shift) % tl.maximum(count, 1)) * BK
+        cols = start + k
+        xc = tl.reshape(
+            _symv_ext.extract_slice(fullx, [start * 2], [BK * 2], [1]), (BK, 2)
+        )
+        xcr, xci = tl.split(xc)
+        off = (rows[:, None] * LDA + cols[None, :]) * 2
+        mask = (rows[:, None] < N) & (cols[None, :] < N)
+        ap = tl.load(A + off[:, :, None] + lane[None, None, :], mask[:, :, None], 0)
+        ar, ai = tl.split(ap)
+        if COL_FIRST:
+            cr = tl.sum(ar * xrr[:, None] - ai * xri[:, None], 0)
+            ci = tl.sum(ar * xri[:, None] + ai * xrr[:, None], 0)
+            yr = AR * cr - AI * ci
+            yi = AR * ci + AI * cr
+            tl.atomic_add(
+                Y + cols[:, None] * IY * 2 + lane[None, :],
+                tl.join(yr, yi),
+                cols[:, None] < N,
+                sem="relaxed",
+            )
+        rr += tl.sum(ar * xcr[None, :] - ai * xci[None, :], 1)
+        ri += tl.sum(ar * xci[None, :] + ai * xcr[None, :], 1)
+        if not COL_FIRST:
+            cr = tl.sum(ar * xrr[:, None] - ai * xri[:, None], 0)
+            ci = tl.sum(ar * xri[:, None] + ai * xrr[:, None], 0)
+            yr = AR * cr - AI * ci
+            yi = AR * ci + AI * cr
+            tl.atomic_add(
+                Y + cols[:, None] * IY * 2 + lane[None, :],
+                tl.join(yr, yi),
+                cols[:, None] < N,
+                sem="relaxed",
+            )
+    for start in range(diag_begin, diag_end, BK):
+        cols = start + k
+        xc = tl.reshape(
+            _symv_ext.extract_slice(fullx, [start * 2], [BK * 2], [1]), (BK, 2)
+        )
+        xcr, xci = tl.split(xc)
+        off = (rows[:, None] * LDA + cols[None, :]) * 2
+        mask = (rows[:, None] < N) & (cols[None, :] < N)
+        ap = tl.load(A + off[:, :, None] + lane[None, None, :], mask[:, :, None], 0)
+        ar, ai = tl.split(ap)
+        if UPLO == 0:
+            valid = rows[:, None] >= cols[None, :]
+        else:
+            valid = rows[:, None] <= cols[None, :]
+        ar, ai = tl.where(valid, ar, 0), tl.where(valid, ai, 0)
+        rr += tl.sum(ar * xcr[None, :] - ai * xci[None, :], 1)
+        ri += tl.sum(ar * xci[None, :] + ai * xcr[None, :], 1)
+        ar = tl.where(rows[:, None] != cols[None, :], ar, 0)
+        ai = tl.where(rows[:, None] != cols[None, :], ai, 0)
+        cr = tl.sum(ar * xrr[:, None] - ai * xri[:, None], 0)
+        ci = tl.sum(ar * xri[:, None] + ai * xrr[:, None], 0)
+        yr = AR * cr - AI * ci
+        yi = AR * ci + AI * cr
+        tl.atomic_add(
+            Y + cols[:, None] * IY * 2 + lane[None, :],
+            tl.join(yr, yi),
+            cols[:, None] < N,
+            sem="relaxed",
+        )
+    yr = AR * rr - AI * ri
+    yi = AR * ri + AI * rr
+    tl.atomic_add(
+        Y + rows[:, None] * IY * 2 + lane[None, :],
+        tl.join(yr, yi),
+        rows[:, None] < N,
+        sem="relaxed",
+    )
+
+
+def _csymv_rows_plan(n):
+    # Wider K tiles help short, unaligned rows and medium aligned matrices.
+    if (512 <= n <= 1024 and n % 4 != 0) or (3072 <= n < 4096 and n % 64 == 0):
+        return _csymv_lifetime_rows_kernel, 32, 128, 1
+    return _csymv_rows_no_transpose_kernel, 64, 64, 1
+
+
+@libentry()
+@triton.jit
+def _ssymv_macro_kernel(
+    A,
+    X,
+    Y,
+    AL: tl.float32,
+    N: tl.constexpr,
+    LDA: tl.constexpr,
+    IX: tl.constexpr,
+    IY: tl.constexpr,
+    U: tl.constexpr,
+    MACRO: tl.constexpr,
+    MR: tl.constexpr,
+):
+    side: tl.constexpr = triton.cdiv(N, MACRO)
+    total: tl.constexpr = side * (side + 1) // 2
+    r = tl.arange(0, MR)
+    c = tl.arange(0, MACRO)
+    for tile in range(tl.program_id(0), total, tl.num_programs(0)):
+        major = ((tl.sqrt(tile.to(tl.float32) * 8.0 + 1.0) - 1.0) * 0.5).to(tl.int32)
+        major = tl.where(major * (major + 1) // 2 > tile, major - 1, major)
+        major = tl.where((major + 1) * (major + 2) // 2 <= tile, major + 1, major)
+        minor = tile - major * (major + 1) // 2
+        (rb, cb) = (major, minor) if U == 0 else (minor, major)
+        cols = cb * MACRO + c
+        xc = tl.load(X + cols * IX, cols < N, 0.0)
+        cr = tl.full((MACRO,), 0.0, tl.float32)
+        for part in range(MACRO // MR):
+            rows = rb * MACRO + part * MR + r
+            xr = tl.load(X + rows * IX, rows < N, 0.0)
+            av = tl.load(
+                A + rows[:, None] * LDA + cols[None, :],
+                (rows[:, None] < N) & (cols[None, :] < N),
+                0.0,
+            )
+            if rb == cb:
+                valid = (
+                    rows[:, None] >= cols[None, :]
+                    if U == 0
+                    else rows[:, None] <= cols[None, :]
+                )
+                av = tl.where(valid, av, 0.0)
+            rr = tl.sum(av * xc[None, :], 1)
+            tl.atomic_add(Y + rows * IY, AL * rr, rows < N, sem="relaxed")
+            if rb == cb:
+                av = tl.where(rows[:, None] != cols[None, :], av, 0.0)
+            cr += tl.sum(av * xr[:, None], 0)
+        tl.atomic_add(Y + cols * IY, AL * cr, cols < N, sem="relaxed")
+
+
+@libentry()
+@triton.jit
+def _ssymv_contiguous_panel_kernel(
+    A,
+    X,
+    Y,
+    AL: tl.float32,
+    N: tl.constexpr,
+    LDA: tl.constexpr,
+    IX: tl.constexpr,
+    IY: tl.constexpr,
+    U: tl.constexpr,
+    BM: tl.constexpr,
+    BK: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    first = (tl.cdiv(N, BM) - 1 - pid) * BM if U == 0 else pid * BM
+    rows = first + tl.arange(0, BM)
+    k = tl.arange(0, BK)
+    xr = tl.load(X + rows * IX, rows < N, 0.0)
+    acc = tl.full((BM,), 0.0, tl.float32)
+    db = first // BK * BK
+    de = tl.cdiv(first + BM, BK) * BK
+    (begin, end) = (0, db) if U == 0 else (de, N)
+    count = tl.cdiv(end - begin, BK)
+    shift = pid * 7 % tl.maximum(count, 1)
+    for step in range(count):
+        st = begin + (step + shift) % tl.maximum(count, 1) * BK
+        cols = st + k
+        xc = tl.load(X + cols * IX, cols < N, 0.0)
+        av = tl.load(
+            A + rows[:, None] * LDA + cols[None, :],
+            (rows[:, None] < N) & (cols[None, :] < N),
+            0.0,
+        )
+        acc += tl.sum(av * xc[None, :], 1)
+        mirror = tl.sum(av * xr[:, None], 0)
+        tl.atomic_add(Y + cols * IY, AL * mirror, cols < N, sem="relaxed")
+    for st in range(db, de, BK):
+        cols = st + k
+        xc = tl.load(X + cols * IX, cols < N, 0.0)
+        valid = (
+            rows[:, None] >= cols[None, :] if U == 0 else rows[:, None] <= cols[None, :]
+        )
+        av = tl.load(
+            A + rows[:, None] * LDA + cols[None, :],
+            (rows[:, None] < N) & (cols[None, :] < N),
+            0.0,
+        )
+        av = tl.where(valid, av, 0.0)
+        acc += tl.sum(av * xc[None, :], 1)
+        av = tl.where(rows[:, None] != cols[None, :], av, 0.0)
+        mirror = tl.sum(av * xr[:, None], 0)
+        tl.atomic_add(Y + cols * IY, AL * mirror, cols < N, sem="relaxed")
+    result = acc
+    tl.atomic_add(Y + rows * IY, AL * result, rows < N, sem="relaxed")
+
+
+@libentry()
+@triton.jit
+def _ssymv_packed_scale_kernel(
+    Y, B: tl.float32, N: tl.constexpr, IY: tl.constexpr, ZERO: tl.constexpr
+):
+    r = tl.program_id(0) * 256 + tl.arange(0, 256)
+    v = tl.full((256,), 0.0, tl.float32)
+    if not ZERO:
+        v = B * tl.load(Y + r * IY, r < N, 0.0)
+    tl.store(Y + r * IY, v, r < N)
+
+
+def _ssymv_packed_launch(uplo, n, alpha, A, lda, x, incx, beta, y, incy):
+    if beta != 1:
+        _csymv_cached_launch(
+            (y,),
+            (beta, n, incy, beta == 0),
+            _ssymv_packed_scale_kernel,
+            (n + 256 - 1) // 256,
+            multibuffer=False,
+        )
+    if n % 256 == 0:
+        macro, mr = (512, 16) if n >= 16384 else (256, 32)
+        side = (n + macro - 1) // macro
+        _csymv_cached_launch(
+            (A, x, y),
+            (alpha, n, lda, incx, incy, uplo, macro, mr),
+            _ssymv_macro_kernel,
+            min(40, side * (side + 1) // 2),
+            multibuffer=n < 16384,
+        )
+    else:
+        bm, bk = 16, 512
+        _csymv_cached_launch(
+            (A, x, y),
+            (alpha, n, lda, incx, incy, uplo, bm, bk),
+            _ssymv_contiguous_panel_kernel,
+            (n + bm - 1) // bm,
+            multibuffer=False,
+        )

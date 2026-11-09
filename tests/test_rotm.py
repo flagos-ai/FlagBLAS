@@ -11,7 +11,7 @@ from .accuracy_utils import L1_PAIR_STRIDES
 from .accuracy_utils import L1_STRIDE_SHAPES
 from .accuracy_utils import L1_STRIDE_SHAPES as PERF_STRIDE_SHAPES
 from .accuracy_utils import L1_VECTOR_SHAPES as PERF_VECTOR_SHAPES
-from .accuracy_utils import blas_assert_close, to_reference
+from .accuracy_utils import blas_assert_close, l1_randn, to_reference
 from .conftest import TO_CPU
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
@@ -227,8 +227,8 @@ def test_accuracy_rotm_real(dtype, shape, incx, incy, flag):
 
     n = shape[0]
     param = _build_param(dtype, flag_blas.device, flag)
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
     ref_x, ref_y = _rotm_reference(n, x, incx, y, incy, param)
 
     _call_rotm(dtype, n, x, incx, y, incy, param)
@@ -249,8 +249,8 @@ def test_accuracy_rotm_empty_tensor(dtype):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(0, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(0, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(0, dtype=dtype, device=flag_blas.device)
     param = _build_param(dtype, flag_blas.device, -1.0)
     _call_rotm(dtype, 0, x, 1, y, 1, param)
     assert x.numel() == 0
@@ -272,8 +272,8 @@ def test_accuracy_rotm_different_n_real(dtype, n, vec_size, flag):
         pytest.skip("Device does not support float64")
 
     param = _build_param(dtype, flag_blas.device, flag)
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
     ref_x, ref_y = _rotm_reference(n, x, 1, y, 1, param)
 
     _call_rotm(dtype, n, x, 1, y, 1, param)
@@ -330,8 +330,8 @@ def test_rotm_rejects_nonpositive_strides(dtype, incx, incy):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(4, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(4, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(4, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(4, dtype=dtype, device=flag_blas.device)
     param = _build_param(dtype, flag_blas.device, -1.0)
 
     with pytest.raises(AssertionError, match="inc.*must be positive"):
@@ -353,8 +353,8 @@ def test_rotm_rejects_short_vectors(dtype):
     n = 4
     incx = 2
     incy = 2
-    x = torch.randn(6, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(1 + (n - 1) * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(6, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(1 + (n - 1) * incy, dtype=dtype, device=flag_blas.device)
     param = _build_param(dtype, flag_blas.device, -1.0)
 
     with pytest.raises(AssertionError, match="x is too short"):
@@ -373,8 +373,8 @@ def test_rotm_rejects_bad_param_shape(dtype):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(4, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(4, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(4, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(4, dtype=dtype, device=flag_blas.device)
     param = torch.zeros(4, dtype=dtype, device=flag_blas.device)
 
     with pytest.raises(AssertionError, match="param must have exactly five elements"):
@@ -384,9 +384,13 @@ def test_rotm_rejects_bad_param_shape(dtype):
 @pytest.mark.srotm
 @pytest.mark.rotm
 def test_srotm_rejects_mismatched_param_dtype():
-    x = torch.randn(4, dtype=torch.float32, device=flag_blas.device)
-    y = torch.randn(4, dtype=torch.float32, device=flag_blas.device)
-    param = _build_param(torch.float64, flag_blas.device, -1.0)
+    x = l1_randn(4, dtype=torch.float32, device=flag_blas.device)
+    y = l1_randn(4, dtype=torch.float32, device=flag_blas.device)
+    param = _build_param(
+        torch.float16 if flag_blas.vendor_name == "ascend" else torch.float64,
+        flag_blas.device,
+        -1.0,
+    )
 
     with pytest.raises(AssertionError, match="param must be float32"):
         flag_blas.srotm(4, x, 1, y, 1, param)
@@ -421,8 +425,8 @@ def test_accuracy_rotm_perf_inputs(dtype, shape, incx, incy, flag):
     param = torch.tensor(
         [flag, 0.8, 0.2, -0.3, 0.7], dtype=dtype, device=flag_blas.device
     )
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
     expected_x, expected_y = _rotm_reference(n, x, incx, y, incy, param)
     _call_rotm(dtype, n, x, incx, y, incy, param)
     blas_assert_close(x, expected_x, dtype)

@@ -27,6 +27,7 @@ from .accuracy_utils import (
     L1_STRIDE_SHAPES,
     SCALARS,
     blas_assert_close,
+    l1_randn,
     to_cpu_blas_tensor,
     to_reference,
 )
@@ -43,7 +44,7 @@ if IS_HYGON:
     )
 elif flag_blas.vendor_name == "mthreads":
     from benchmark.mublas_compat import cp, cublas
-else:
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -173,8 +174,8 @@ def test_accuracy_axpy_real(dtype, shape, alpha):
     n = shape[0]
     incx = 1
     incy = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     ref_y = axpy_reference(n, alpha, x, incx, y, incy)
 
@@ -203,8 +204,8 @@ def test_accuracy_axpy_complex(dtype, shape, alpha):
     n = shape[0]
     incx = 1
     incy = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     ref_y = axpy_reference(n, alpha, x, incx, y, incy)
 
@@ -232,8 +233,8 @@ def test_accuracy_axpy_different_n_with_stride_real(dtype, shape, incx, incy):
 
     n = shape[0]
     alpha = -111.999
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     ref_y = axpy_reference(n, alpha, x, incx, y, incy)
 
@@ -261,8 +262,8 @@ def test_accuracy_axpy_different_n_with_stride_complex(dtype, shape, incx, incy)
 
     n = shape[0]
     alpha = -0.5 + 1.5j
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
 
     ref_y = axpy_reference(n, alpha, x, incx, y, incy)
 
@@ -291,8 +292,8 @@ def test_accuracy_axpy_empty_tensor(dtype):
     ):
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(0, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(0, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(0, dtype=dtype, device=flag_blas.device)
 
     alpha = 2.0 + 1.0j if dtype in [torch.complex64, torch.complex128] else 2.0
     n = 0
@@ -338,8 +339,8 @@ def test_accuracy_axpy_perf_inputs(dtype, shape, incx, incy):
         pytest.skip("Device does not support float64")
     n = shape[0]
     alpha = 0.01 + 0.01j if dtype.is_complex else 1e-5
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
-    y = torch.randn(n * incy, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
+    y = l1_randn(n * incy, dtype=dtype, device=flag_blas.device)
     expected = axpy_reference(n, alpha, x, incx, y, incy)
     op = {
         torch.float32: flag_blas.saxpy,

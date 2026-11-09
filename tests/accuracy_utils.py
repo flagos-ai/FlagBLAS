@@ -460,6 +460,48 @@ def gemm_randn(shape, dtype, device):
     return torch.randn(shape, dtype=dtype, device=device)
 
 
+def l1_randn(*size, **kwargs):
+    """Create L1 inputs on Ascend through supported real-valued random kernels."""
+    dtype = kwargs.get("dtype", torch.float32)
+    device = kwargs.get("device", "cpu")
+    if (
+        flag_blas.vendor_name == "ascend"
+        and dtype.is_complex
+        and str(device).startswith("npu")
+    ):
+        shape = (
+            tuple(size[0])
+            if len(size) == 1 and isinstance(size[0], (tuple, list, torch.Size))
+            else size
+        )
+        real_dtype = torch.float32 if dtype == torch.complex64 else torch.float64
+        parts = torch.randn((*shape, 2), **dict(kwargs, dtype=real_dtype))
+        parts.mul_(2**-0.5)
+        return torch.view_as_complex(parts)
+    return torch.randn(*size, **kwargs)
+
+
+def l1_ones(*size, **kwargs):
+    dtype = kwargs.get("dtype", torch.float32)
+    device = kwargs.get("device", "cpu")
+    if (
+        flag_blas.vendor_name == "ascend"
+        and dtype.is_complex
+        and str(device).startswith("npu")
+    ):
+        host = torch.ones(*size, **dict(kwargs, device="cpu"))
+        return torch.view_as_complex(torch.view_as_real(host).to(device))
+    return torch.ones(*size, **kwargs)
+
+
+def l1_ones_like(x, **kwargs):
+    if flag_blas.vendor_name == "ascend" and x.is_complex() and x.device.type == "npu":
+        options = dict(dtype=x.dtype, device=x.device)
+        options.update(kwargs)
+        return l1_ones(x.shape, **options)
+    return torch.ones_like(x, **kwargs)
+
+
 def to_cpu_blas_tensor(inp):
     ref_inp = inp.detach()
     if ref_inp.is_complex():

@@ -26,6 +26,7 @@ from .accuracy_utils import (
     L1_NONUNIT_PAIR_STRIDES,
     L1_STRIDE_SHAPES,
     blas_assert_close,
+    l1_randn,
     to_reference,
 )
 from .conftest import TO_CPU
@@ -36,7 +37,7 @@ if IS_HYGON:
     from .hipblas_reference import check_hipblas_status, get_hipblas_context
 elif flag_blas.vendor_name == "mthreads":
     from benchmark.mublas_compat import cp
-else:
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
 
 
@@ -58,7 +59,7 @@ def load_cublas():
     raise RuntimeError("Cannot find libcublas.so in the system")
 
 
-_cublas = None if IS_HYGON else load_cublas()
+_cublas = None if IS_HYGON or flag_blas.vendor_name == "ascend" else load_cublas()
 
 
 def hipblas_copy_reference(n, x, incx, y, incy):
@@ -173,7 +174,7 @@ def test_accuracy_copy_real(dtype, shape):
     n = shape[0]
     incx = 1
     incy = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_y = torch.empty(n * incy, dtype=dtype, device=flag_blas.device)
     y = torch.empty(n * incy, dtype=dtype, device=flag_blas.device)
@@ -204,7 +205,7 @@ def test_accuracy_copy_complex(dtype, shape):
     n = shape[0]
     incx = 1
     incy = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_y = torch.empty(n * incy, dtype=dtype, device=flag_blas.device)
     y = torch.empty(n * incy, dtype=dtype, device=flag_blas.device)
@@ -236,7 +237,7 @@ def test_accuracy_copy_empty_tensor(dtype):
     ):
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(0, dtype=dtype, device=flag_blas.device)
     y = torch.empty(0, dtype=dtype, device=flag_blas.device)
 
     if dtype == torch.float32:
@@ -267,7 +268,7 @@ def test_accuracy_copy_different_n_with_stride_real(dtype, shape, incx, incy):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
     out_size = n * incy
 
     ref_y = torch.empty(out_size, dtype=dtype, device=flag_blas.device)
@@ -298,7 +299,7 @@ def test_accuracy_copy_different_n_with_stride_complex(dtype, shape, incx, incy)
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
     out_size = n * incy
 
     ref_y = torch.empty(out_size, dtype=dtype, device=flag_blas.device)
