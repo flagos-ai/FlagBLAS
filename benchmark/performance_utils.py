@@ -89,9 +89,7 @@ def _do_bench_ascend(fn, warmup=1000, rep=100):
     except Exception as e:
         # Fall back to the wall-clock do_bench if mspti is unavailable.
         print(f"[_do_bench_ascend] mspti failed, fallback: {e}", flush=True)
-        return triton.testing.do_bench(
-            fn, warmup=warmup, rep=rep, return_mode="median"
-        )
+        return triton.testing.do_bench(fn, warmup=warmup, rep=rep, return_mode="median")
 
 
 def SkipVersion(module_name, skip_pattern):
@@ -691,6 +689,11 @@ class Benchmark:
 
 
 def run_correctness_then_benchmark(bench):
+    if flag_blas.vendor_name == "ascend":
+        from benchmark.ascend_l2_reference import ASCEND_L1_FAMILIES, run_ascend_l1
+
+        if bench.op_name.split("_", 1)[0] in ASCEND_L1_FAMILIES:
+            return run_ascend_l1(bench)
     if (
         flag_blas.vendor_name == "mthreads"
         and getattr(bench, "correctness_reference", "cuBLAS") == "cuBLAS"

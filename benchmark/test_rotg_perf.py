@@ -16,7 +16,7 @@ from tests.test_rotg import (
 IS_HYGON = flag_blas.vendor_name == "hygon"
 if flag_blas.vendor_name == "mthreads":
     from benchmark.mublas_compat import cp
-elif not IS_HYGON:
+elif not IS_HYGON and flag_blas.vendor_name != "ascend":
     import cupy as cp
 if IS_HYGON:
     from tests.accuracy_utils import get_l1_hipblas_context
@@ -43,7 +43,7 @@ def load_cublas():
     raise RuntimeError("Cannot find libcublas.so in the system")
 
 
-if not IS_HYGON:
+if not IS_HYGON and flag_blas.vendor_name != "ascend":
     _cublas = load_cublas()
     _cublas.cublasCreate_v2.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
     _cublas.cublasCreate_v2.restype = ctypes.c_int

@@ -37,7 +37,7 @@ elif flag_blas.vendor_name == "mthreads":
         mublas_index_baseline,
         mublas_index_op,
     )
-else:
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 

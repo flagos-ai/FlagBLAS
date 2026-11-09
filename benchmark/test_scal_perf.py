@@ -35,7 +35,7 @@ if IS_HYGON:
     )
 elif flag_blas.vendor_name == "mthreads":
     from benchmark.mublas_compat import cp, cublas
-else:
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 

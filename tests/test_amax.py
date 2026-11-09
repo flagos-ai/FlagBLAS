@@ -23,6 +23,7 @@ from .accuracy_utils import (
     L1_AMAX_STRIDE_SHAPES,
     L1_AMAX_STRIDES,
     blas_assert_equal,
+    l1_randn,
     to_cpu_blas_tensor,
     to_reference,
 )
@@ -39,7 +40,7 @@ if IS_HYGON:
     from .hipblas_reference import check_hipblas_status
 elif flag_blas.vendor_name == "mthreads":
     from benchmark.mublas_compat import cp, cublas
-else:
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -157,7 +158,7 @@ def test_accuracy_amax_real(dtype, shape):
 
     n = shape[0]
     incx = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -187,7 +188,7 @@ def test_accuracy_amax_complex(dtype, shape):
 
     n = shape[0]
     incx = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -219,7 +220,7 @@ def test_accuracy_amax_empty_tensor(dtype):
     ):
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(0, dtype=dtype, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
 
     n = 0
@@ -253,7 +254,7 @@ def test_accuracy_amax_different_n_real(dtype, n, vec_size):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -283,7 +284,7 @@ def test_accuracy_amax_different_n_complex(dtype, n, vec_size):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -313,7 +314,7 @@ def test_accuracy_amax_different_n_with_stride_real(dtype, shape, incx):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -343,7 +344,7 @@ def test_accuracy_amax_different_n_with_stride_complex(dtype, shape, incx):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)

@@ -12,7 +12,7 @@ from benchmark.performance_utils import Benchmark, run_correctness_then_benchmar
 IS_HYGON = flag_blas.vendor_name == "hygon"
 if flag_blas.vendor_name == "mthreads":
     from benchmark.mublas_compat import cp
-elif not IS_HYGON:
+elif not IS_HYGON and flag_blas.vendor_name != "ascend":
     import cupy as cp
 if IS_HYGON:
     from tests.hipblas_reference import (
@@ -43,7 +43,7 @@ def load_cublas():
     raise RuntimeError("Cannot find libcublas.so in the system")
 
 
-if not IS_HYGON:
+if not IS_HYGON and flag_blas.vendor_name != "ascend":
     _cublas = load_cublas()
     _cublas.cublasCreate_v2.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
     _cublas.cublasCreate_v2.restype = ctypes.c_int
@@ -169,6 +169,11 @@ class RotmBenchmark(Benchmark):
         self.incx = incx
         self.incy = incy
         self.flag = flag
+
+    def record_shapes(self, *args, **kwargs):
+        if flag_blas.vendor_name == "ascend":
+            kwargs["flag"] = self.flag
+        return super().record_shapes(*args, **kwargs)
 
     def set_more_metrics(self):
         return ["tflops", "gbps"]

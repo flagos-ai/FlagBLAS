@@ -11,7 +11,7 @@ import torch
 
 import flag_blas
 
-from .accuracy_utils import blas_assert_close, to_reference
+from .accuracy_utils import blas_assert_close, l1_ones, to_reference
 from .conftest import TO_CPU
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
@@ -474,8 +474,8 @@ def test_rotg_rejects_non_scalar_inputs(dtype):
         pytest.skip("Device does not support float64")
 
     real_dtype = _rotg_real_dtype(dtype)
-    a = torch.ones(2, dtype=dtype, device=flag_blas.device)
-    b = torch.ones(1, dtype=dtype, device=flag_blas.device)
+    a = l1_ones(2, dtype=dtype, device=flag_blas.device)
+    b = l1_ones(1, dtype=dtype, device=flag_blas.device)
     c = torch.zeros(1, dtype=real_dtype, device=flag_blas.device)
     s = torch.zeros(1, dtype=dtype, device=flag_blas.device)
 
@@ -486,8 +486,12 @@ def test_rotg_rejects_non_scalar_inputs(dtype):
 @pytest.mark.srotg
 @pytest.mark.rotg
 def test_srotg_rejects_mismatched_input_dtype():
-    a = torch.ones(1, dtype=torch.float32, device=flag_blas.device)
-    b = torch.ones(1, dtype=torch.float64, device=flag_blas.device)
+    a = l1_ones(1, dtype=torch.float32, device=flag_blas.device)
+    b = l1_ones(
+        1,
+        dtype=torch.float16 if flag_blas.vendor_name == "ascend" else torch.float64,
+        device=flag_blas.device,
+    )
     c = torch.zeros(1, dtype=torch.float32, device=flag_blas.device)
     s = torch.zeros(1, dtype=torch.float32, device=flag_blas.device)
 
@@ -498,9 +502,13 @@ def test_srotg_rejects_mismatched_input_dtype():
 @pytest.mark.crotg
 @pytest.mark.rotg
 def test_crotg_rejects_mismatched_c_dtype():
-    a = torch.ones(1, dtype=torch.complex64, device=flag_blas.device)
-    b = torch.ones(1, dtype=torch.complex64, device=flag_blas.device)
-    c = torch.zeros(1, dtype=torch.float64, device=flag_blas.device)
+    a = l1_ones(1, dtype=torch.complex64, device=flag_blas.device)
+    b = l1_ones(1, dtype=torch.complex64, device=flag_blas.device)
+    c = torch.zeros(
+        1,
+        dtype=torch.float16 if flag_blas.vendor_name == "ascend" else torch.float64,
+        device=flag_blas.device,
+    )
     s = torch.zeros(1, dtype=torch.complex64, device=flag_blas.device)
 
     with pytest.raises(AssertionError, match="c must be float32"):
