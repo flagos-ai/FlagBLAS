@@ -268,38 +268,6 @@ class Benchmark:
                         self.shapes = self.DEFAULT_SHAPES
 
             self.shapes = [tuple(shape) for shape in self.shapes]
-            # Use a partial Ascend-only shape overlay for the default core benchmark.
-            if (
-                vendor_name == "ascend"
-                and Config.bench_level == BenchLevel.CORE
-                and not Config.query
-                and os.path.realpath(shape_file_path)
-                == os.path.realpath(
-                    os.path.join(os.path.dirname(__file__), "core_shapes.yaml")
-                )
-            ):
-                overlay_path = os.path.join(
-                    os.path.dirname(__file__), "core_shapes_ascend_l2.yaml"
-                )
-                with open(overlay_path, "r") as overlay_file:
-                    overlay = yaml.safe_load(overlay_file) or {}
-                keys = [self.op_name]
-                if hasattr(self, "trans"):
-                    keys.insert(0, f"{self.op_name}@trans={self.trans}")
-                if (
-                    self.op_name == "csymv"
-                    and hasattr(self, "uplo")
-                    and os.environ.get("FLAGBLAS_ASCEND_TOOLS_CSYMV_SHAPES") == "1"
-                ):
-                    keys.insert(0, f"{self.op_name}@uplo={self.uplo}")
-                keys.extend(cls.__name__ for cls in type(self).__mro__)
-                for key in keys:
-                    if key in overlay:
-                        shapes = overlay[key]["shapes"]
-                        if not isinstance(shapes, list) or not shapes:
-                            raise ValueError(f"Invalid Ascend core shapes for {key}")
-                        self.shapes = [tuple(shape) for shape in shapes]
-                        break
             if vendor_name == "kunlunxin":
                 if self.op_name in ["isin", "nonzero"]:
                     # isin oom  # nonzero oot
