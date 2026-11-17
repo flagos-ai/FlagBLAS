@@ -22,7 +22,6 @@ import flag_blas
 from benchmark.attri_util import BenchmarkMetrics, BenchmarkResult
 from benchmark.conftest import Config, emit_record_logger
 
-
 _PROJECT = Path(__file__).resolve().parents[1]
 _BASE = Path(__file__).resolve().parent / "baselines"
 _CASE_FIELDS = (
@@ -138,9 +137,7 @@ class HygonGroupGemmReference:
     def nvidia_utilizations(self, compute_dtype, saved):
         if saved is None:
             return None, None
-        tensor_peak = self.hardware[_RESOURCES[compute_dtype]][
-            "h100_theoretical_dense"
-        ]
+        tensor_peak = self.hardware[_RESOURCES[compute_dtype]]["h100_theoretical_dense"]
         memory_peak = self.hardware["memory"]["h100_theoretical"]
         return saved["tflops"] / tensor_peak, saved["gbps"] / (memory_peak * 1000)
 

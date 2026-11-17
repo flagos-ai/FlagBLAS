@@ -35,13 +35,25 @@ __all__ = [
 )
 @triton.jit
 def grouped_bfgemm_kernel(
-    group_A, group_B, group_list, group_out, M,
-    N: tl.constexpr, K: tl.constexpr, group_size: tl.constexpr,
-    stride_am: tl.constexpr, stride_ak: tl.constexpr,
-    stride_be: tl.constexpr, stride_bk: tl.constexpr, stride_bn: tl.constexpr,
-    stride_om: tl.constexpr, stride_on: tl.constexpr,
-    NUM_WM: tl.constexpr, BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_size: tl.constexpr,
+    stride_am: tl.constexpr,
+    stride_ak: tl.constexpr,
+    stride_be: tl.constexpr,
+    stride_bk: tl.constexpr,
+    stride_bn: tl.constexpr,
+    stride_om: tl.constexpr,
+    stride_on: tl.constexpr,
+    NUM_WM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
     GROUP_N: tl.constexpr = 0,
 ):
     tile_n = tl.program_id(0)
@@ -70,7 +82,8 @@ def grouped_bfgemm_kernel(
         offs = start + w * BLOCK_M
         a_base = group_A + offs.to(tl.int64) * stride_am
         a_ptrs = (
-            a_base + tl.arange(0, BLOCK_M)[:, None] * stride_am
+            a_base
+            + tl.arange(0, BLOCK_M)[:, None] * stride_am
             + offs_k[None, :] * stride_ak
         )
         b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
@@ -88,7 +101,8 @@ def grouped_bfgemm_kernel(
             output0, output1 = tl.split(output)
             offs_n_half = tile_n * BLOCK_N + tl.arange(0, BLOCK_N // 2)
             out_ptrs = (
-                group_out + out_rows[:, None] * stride_om
+                group_out
+                + out_rows[:, None] * stride_om
                 + offs_n_half[None, :] * stride_on
             )
             if N % BLOCK_N == 0:
@@ -99,7 +113,8 @@ def grouped_bfgemm_kernel(
                 )
             else:
                 tl.store(
-                    out_ptrs, output0.to(group_out.dtype.element_ty),
+                    out_ptrs,
+                    output0.to(group_out.dtype.element_ty),
                     mask=offs_n_half[None, :] < N,
                 )
                 tl.store(
@@ -115,7 +130,8 @@ def grouped_bfgemm_kernel(
                 tl.store(out_ptrs, accumulator.to(group_out.dtype.element_ty))
             else:
                 tl.store(
-                    out_ptrs, accumulator.to(group_out.dtype.element_ty),
+                    out_ptrs,
+                    accumulator.to(group_out.dtype.element_ty),
                     mask=offs_n[None, :] < N,
                 )
     rem = end - start - num_full * BLOCK_M
@@ -128,7 +144,8 @@ def grouped_bfgemm_kernel(
             offs_m = offs + tl.arange(0, BLOCK_H)
             a_base = group_A + offs.to(tl.int64) * stride_am
             a_ptrs = (
-                a_base + tl.arange(0, BLOCK_H)[:, None] * stride_am
+                a_base
+                + tl.arange(0, BLOCK_H)[:, None] * stride_am
                 + offs_k[None, :] * stride_ak
             )
             b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
@@ -146,11 +163,13 @@ def grouped_bfgemm_kernel(
                 output0, output1 = tl.split(output)
                 offs_n_half = tile_n * BLOCK_N + tl.arange(0, BLOCK_N // 2)
                 out_ptrs = (
-                    group_out + out_rows[:, None] * stride_om
+                    group_out
+                    + out_rows[:, None] * stride_om
                     + offs_n_half[None, :] * stride_on
                 )
                 tl.store(
-                    out_ptrs, output0.to(group_out.dtype.element_ty),
+                    out_ptrs,
+                    output0.to(group_out.dtype.element_ty),
                     mask=offs_m[:, None] < end,
                 )
                 tl.store(
@@ -160,18 +179,21 @@ def grouped_bfgemm_kernel(
                 )
             else:
                 out_ptrs = (
-                    group_out + out_rows[:, None] * stride_om
+                    group_out
+                    + out_rows[:, None] * stride_om
                     + offs_n[None, :] * stride_on
                 )
                 tl.store(
-                    out_ptrs, accumulator.to(group_out.dtype.element_ty),
+                    out_ptrs,
+                    accumulator.to(group_out.dtype.element_ty),
                     mask=offs_m[:, None] < end,
                 )
             return
         offs_m = offs + tl.arange(0, BLOCK_M)
         a_base = group_A + offs.to(tl.int64) * stride_am
         a_ptrs = (
-            a_base + tl.arange(0, BLOCK_M)[:, None] * stride_am
+            a_base
+            + tl.arange(0, BLOCK_M)[:, None] * stride_am
             + offs_k[None, :] * stride_ak
         )
         b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
@@ -189,11 +211,13 @@ def grouped_bfgemm_kernel(
             output0, output1 = tl.split(output)
             offs_n_half = tile_n * BLOCK_N + tl.arange(0, BLOCK_N // 2)
             out_ptrs = (
-                group_out + out_rows[:, None] * stride_om
+                group_out
+                + out_rows[:, None] * stride_om
                 + offs_n_half[None, :] * stride_on
             )
             tl.store(
-                out_ptrs, output0.to(group_out.dtype.element_ty),
+                out_ptrs,
+                output0.to(group_out.dtype.element_ty),
                 mask=offs_m[:, None] < end,
             )
             tl.store(
@@ -203,11 +227,11 @@ def grouped_bfgemm_kernel(
             )
         else:
             out_ptrs = (
-                group_out + out_rows[:, None] * stride_om
-                + offs_n[None, :] * stride_on
+                group_out + out_rows[:, None] * stride_om + offs_n[None, :] * stride_on
             )
             tl.store(
-                out_ptrs, accumulator.to(group_out.dtype.element_ty),
+                out_ptrs,
+                accumulator.to(group_out.dtype.element_ty),
                 mask=offs_m[:, None] < end,
             )
         return
@@ -220,13 +244,25 @@ def grouped_bfgemm_kernel(
 )
 @triton.jit
 def grouped_bfgemm_generic_kernel(
-    group_A, group_B, group_list, group_out, M,
-    N: tl.constexpr, K: tl.constexpr, group_size: tl.constexpr,
-    stride_am: tl.constexpr, stride_ak: tl.constexpr,
-    stride_be: tl.constexpr, stride_bk: tl.constexpr, stride_bn: tl.constexpr,
-    stride_om: tl.constexpr, stride_on: tl.constexpr,
-    NUM_WM: tl.constexpr, BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_size: tl.constexpr,
+    stride_am: tl.constexpr,
+    stride_ak: tl.constexpr,
+    stride_be: tl.constexpr,
+    stride_bk: tl.constexpr,
+    stride_bn: tl.constexpr,
+    stride_om: tl.constexpr,
+    stride_on: tl.constexpr,
+    NUM_WM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
 ):
     tile_n = tl.program_id(0)
     window = tl.program_id(1)
@@ -242,7 +278,8 @@ def grouped_bfgemm_generic_kernel(
         offs_m = offs + tl.arange(0, BLOCK_M)
         a_base = group_A + offs.to(tl.int64) * stride_am
         a_ptrs = (
-            a_base + tl.arange(0, BLOCK_M)[:, None] * stride_am
+            a_base
+            + tl.arange(0, BLOCK_M)[:, None] * stride_am
             + offs_k[None, :] * stride_ak
         )
         b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
@@ -251,7 +288,8 @@ def grouped_bfgemm_generic_kernel(
             b = tl.load(
                 b_ptrs,
                 mask=(offs_n[None, :] < N) & (offs_k[:, None] + k * BLOCK_K < K),
-                other=0, eviction_policy="evict_last",
+                other=0,
+                eviction_policy="evict_last",
             )
             a = tl.load(a_ptrs, mask=offs_k[None, :] + k * BLOCK_K < K, other=0)
             accumulator = tl.dot(a, b, acc=accumulator, out_dtype=tl.float32)
@@ -264,11 +302,13 @@ def grouped_bfgemm_generic_kernel(
             output0, output1 = tl.split(output)
             offs_n_half = tile_n * BLOCK_N + tl.arange(0, BLOCK_N // 2)
             out_ptrs = (
-                group_out + out_rows[:, None] * stride_om
+                group_out
+                + out_rows[:, None] * stride_om
                 + offs_n_half[None, :] * stride_on
             )
             tl.store(
-                out_ptrs, output0.to(group_out.dtype.element_ty),
+                out_ptrs,
+                output0.to(group_out.dtype.element_ty),
                 mask=offs_n_half[None, :] < N,
             )
             tl.store(
@@ -281,7 +321,8 @@ def grouped_bfgemm_generic_kernel(
                 group_out + out_rows[:, None] * stride_om + offs_n[None, :] * stride_on
             )
             tl.store(
-                out_ptrs, accumulator.to(group_out.dtype.element_ty),
+                out_ptrs,
+                accumulator.to(group_out.dtype.element_ty),
                 mask=offs_n[None, :] < N,
             )
     rem = end - start - num_full * BLOCK_M
@@ -294,7 +335,8 @@ def grouped_bfgemm_generic_kernel(
             offs_m = offs + tl.arange(0, BLOCK_H)
             a_base = group_A + offs.to(tl.int64) * stride_am
             a_ptrs = (
-                a_base + tl.arange(0, BLOCK_H)[:, None] * stride_am
+                a_base
+                + tl.arange(0, BLOCK_H)[:, None] * stride_am
                 + offs_k[None, :] * stride_ak
             )
             b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
@@ -302,14 +344,13 @@ def grouped_bfgemm_generic_kernel(
             for k in tl.range(0, tl.cdiv(K, BLOCK_K), num_stages=2):
                 b = tl.load(
                     b_ptrs,
-                    mask=(offs_n[None, :] < N)
-                    & (offs_k[:, None] + k * BLOCK_K < K),
-                    other=0, eviction_policy="evict_last",
+                    mask=(offs_n[None, :] < N) & (offs_k[:, None] + k * BLOCK_K < K),
+                    other=0,
+                    eviction_policy="evict_last",
                 )
                 a = tl.load(
                     a_ptrs,
-                    mask=(offs_m[:, None] < end)
-                    & (offs_k[None, :] + k * BLOCK_K < K),
+                    mask=(offs_m[:, None] < end) & (offs_k[None, :] + k * BLOCK_K < K),
                     other=0,
                 )
                 accumulator = tl.dot(a, b, acc=accumulator, out_dtype=tl.float32)
@@ -322,11 +363,13 @@ def grouped_bfgemm_generic_kernel(
                 output0, output1 = tl.split(output)
                 offs_n_half = tile_n * BLOCK_N + tl.arange(0, BLOCK_N // 2)
                 out_ptrs = (
-                    group_out + out_rows[:, None] * stride_om
+                    group_out
+                    + out_rows[:, None] * stride_om
                     + offs_n_half[None, :] * stride_on
                 )
                 tl.store(
-                    out_ptrs, output0.to(group_out.dtype.element_ty),
+                    out_ptrs,
+                    output0.to(group_out.dtype.element_ty),
                     mask=(offs_m[:, None] < end) & (offs_n_half[None, :] < N),
                 )
                 tl.store(
@@ -337,11 +380,13 @@ def grouped_bfgemm_generic_kernel(
                 )
             else:
                 out_ptrs = (
-                    group_out + out_rows[:, None] * stride_om
+                    group_out
+                    + out_rows[:, None] * stride_om
                     + offs_n[None, :] * stride_on
                 )
                 tl.store(
-                    out_ptrs, accumulator.to(group_out.dtype.element_ty),
+                    out_ptrs,
+                    accumulator.to(group_out.dtype.element_ty),
                     mask=(offs_m[:, None] < end) & (offs_n[None, :] < N),
                 )
 
@@ -353,13 +398,25 @@ def grouped_bfgemm_generic_kernel(
 )
 @triton.jit
 def grouped_bfgemm_bp_kernel(
-    group_A, group_B, group_list, group_out, M,
-    N: tl.constexpr, K: tl.constexpr, group_size: tl.constexpr,
-    stride_am: tl.constexpr, stride_ak: tl.constexpr,
-    stride_be: tl.constexpr, stride_bk: tl.constexpr, stride_bn: tl.constexpr,
-    stride_om: tl.constexpr, stride_on: tl.constexpr,
-    NUM_WM: tl.constexpr, BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_size: tl.constexpr,
+    stride_am: tl.constexpr,
+    stride_ak: tl.constexpr,
+    stride_be: tl.constexpr,
+    stride_bk: tl.constexpr,
+    stride_bn: tl.constexpr,
+    stride_om: tl.constexpr,
+    stride_on: tl.constexpr,
+    NUM_WM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
 ):
     tile_n = tl.program_id(0)
     window = tl.program_id(1)
@@ -373,19 +430,24 @@ def grouped_bfgemm_bp_kernel(
         offs = start + w * BLOCK_M
         a_ptrs = tl.make_block_ptr(
             base=group_A + offs.to(tl.int64) * stride_am,
-            shape=(end - offs, K), strides=(stride_am, stride_ak),
-            offsets=(0, 0), block_shape=(BLOCK_M, BLOCK_K), order=(1, 0),
+            shape=(end - offs, K),
+            strides=(stride_am, stride_ak),
+            offsets=(0, 0),
+            block_shape=(BLOCK_M, BLOCK_K),
+            order=(1, 0),
         )
         b_ptrs = tl.make_block_ptr(
-            base=b_base, shape=(N, K), strides=(stride_bn, stride_bk),
-            offsets=(offs_n, 0), block_shape=(BLOCK_N, BLOCK_K), order=(0, 1),
+            base=b_base,
+            shape=(N, K),
+            strides=(stride_bn, stride_bk),
+            offsets=(offs_n, 0),
+            block_shape=(BLOCK_N, BLOCK_K),
+            order=(0, 1),
         )
         accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
         for k in tl.range(0, tl.cdiv(K, BLOCK_K), num_stages=2):
             b = tl.trans(
-                tl.load(
-                    b_ptrs, boundary_check=(0, 1), eviction_policy="evict_last"
-                )
+                tl.load(b_ptrs, boundary_check=(0, 1), eviction_policy="evict_last")
             )
             a = tl.load(a_ptrs, boundary_check=(0, 1))
             accumulator = tl.dot(a, b, acc=accumulator, out_dtype=tl.float32)
@@ -393,8 +455,11 @@ def grouped_bfgemm_bp_kernel(
             b_ptrs = tl.advance(b_ptrs, (0, BLOCK_K))
         out_ptrs = tl.make_block_ptr(
             base=group_out + offs.to(tl.int64) * stride_om,
-            shape=(end - offs, N), strides=(stride_om, stride_on),
-            offsets=(0, offs_n), block_shape=(BLOCK_M, BLOCK_N), order=(1, 0),
+            shape=(end - offs, N),
+            strides=(stride_om, stride_on),
+            offsets=(0, offs_n),
+            block_shape=(BLOCK_M, BLOCK_N),
+            order=(1, 0),
         )
         tl.store(
             out_ptrs, accumulator.to(group_out.dtype.element_ty), boundary_check=(0, 1)
@@ -404,20 +469,33 @@ def grouped_bfgemm_bp_kernel(
 @libentry()
 @libtuner(
     configs=[
-        config for config in runtime.get_tuned_config("group_bfgemm")
+        config
+        for config in runtime.get_tuned_config("group_bfgemm")
         if config.kwargs["BLOCK_M"] == 256
     ],
     key=["M", "N", "K", "group_size", "stride_bk"],
 )
 @triton.jit
 def grouped_bfgemm_wide_kernel(
-    group_A, group_B, group_list, group_out, M,
-    N: tl.constexpr, K: tl.constexpr, group_size: tl.constexpr,
-    stride_am: tl.constexpr, stride_ak: tl.constexpr,
-    stride_be: tl.constexpr, stride_bk: tl.constexpr, stride_bn: tl.constexpr,
-    stride_om: tl.constexpr, stride_on: tl.constexpr,
-    NUM_WM: tl.constexpr, BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_size: tl.constexpr,
+    stride_am: tl.constexpr,
+    stride_ak: tl.constexpr,
+    stride_be: tl.constexpr,
+    stride_bk: tl.constexpr,
+    stride_bn: tl.constexpr,
+    stride_om: tl.constexpr,
+    stride_on: tl.constexpr,
+    NUM_WM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
     GROUP_N: tl.constexpr = 0,
 ):
     tile_n = tl.program_id(0)
@@ -446,7 +524,8 @@ def grouped_bfgemm_wide_kernel(
         offs = start + w * BLOCK_M
         a_base = group_A + offs.to(tl.int64) * stride_am
         a_ptrs = (
-            a_base + tl.arange(0, BLOCK_M)[:, None] * stride_am
+            a_base
+            + tl.arange(0, BLOCK_M)[:, None] * stride_am
             + offs_k[None, :] * stride_ak
         )
         b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
@@ -463,7 +542,8 @@ def grouped_bfgemm_wide_kernel(
                 b = tl.load(
                     b_ptrs,
                     mask=(offs_n[None, :] < N) & (offs_k[:, None] + k * BLOCK_K < K),
-                    other=0, eviction_policy="evict_last",
+                    other=0,
+                    eviction_policy="evict_last",
                 )
                 a = tl.load(a_ptrs, mask=offs_k[None, :] + k * BLOCK_K < K, other=0)
                 accumulator = tl.dot(a, b, acc=accumulator, out_dtype=tl.float32)
@@ -475,8 +555,7 @@ def grouped_bfgemm_wide_kernel(
         output0, output1 = tl.split(output)
         offs_n_half = tile_n * BLOCK_N + tl.arange(0, BLOCK_N // 2)
         out_ptrs = (
-            group_out + out_rows[:, None] * stride_om
-            + offs_n_half[None, :] * stride_on
+            group_out + out_rows[:, None] * stride_om + offs_n_half[None, :] * stride_on
         )
         if N % BLOCK_N == 0:
             tl.store(out_ptrs, output0.to(group_out.dtype.element_ty))
@@ -486,7 +565,8 @@ def grouped_bfgemm_wide_kernel(
             )
         else:
             tl.store(
-                out_ptrs, output0.to(group_out.dtype.element_ty),
+                out_ptrs,
+                output0.to(group_out.dtype.element_ty),
                 mask=offs_n_half[None, :] < N,
             )
             tl.store(
@@ -499,10 +579,16 @@ def grouped_bfgemm_wide_kernel(
 @libentry()
 @triton.jit
 def grouped_bfgemm_wide_fused_kernel(
-    group_A, group_B, group_list, group_out,
-    N: tl.constexpr, K: tl.constexpr,
-    stride_am: tl.constexpr, stride_be: tl.constexpr,
-    stride_bk: tl.constexpr, stride_om: tl.constexpr,
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    stride_am: tl.constexpr,
+    stride_be: tl.constexpr,
+    stride_bk: tl.constexpr,
+    stride_om: tl.constexpr,
     NUM_WM: tl.constexpr,
 ):
     tile_n = tl.program_id(0)
@@ -523,8 +609,10 @@ def grouped_bfgemm_wide_fused_kernel(
                 offs_m = offs + tl.arange(0, 128)
                 a_rows = tl.minimum(offs_m, end - 1)
                 a_ptrs = (
-                    group_A + offs.to(tl.int64) * stride_am
-                    + (a_rows - offs)[:, None] * stride_am + offs_k[None, :]
+                    group_A
+                    + offs.to(tl.int64) * stride_am
+                    + (a_rows - offs)[:, None] * stride_am
+                    + offs_k[None, :]
                 )
                 b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :]
                 accumulator = tl.zeros((128, 256), dtype=tl.float32)
@@ -538,15 +626,18 @@ def grouped_bfgemm_wide_fused_kernel(
                 output = tl.permute(output, (0, 2, 1))
                 output0, output1 = tl.split(output)
                 out_ptrs = (
-                    group_out + offs_m.to(tl.int64)[:, None] * stride_om
+                    group_out
+                    + offs_m.to(tl.int64)[:, None] * stride_om
                     + (tile_n * 256 + tl.arange(0, 128))[None, :]
                 )
                 tl.store(
-                    out_ptrs, output0.to(group_out.dtype.element_ty),
+                    out_ptrs,
+                    output0.to(group_out.dtype.element_ty),
                     mask=offs_m[:, None] < end,
                 )
                 tl.store(
-                    out_ptrs + 128, output1.to(group_out.dtype.element_ty),
+                    out_ptrs + 128,
+                    output1.to(group_out.dtype.element_ty),
                     mask=offs_m[:, None] < end,
                 )
                 return
@@ -554,8 +645,10 @@ def grouped_bfgemm_wide_fused_kernel(
             offs_m = offs + tl.arange(0, 256)
             a_rows = tl.minimum(offs_m, end - 1)
             a_ptrs = (
-                group_A + offs.to(tl.int64) * stride_am
-                + (a_rows - offs)[:, None] * stride_am + offs_k[None, :]
+                group_A
+                + offs.to(tl.int64) * stride_am
+                + (a_rows - offs)[:, None] * stride_am
+                + offs_k[None, :]
             )
             b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :]
             accumulator = tl.zeros((256, 256), dtype=tl.float32)
@@ -569,15 +662,18 @@ def grouped_bfgemm_wide_fused_kernel(
             output = tl.permute(output, (0, 2, 1))
             output0, output1 = tl.split(output)
             out_ptrs = (
-                group_out + offs_m.to(tl.int64)[:, None] * stride_om
+                group_out
+                + offs_m.to(tl.int64)[:, None] * stride_om
                 + (tile_n * 256 + tl.arange(0, 128))[None, :]
             )
             tl.store(
-                out_ptrs, output0.to(group_out.dtype.element_ty),
+                out_ptrs,
+                output0.to(group_out.dtype.element_ty),
                 mask=offs_m[:, None] < end,
             )
             tl.store(
-                out_ptrs + 128, output1.to(group_out.dtype.element_ty),
+                out_ptrs + 128,
+                output1.to(group_out.dtype.element_ty),
                 mask=offs_m[:, None] < end,
             )
         return
@@ -596,8 +692,10 @@ def grouped_bfgemm_wide_fused_kernel(
     for w in tl.range(window, num_full, NUM_WM, num_stages=1):
         offs = start + w * 256
         a_ptrs = (
-            group_A + offs.to(tl.int64) * stride_am
-            + tl.arange(0, 256)[:, None] * stride_am + offs_k[None, :]
+            group_A
+            + offs.to(tl.int64) * stride_am
+            + tl.arange(0, 256)[:, None] * stride_am
+            + offs_k[None, :]
         )
         b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :]
         accumulator = tl.zeros((256, 256), dtype=tl.float32)
@@ -611,7 +709,8 @@ def grouped_bfgemm_wide_fused_kernel(
         output = tl.permute(output, (0, 2, 1))
         output0, output1 = tl.split(output)
         out_ptrs = (
-            group_out + (offs + tl.arange(0, 256)).to(tl.int64)[:, None] * stride_om
+            group_out
+            + (offs + tl.arange(0, 256)).to(tl.int64)[:, None] * stride_om
             + (tile_n * 256 + tl.arange(0, 128))[None, :]
         )
         tl.store(out_ptrs, output0.to(group_out.dtype.element_ty))
@@ -625,13 +724,25 @@ def grouped_bfgemm_wide_fused_kernel(
 )
 @triton.jit
 def grouped_bfgemm_aligned_tail_kernel(
-    group_A, group_B, group_list, group_out, M,
-    N: tl.constexpr, K: tl.constexpr, group_size: tl.constexpr,
-    stride_am: tl.constexpr, stride_ak: tl.constexpr,
-    stride_be: tl.constexpr, stride_bk: tl.constexpr, stride_bn: tl.constexpr,
-    stride_om: tl.constexpr, stride_on: tl.constexpr,
-    NUM_WM: tl.constexpr, BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_size: tl.constexpr,
+    stride_am: tl.constexpr,
+    stride_ak: tl.constexpr,
+    stride_be: tl.constexpr,
+    stride_bk: tl.constexpr,
+    stride_bn: tl.constexpr,
+    stride_om: tl.constexpr,
+    stride_on: tl.constexpr,
+    NUM_WM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
 ):
     tile_n = tl.program_id(0)
     expert = tl.program_id(2)
@@ -650,12 +761,12 @@ def grouped_bfgemm_aligned_tail_kernel(
         offs_m = offs + tl.arange(0, BLOCK_M // 2)
         a_rows = tl.minimum(offs_m, end - 1)
         a_ptrs = (
-            group_A + offs.to(tl.int64) * stride_am
-            + (a_rows - offs)[:, None] * stride_am + offs_k[None, :] * stride_ak
+            group_A
+            + offs.to(tl.int64) * stride_am
+            + (a_rows - offs)[:, None] * stride_am
+            + offs_k[None, :] * stride_ak
         )
-        b_ptrs = (
-            b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
-        )
+        b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
         accumulator = tl.zeros((BLOCK_M // 2, BLOCK_N), dtype=tl.float32)
         for k in tl.range(0, K // BLOCK_K, num_stages=2):
             b = tl.load(b_ptrs, eviction_policy="evict_last")
@@ -667,16 +778,19 @@ def grouped_bfgemm_aligned_tail_kernel(
         output = tl.permute(output, (0, 2, 1))
         output0, output1 = tl.split(output)
         out_ptrs = (
-            group_out + offs_m.to(tl.int64)[:, None] * stride_om
+            group_out
+            + offs_m.to(tl.int64)[:, None] * stride_om
             + offs_n_half[None, :] * stride_on
         )
         tl.store(
-            out_ptrs, output0.to(group_out.dtype.element_ty),
+            out_ptrs,
+            output0.to(group_out.dtype.element_ty),
             mask=offs_m[:, None] < end,
         )
         tl.store(
             out_ptrs + BLOCK_N // 2 * stride_on,
-            output1.to(group_out.dtype.element_ty), mask=offs_m[:, None] < end,
+            output1.to(group_out.dtype.element_ty),
+            mask=offs_m[:, None] < end,
         )
         return
     for h in tl.static_range(0, 256 // BLOCK_M):
@@ -685,12 +799,12 @@ def grouped_bfgemm_aligned_tail_kernel(
             offs_m = offs + tl.arange(0, BLOCK_M)
             a_rows = tl.minimum(offs_m, end - 1)
             a_ptrs = (
-                group_A + offs.to(tl.int64) * stride_am
-                + (a_rows - offs)[:, None] * stride_am + offs_k[None, :] * stride_ak
+                group_A
+                + offs.to(tl.int64) * stride_am
+                + (a_rows - offs)[:, None] * stride_am
+                + offs_k[None, :] * stride_ak
             )
-            b_ptrs = (
-                b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
-            )
+            b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
             accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
             for k in tl.range(0, K // BLOCK_K, num_stages=2):
                 b = tl.load(b_ptrs, eviction_policy="evict_last")
@@ -702,16 +816,19 @@ def grouped_bfgemm_aligned_tail_kernel(
             output = tl.permute(output, (0, 2, 1))
             output0, output1 = tl.split(output)
             out_ptrs = (
-                group_out + offs_m.to(tl.int64)[:, None] * stride_om
+                group_out
+                + offs_m.to(tl.int64)[:, None] * stride_om
                 + offs_n_half[None, :] * stride_on
             )
             tl.store(
-                out_ptrs, output0.to(group_out.dtype.element_ty),
+                out_ptrs,
+                output0.to(group_out.dtype.element_ty),
                 mask=offs_m[:, None] < end,
             )
             tl.store(
                 out_ptrs + BLOCK_N // 2 * stride_on,
-                output1.to(group_out.dtype.element_ty), mask=offs_m[:, None] < end,
+                output1.to(group_out.dtype.element_ty),
+                mask=offs_m[:, None] < end,
             )
 
 
@@ -722,13 +839,25 @@ def grouped_bfgemm_aligned_tail_kernel(
 )
 @triton.jit
 def grouped_bfgemm_tail_kernel(
-    group_A, group_B, group_list, group_out, M,
-    N: tl.constexpr, K: tl.constexpr, group_size: tl.constexpr,
-    stride_am: tl.constexpr, stride_ak: tl.constexpr,
-    stride_be: tl.constexpr, stride_bk: tl.constexpr, stride_bn: tl.constexpr,
-    stride_om: tl.constexpr, stride_on: tl.constexpr,
-    NUM_WM: tl.constexpr, BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    group_A,
+    group_B,
+    group_list,
+    group_out,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_size: tl.constexpr,
+    stride_am: tl.constexpr,
+    stride_ak: tl.constexpr,
+    stride_be: tl.constexpr,
+    stride_bk: tl.constexpr,
+    stride_bn: tl.constexpr,
+    stride_om: tl.constexpr,
+    stride_on: tl.constexpr,
+    NUM_WM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
 ):
     tile_n = tl.program_id(0)
     expert = tl.program_id(2)
@@ -749,12 +878,14 @@ def grouped_bfgemm_tail_kernel(
             if N % BLOCK_N == 0 and K % BLOCK_K == 0:
                 a_rows = tl.minimum(offs_m, end - 1)
                 a_ptrs = (
-                    a_base + (a_rows - offs)[:, None] * stride_am
+                    a_base
+                    + (a_rows - offs)[:, None] * stride_am
                     + offs_k[None, :] * stride_ak
                 )
             else:
                 a_ptrs = (
-                    a_base + tl.arange(0, BLOCK_M)[:, None] * stride_am
+                    a_base
+                    + tl.arange(0, BLOCK_M)[:, None] * stride_am
                     + offs_k[None, :] * stride_ak
                 )
             b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
@@ -772,7 +903,8 @@ def grouped_bfgemm_tail_kernel(
                         b_ptrs,
                         mask=(offs_n[None, :] < N)
                         & (offs_k[:, None] + k * BLOCK_K < K),
-                        other=0, eviction_policy="evict_last",
+                        other=0,
+                        eviction_policy="evict_last",
                     )
                     a = tl.load(
                         a_ptrs,
@@ -790,12 +922,14 @@ def grouped_bfgemm_tail_kernel(
                 output0, output1 = tl.split(output)
                 offs_n_half = tile_n * BLOCK_N + tl.arange(0, BLOCK_N // 2)
                 out_ptrs = (
-                    group_out + out_rows[:, None] * stride_om
+                    group_out
+                    + out_rows[:, None] * stride_om
                     + offs_n_half[None, :] * stride_on
                 )
                 if N % BLOCK_N == 0:
                     tl.store(
-                        out_ptrs, output0.to(group_out.dtype.element_ty),
+                        out_ptrs,
+                        output0.to(group_out.dtype.element_ty),
                         mask=offs_m[:, None] < end,
                     )
                     tl.store(
@@ -805,7 +939,8 @@ def grouped_bfgemm_tail_kernel(
                     )
                 else:
                     tl.store(
-                        out_ptrs, output0.to(group_out.dtype.element_ty),
+                        out_ptrs,
+                        output0.to(group_out.dtype.element_ty),
                         mask=(offs_m[:, None] < end) & (offs_n_half[None, :] < N),
                     )
                     tl.store(
@@ -816,11 +951,13 @@ def grouped_bfgemm_tail_kernel(
                     )
             else:
                 out_ptrs = (
-                    group_out + out_rows[:, None] * stride_om
+                    group_out
+                    + out_rows[:, None] * stride_om
                     + offs_n[None, :] * stride_on
                 )
                 tl.store(
-                    out_ptrs, accumulator.to(group_out.dtype.element_ty),
+                    out_ptrs,
+                    accumulator.to(group_out.dtype.element_ty),
                     mask=(offs_m[:, None] < end) & (offs_n[None, :] < N),
                 )
 
@@ -838,23 +975,40 @@ def group_bfgemm(group_A, group_B, group_list, group_out):
     )
     if group_size == 0 or M == 0 or N == 0:
         return group_out
-    grid = lambda meta: (
-        triton.cdiv(N, meta["BLOCK_N"]), meta["NUM_WM"], group_size
-    )
+    grid = lambda meta: (triton.cdiv(N, meta["BLOCK_N"]), meta["NUM_WM"], group_size)
     if K <= 96:
         grouped_bfgemm_bp_kernel[grid](
-            group_A, group_B, group_list, group_out, M, N, K, group_size,
-            *group_A.stride(), *group_B.stride(), *group_out.stride(),
+            group_A,
+            group_B,
+            group_list,
+            group_out,
+            M,
+            N,
+            K,
+            group_size,
+            *group_A.stride(),
+            *group_B.stride(),
+            *group_out.stride(),
             use_in_thread_transpose=False,
         )
     elif K == 2048 and N == 7168 and group_size in (16, 17):
         num_wm = 9 if group_size == 16 else 13
         grouped_bfgemm_wide_fused_kernel[(N // 256, num_wm + 1, group_size)](
-            group_A, group_B, group_list, group_out, N, K,
-            group_A.stride(0), group_B.stride(0), group_B.stride(1),
-            group_out.stride(0), NUM_WM=num_wm,
-            num_warps=16, num_stages=2,
-            use_in_thread_transpose=True, sched_latency="mmac5-ds10",
+            group_A,
+            group_B,
+            group_list,
+            group_out,
+            N,
+            K,
+            group_A.stride(0),
+            group_B.stride(0),
+            group_B.stride(1),
+            group_out.stride(0),
+            NUM_WM=num_wm,
+            num_warps=16,
+            num_stages=2,
+            use_in_thread_transpose=True,
+            sched_latency="mmac5-ds10",
         )
     elif N > 4096 and K >= 1024:
         tail_kernel = (
@@ -862,41 +1016,89 @@ def group_bfgemm(group_A, group_B, group_list, group_out):
             if N % 256 == 0 and K % 64 == 0
             else grouped_bfgemm_tail_kernel
         )
-        tail_grid = lambda meta: (
-            triton.cdiv(N, meta["BLOCK_N"]), 1, group_size
-        )
+        tail_grid = lambda meta: (triton.cdiv(N, meta["BLOCK_N"]), 1, group_size)
         if K == 2048:
             grouped_bfgemm_wide_kernel[grid](
-                group_A, group_B, group_list, group_out, M, N, K, group_size,
-                *group_A.stride(), *group_B.stride(), *group_out.stride(),
-                GROUP_N=8, kpack=1, use_in_thread_transpose=True,
+                group_A,
+                group_B,
+                group_list,
+                group_out,
+                M,
+                N,
+                K,
+                group_size,
+                *group_A.stride(),
+                *group_B.stride(),
+                *group_out.stride(),
+                GROUP_N=8,
+                kpack=1,
+                use_in_thread_transpose=True,
                 sched_latency="mmac5-ds10",
             )
             tail_kernel[tail_grid](
-                group_A, group_B, group_list, group_out, M, N, K, group_size,
-                *group_A.stride(), *group_B.stride(), *group_out.stride(),
-                kpack=1, use_in_thread_transpose=True,
+                group_A,
+                group_B,
+                group_list,
+                group_out,
+                M,
+                N,
+                K,
+                group_size,
+                *group_A.stride(),
+                *group_B.stride(),
+                *group_out.stride(),
+                kpack=1,
+                use_in_thread_transpose=True,
                 sched_latency="mmac5-ds10",
             )
         else:
             grouped_bfgemm_wide_kernel[grid](
-                group_A, group_B, group_list, group_out, M, N, K, group_size,
-                *group_A.stride(), *group_B.stride(), *group_out.stride(),
+                group_A,
+                group_B,
+                group_list,
+                group_out,
+                M,
+                N,
+                K,
+                group_size,
+                *group_A.stride(),
+                *group_B.stride(),
+                *group_out.stride(),
                 kpack=2 if K not in (1536, 7168) else 1,
                 use_in_thread_transpose=False,
             )
             tail_kernel[tail_grid](
-                group_A, group_B, group_list, group_out, M, N, K, group_size,
-                *group_A.stride(), *group_B.stride(), *group_out.stride(),
+                group_A,
+                group_B,
+                group_list,
+                group_out,
+                M,
+                N,
+                K,
+                group_size,
+                *group_A.stride(),
+                *group_B.stride(),
+                *group_out.stride(),
                 kpack=2 if K not in (1536, 7168) else 1,
                 use_in_thread_transpose=False,
             )
     elif N % 256 == 0 and K % 64 == 0:
         if K == 2048 and group_size == 32 and N == 1536:
             grouped_bfgemm_kernel[grid](
-                group_A, group_B, group_list, group_out, M, N, K, group_size,
-                *group_A.stride(), *group_B.stride(), *group_out.stride(),
-                GROUP_N=6, kpack=2, use_in_thread_transpose=False,
+                group_A,
+                group_B,
+                group_list,
+                group_out,
+                M,
+                N,
+                K,
+                group_size,
+                *group_A.stride(),
+                *group_B.stride(),
+                *group_out.stride(),
+                GROUP_N=6,
+                kpack=2,
+                use_in_thread_transpose=False,
             )
         elif (
             (K == 384 and N == 2048)
@@ -904,29 +1106,69 @@ def group_bfgemm(group_A, group_B, group_list, group_out):
             or (K == 2048 and N == 256)
         ):
             grouped_bfgemm_kernel[grid](
-                group_A, group_B, group_list, group_out, M, N, K, group_size,
-                *group_A.stride(), *group_B.stride(), *group_out.stride(),
-                GROUP_N=8, kpack=1, use_in_thread_transpose=True,
+                group_A,
+                group_B,
+                group_list,
+                group_out,
+                M,
+                N,
+                K,
+                group_size,
+                *group_A.stride(),
+                *group_B.stride(),
+                *group_out.stride(),
+                GROUP_N=8,
+                kpack=1,
+                use_in_thread_transpose=True,
             )
         elif K == 2048 and group_size == 128 and N == 1536:
             grouped_bfgemm_kernel[grid](
-                group_A, group_B, group_list, group_out, M, N, K, group_size,
-                *group_A.stride(), *group_B.stride(), *group_out.stride(),
-                GROUP_N=0, kpack=2, use_in_thread_transpose=False,
+                group_A,
+                group_B,
+                group_list,
+                group_out,
+                M,
+                N,
+                K,
+                group_size,
+                *group_A.stride(),
+                *group_B.stride(),
+                *group_out.stride(),
+                GROUP_N=0,
+                kpack=2,
+                use_in_thread_transpose=False,
                 sched_latency="mmac5-ds10",
             )
         else:
             grouped_bfgemm_kernel[grid](
-                group_A, group_B, group_list, group_out, M, N, K, group_size,
-                *group_A.stride(), *group_B.stride(), *group_out.stride(),
+                group_A,
+                group_B,
+                group_list,
+                group_out,
+                M,
+                N,
+                K,
+                group_size,
+                *group_A.stride(),
+                *group_B.stride(),
+                *group_out.stride(),
                 GROUP_N=0,
                 kpack=2 if K >= 512 and K not in (1536, 7168) else 1,
                 use_in_thread_transpose=K == 128 and N == 2048,
             )
     else:
         grouped_bfgemm_generic_kernel[grid](
-            group_A, group_B, group_list, group_out, M, N, K, group_size,
-            *group_A.stride(), *group_B.stride(), *group_out.stride(),
+            group_A,
+            group_B,
+            group_list,
+            group_out,
+            M,
+            N,
+            K,
+            group_size,
+            *group_A.stride(),
+            *group_B.stride(),
+            *group_out.stride(),
             kpack=2
             if K >= 512 and N >= 256 and N != 384 and K not in (1536, 7168)
             else 1,
@@ -942,12 +1184,22 @@ def group_bfgemm(group_A, group_B, group_list, group_out):
 )
 @triton.jit
 def grouped_hgemm_kernel(
-    group_A, group_B, group_out, group_list, M,
-    N: tl.constexpr, K: tl.constexpr, group_size: tl.constexpr,
-    stride_am: tl.constexpr, stride_bk: tl.constexpr,
-    stride_bn: tl.constexpr, stride_om: tl.constexpr,
-    NUM_WM: tl.constexpr, BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    group_A,
+    group_B,
+    group_out,
+    group_list,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_size: tl.constexpr,
+    stride_am: tl.constexpr,
+    stride_bk: tl.constexpr,
+    stride_bn: tl.constexpr,
+    stride_om: tl.constexpr,
+    NUM_WM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
 ):
     tile_n = tl.program_id(0)
     window = tl.program_id(1)
@@ -977,7 +1229,8 @@ def grouped_hgemm_kernel(
                 b = tl.load(
                     b_ptrs,
                     mask=(offs_n[None, :] < N) & (offs_k[:, None] + k * BLOCK_K < K),
-                    other=0, eviction_policy="evict_last",
+                    other=0,
+                    eviction_policy="evict_last",
                 )
                 a = tl.load(a_ptrs, mask=offs_k[None, :] + k * BLOCK_K < K, other=0)
                 accumulator = tl.dot(a, b, acc=accumulator, out_dtype=tl.float32)
@@ -998,7 +1251,8 @@ def grouped_hgemm_kernel(
                 offs_m = offs + tl.arange(0, BLOCK_M // 2)
                 a_base = group_A + offs.to(tl.int64) * stride_am
                 a_ptrs = (
-                    a_base + tl.arange(0, BLOCK_M // 2)[:, None] * stride_am
+                    a_base
+                    + tl.arange(0, BLOCK_M // 2)[:, None] * stride_am
                     + offs_k[None, :]
                 )
                 b_ptrs = (
@@ -1010,7 +1264,8 @@ def grouped_hgemm_kernel(
                         b_ptrs,
                         mask=(offs_n[None, :] < N)
                         & (offs_k[:, None] + k * BLOCK_K < K),
-                        other=0, eviction_policy="evict_last",
+                        other=0,
+                        eviction_policy="evict_last",
                     )
                     a = tl.load(
                         a_ptrs,
@@ -1022,11 +1277,13 @@ def grouped_hgemm_kernel(
                     a_ptrs += BLOCK_K
                     b_ptrs += BLOCK_K * stride_bk
                 out_ptrs = (
-                    group_out + offs_m.to(tl.int64)[:, None] * stride_om
+                    group_out
+                    + offs_m.to(tl.int64)[:, None] * stride_om
                     + offs_n[None, :]
                 )
                 tl.store(
-                    out_ptrs, accumulator.to(tl.float16),
+                    out_ptrs,
+                    accumulator.to(tl.float16),
                     mask=(offs_m[:, None] < end) & (offs_n[None, :] < N),
                 )
 
@@ -1038,12 +1295,22 @@ def grouped_hgemm_kernel(
 )
 @triton.jit
 def grouped_hgemm_bp_kernel(
-    group_A, group_B, group_out, group_list, M,
-    N: tl.constexpr, K: tl.constexpr, group_size: tl.constexpr,
-    stride_am: tl.constexpr, stride_bk: tl.constexpr,
-    stride_bn: tl.constexpr, stride_om: tl.constexpr,
-    NUM_WM: tl.constexpr, BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    group_A,
+    group_B,
+    group_out,
+    group_list,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_size: tl.constexpr,
+    stride_am: tl.constexpr,
+    stride_bk: tl.constexpr,
+    stride_bn: tl.constexpr,
+    stride_om: tl.constexpr,
+    NUM_WM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
 ):
     tile_n = tl.program_id(0)
     window = tl.program_id(1)
@@ -1057,12 +1324,19 @@ def grouped_hgemm_bp_kernel(
         offs = start + w * BLOCK_M
         a_ptrs = tl.make_block_ptr(
             base=group_A + offs.to(tl.int64) * stride_am,
-            shape=(end - offs, K), strides=(stride_am, 1), offsets=(0, 0),
-            block_shape=(BLOCK_M, BLOCK_K), order=(1, 0),
+            shape=(end - offs, K),
+            strides=(stride_am, 1),
+            offsets=(0, 0),
+            block_shape=(BLOCK_M, BLOCK_K),
+            order=(1, 0),
         )
         b_ptrs = tl.make_block_ptr(
-            base=b_base, shape=(N, K), strides=(stride_bn, stride_bk),
-            offsets=(offs_n, 0), block_shape=(BLOCK_N, BLOCK_K), order=(0, 1),
+            base=b_base,
+            shape=(N, K),
+            strides=(stride_bn, stride_bk),
+            offsets=(offs_n, 0),
+            block_shape=(BLOCK_N, BLOCK_K),
+            order=(0, 1),
         )
         accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
         for k in tl.range(0, tl.cdiv(K, BLOCK_K), num_stages=2):
@@ -1075,8 +1349,11 @@ def grouped_hgemm_bp_kernel(
             b_ptrs = tl.advance(b_ptrs, (0, BLOCK_K))
         out_ptrs = tl.make_block_ptr(
             base=group_out + offs.to(tl.int64) * stride_om,
-            shape=(end - offs, N), strides=(stride_om, 1), offsets=(0, offs_n),
-            block_shape=(BLOCK_M, BLOCK_N), order=(1, 0),
+            shape=(end - offs, N),
+            strides=(stride_om, 1),
+            offsets=(0, offs_n),
+            block_shape=(BLOCK_M, BLOCK_N),
+            order=(1, 0),
         )
         tl.store(out_ptrs, accumulator.to(tl.float16), boundary_check=(0, 1))
 
@@ -1089,21 +1366,35 @@ def group_hgemm(group_A, group_B, group_C, group_list, group_out):
     assert group_C.shape == (M, N) and group_out.shape == (M, N)
     if group_size == 0 or M == 0 or N == 0:
         return group_out
-    grid = lambda meta: (
-        triton.cdiv(N, meta["BLOCK_N"]), meta["NUM_WM"], group_size
-    )
-    if (K == 2048 and N >= 256 and N != 384) or (
-        K in (1536, 4096, 7168) and N >= 3072
-    ):
+    grid = lambda meta: (triton.cdiv(N, meta["BLOCK_N"]), meta["NUM_WM"], group_size)
+    if (K == 2048 and N >= 256 and N != 384) or (K in (1536, 4096, 7168) and N >= 3072):
         grouped_hgemm_bp_kernel[grid](
-            group_A, group_B, group_out, group_list, M, N, K, group_size,
-            group_A.stride(0), group_B.stride(0), group_B.stride(1),
+            group_A,
+            group_B,
+            group_out,
+            group_list,
+            M,
+            N,
+            K,
+            group_size,
+            group_A.stride(0),
+            group_B.stride(0),
+            group_B.stride(1),
             group_out.stride(0),
         )
     else:
         grouped_hgemm_kernel[grid](
-            group_A, group_B, group_out, group_list, M, N, K, group_size,
-            group_A.stride(0), group_B.stride(0), group_B.stride(1),
+            group_A,
+            group_B,
+            group_out,
+            group_list,
+            M,
+            N,
+            K,
+            group_size,
+            group_A.stride(0),
+            group_B.stride(0),
+            group_B.stride(1),
             group_out.stride(0),
         )
     return group_out
@@ -1116,12 +1407,22 @@ def group_hgemm(group_A, group_B, group_C, group_list, group_out):
 )
 @triton.jit
 def grouped_tf32gemm_kernel(
-    group_A, group_B, group_out, group_list, M,
-    N: tl.constexpr, K: tl.constexpr, group_size: tl.constexpr,
-    stride_am: tl.constexpr, stride_bk: tl.constexpr,
-    stride_bn: tl.constexpr, stride_om: tl.constexpr,
-    NUM_WM: tl.constexpr, BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    group_A,
+    group_B,
+    group_out,
+    group_list,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_size: tl.constexpr,
+    stride_am: tl.constexpr,
+    stride_bk: tl.constexpr,
+    stride_bn: tl.constexpr,
+    stride_om: tl.constexpr,
+    NUM_WM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
 ):
     tile_n = tl.program_id(0)
     window = tl.program_id(1)
@@ -1140,9 +1441,7 @@ def grouped_tf32gemm_kernel(
         b_ptrs = b_base + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
         accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
         if N % BLOCK_N == 0 and K % BLOCK_K == 0:
-            for k in tl.range(
-                0, K // BLOCK_K, num_stages=2 if BLOCK_K != 64 else 1
-            ):
+            for k in tl.range(0, K // BLOCK_K, num_stages=2 if BLOCK_K != 64 else 1):
                 b = tl.load(b_ptrs, eviction_policy="evict_last")
                 a = tl.load(a_ptrs)
                 accumulator = tl.dot(a, b, acc=accumulator)
@@ -1155,7 +1454,8 @@ def grouped_tf32gemm_kernel(
                 b = tl.load(
                     b_ptrs,
                     mask=(offs_n[None, :] < N) & (offs_k[:, None] + k * BLOCK_K < K),
-                    other=0, eviction_policy="evict_last",
+                    other=0,
+                    eviction_policy="evict_last",
                 )
                 a = tl.load(a_ptrs, mask=offs_k[None, :] + k * BLOCK_K < K, other=0)
                 accumulator = tl.dot(a, b, acc=accumulator)
@@ -1176,7 +1476,8 @@ def grouped_tf32gemm_kernel(
                 offs_m = offs + tl.arange(0, BLOCK_M // 2)
                 a_base = group_A + offs.to(tl.int64) * stride_am
                 a_ptrs = (
-                    a_base + tl.arange(0, BLOCK_M // 2)[:, None] * stride_am
+                    a_base
+                    + tl.arange(0, BLOCK_M // 2)[:, None] * stride_am
                     + offs_k[None, :]
                 )
                 b_ptrs = (
@@ -1190,7 +1491,8 @@ def grouped_tf32gemm_kernel(
                         b_ptrs,
                         mask=(offs_n[None, :] < N)
                         & (offs_k[:, None] + k * BLOCK_K < K),
-                        other=0, eviction_policy="evict_last",
+                        other=0,
+                        eviction_policy="evict_last",
                     )
                     a = tl.load(
                         a_ptrs,
@@ -1202,11 +1504,13 @@ def grouped_tf32gemm_kernel(
                     a_ptrs += BLOCK_K
                     b_ptrs += BLOCK_K * stride_bk
                 out_ptrs = (
-                    group_out + offs_m.to(tl.int64)[:, None] * stride_om
+                    group_out
+                    + offs_m.to(tl.int64)[:, None] * stride_om
                     + offs_n[None, :]
                 )
                 tl.store(
-                    out_ptrs, accumulator,
+                    out_ptrs,
+                    accumulator,
                     mask=(offs_m[:, None] < end) & (offs_n[None, :] < N),
                 )
 
@@ -1218,12 +1522,22 @@ def grouped_tf32gemm_kernel(
 )
 @triton.jit
 def grouped_tf32gemm_bp_kernel(
-    group_A, group_B, group_out, group_list, M,
-    N: tl.constexpr, K: tl.constexpr, group_size: tl.constexpr,
-    stride_am: tl.constexpr, stride_bk: tl.constexpr,
-    stride_bn: tl.constexpr, stride_om: tl.constexpr,
-    NUM_WM: tl.constexpr, BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+    group_A,
+    group_B,
+    group_out,
+    group_list,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    group_size: tl.constexpr,
+    stride_am: tl.constexpr,
+    stride_bk: tl.constexpr,
+    stride_bn: tl.constexpr,
+    stride_om: tl.constexpr,
+    NUM_WM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
 ):
     tile_n = tl.program_id(0)
     window = tl.program_id(1)
@@ -1237,12 +1551,19 @@ def grouped_tf32gemm_bp_kernel(
         offs = start + w * BLOCK_M
         a_ptrs = tl.make_block_ptr(
             base=group_A + offs.to(tl.int64) * stride_am,
-            shape=(end - offs, K), strides=(stride_am, 1), offsets=(0, 0),
-            block_shape=(BLOCK_M, BLOCK_K), order=(1, 0),
+            shape=(end - offs, K),
+            strides=(stride_am, 1),
+            offsets=(0, 0),
+            block_shape=(BLOCK_M, BLOCK_K),
+            order=(1, 0),
         )
         b_ptrs = tl.make_block_ptr(
-            base=b_base, shape=(K, N), strides=(stride_bk, stride_bn),
-            offsets=(0, offs_n), block_shape=(BLOCK_K, BLOCK_N), order=(0, 1),
+            base=b_base,
+            shape=(K, N),
+            strides=(stride_bk, stride_bn),
+            offsets=(0, offs_n),
+            block_shape=(BLOCK_K, BLOCK_N),
+            order=(0, 1),
         )
         accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
         for k in tl.range(0, tl.cdiv(K, BLOCK_K), num_stages=2, loop_unroll_factor=2):
@@ -1253,8 +1574,11 @@ def grouped_tf32gemm_bp_kernel(
             b_ptrs = tl.advance(b_ptrs, (BLOCK_K, 0))
         out_ptrs = tl.make_block_ptr(
             base=group_out + offs.to(tl.int64) * stride_om,
-            shape=(end - offs, N), strides=(stride_om, 1), offsets=(0, offs_n),
-            block_shape=(BLOCK_M, BLOCK_N), order=(1, 0),
+            shape=(end - offs, N),
+            strides=(stride_om, 1),
+            offsets=(0, offs_n),
+            block_shape=(BLOCK_M, BLOCK_N),
+            order=(1, 0),
         )
         tl.store(out_ptrs, accumulator, boundary_check=(0, 1))
 
@@ -1267,19 +1591,35 @@ def group_tf32gemm(group_A, group_B, group_C, group_list, group_out):
     assert group_B.shape == (group_size * N, K)
     if group_size == 0 or M == 0 or N == 0:
         return group_out
-    grid = lambda meta: (
-        triton.cdiv(N, meta["BLOCK_N"]), meta["NUM_WM"], group_size
-    )
+    grid = lambda meta: (triton.cdiv(N, meta["BLOCK_N"]), meta["NUM_WM"], group_size)
     if (K in (1536, 4096, 7168) and N >= 3072) or (K == 2048 and N > 4096):
         grouped_tf32gemm_bp_kernel[grid](
-            group_A, group_B, group_out, group_list, M, N, K, group_size,
-            group_A.stride(0), group_B.stride(1), group_B.stride(0),
+            group_A,
+            group_B,
+            group_out,
+            group_list,
+            M,
+            N,
+            K,
+            group_size,
+            group_A.stride(0),
+            group_B.stride(1),
+            group_B.stride(0),
             group_out.stride(0),
         )
     else:
         grouped_tf32gemm_kernel[grid](
-            group_A, group_B, group_out, group_list, M, N, K, group_size,
-            group_A.stride(0), group_B.stride(1), group_B.stride(0),
+            group_A,
+            group_B,
+            group_out,
+            group_list,
+            M,
+            N,
+            K,
+            group_size,
+            group_A.stride(0),
+            group_B.stride(1),
+            group_B.stride(0),
             group_out.stride(0),
         )
     return group_out

@@ -196,6 +196,7 @@ def cublas_group_gemm_reference(group_A, group_B, group_C, offs_table, alpha, be
     global _cublas
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
+
     if _cublas is None:
         _cublas = load_cublas()
         cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
@@ -504,9 +505,7 @@ def test_hygon_group_gemm_prepacked_b():
         end = start + rows
         ref[start:end] = group_A[start:end] @ group_B[expert]
         start = end
-    out = flag_blas.group_bfgemm(
-        group_A, group_B, group_list, torch.empty_like(ref)
-    )
+    out = flag_blas.group_bfgemm(group_A, group_B, group_list, torch.empty_like(ref))
     if TO_CPU:
         out = out.cpu()
         ref = ref.cpu()
