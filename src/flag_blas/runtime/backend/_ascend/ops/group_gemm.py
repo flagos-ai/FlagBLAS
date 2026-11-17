@@ -26,7 +26,7 @@ def grouped_bfgemm_kernel(
 ):
     tile_idx = tl.program_id(0)
     total_grid = tl.num_programs(0)
-    last_problem_end = tile_idx * 0
+    last_problem_end = (tile_idx * 0).to(tl.int64)
     group_start = (tile_idx * 0).to(tl.int64)
     a_descriptor = tl.make_tensor_descriptor(
         group_A,
@@ -127,7 +127,7 @@ def grouped_hgemm_kernel(
 ):
     tile_idx = tl.program_id(0)
     total_grid = tl.num_programs(0)
-    last_problem_end = tile_idx * 0
+    last_problem_end = (tile_idx * 0).to(tl.int64)
     group_start = (tile_idx * 0).to(tl.int64)
     a_descriptor = tl.make_tensor_descriptor(
         group_A,
@@ -225,7 +225,7 @@ def grouped_tf32gemm_kernel(
 ):
     tile_idx = tl.program_id(0)
     total_grid = tl.num_programs(0)
-    last_problem_end = tile_idx * 0
+    last_problem_end = (tile_idx * 0).to(tl.int64)
     group_start = (tile_idx * 0).to(tl.int64)
     a_descriptor = tl.make_tensor_descriptor(
         group_A,
@@ -328,7 +328,7 @@ def grouped_bfgemm_n_chunk_kernel(
     core_idx = tl.program_id(0)
     total_grid = tl.num_programs(0)
     task_idx = core_idx
-    last_problem_end = core_idx * 0
+    last_problem_end = (core_idx * 0).to(tl.int64)
     group_start = (core_idx * 0).to(tl.int64)
     offs_k = tl.arange(0, BLOCK_K)
     a_descriptor = tl.make_tensor_descriptor(
