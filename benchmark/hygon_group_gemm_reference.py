@@ -67,7 +67,7 @@ class HygonGroupGemmReference:
 
         relative = os.environ.get(
             "FLAGBLAS_GROUP_GEMM_REFERENCE_FILE",
-            "benchmark/baselines/h100_groupgemm.json",
+            "benchmark/baselines/h100_l3.json",
         )
         self.path = _PROJECT / relative
         self.baseline_id = self.path.stem
@@ -97,6 +97,8 @@ class HygonGroupGemmReference:
             if any(not math.isfinite(value) or value <= 0 for value in row.values()):
                 raise ValueError(f"Invalid H100 GroupGEMM reference performance: {key}")
             self.cases[key] = row
+        if not self.cases:
+            raise ValueError("H100 GroupGEMM baseline has no matching cases")
         self.hardware = json.loads((_BASE / "hardware.json").read_text())["hygon"]
 
     @staticmethod
