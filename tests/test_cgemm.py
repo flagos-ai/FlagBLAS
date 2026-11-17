@@ -269,22 +269,22 @@ def test_accuracy_cgemm(m, n, k, transa, transb):
     dtype, alpha, beta = torch.complex64, 2.5 + 0.5j, 0.5 - 0.25j
 
     if transa == CUBLAS_OP_N:
-        A_col = (torch.randn(k, m, dtype=dtype, device=flag_blas.device)).t()
+        A_col = (utils.gemm_randn((k, m), dtype, flag_blas.device)).t()
         lda_cublas, lda_flag = m, k
     else:
-        A_col = (torch.randn(m, k, dtype=dtype, device=flag_blas.device)).t()
+        A_col = (utils.gemm_randn((m, k), dtype, flag_blas.device)).t()
         lda_cublas, lda_flag = k, m
     A_row = A_col.contiguous()
 
     if transb == CUBLAS_OP_N:
-        B_col = (torch.randn(n, k, dtype=dtype, device=flag_blas.device)).t()
+        B_col = (utils.gemm_randn((n, k), dtype, flag_blas.device)).t()
         ldb_cublas, ldb_flag = k, n
     else:
-        B_col = (torch.randn(k, n, dtype=dtype, device=flag_blas.device)).t()
+        B_col = (utils.gemm_randn((k, n), dtype, flag_blas.device)).t()
         ldb_cublas, ldb_flag = n, k
     B_row = B_col.contiguous()
 
-    C_col = torch.randn(n, m, dtype=dtype, device=flag_blas.device).t()
+    C_col = utils.gemm_randn((n, m), dtype, flag_blas.device).t()
     C_row = C_col.contiguous()
     ldc_cublas, ldc_flag = m, n
 
@@ -353,11 +353,11 @@ def test_cgemm_alpha_beta(alpha, beta):
     dtype = torch.complex64
     device = flag_blas.device
 
-    A_col = (torch.randn(k, m, dtype=dtype, device=device)).t()
+    A_col = (utils.gemm_randn((k, m), dtype, device)).t()
     A_row = A_col.contiguous()
-    B_col = (torch.randn(n, k, dtype=dtype, device=device)).t()
+    B_col = (utils.gemm_randn((n, k), dtype, device)).t()
     B_row = B_col.contiguous()
-    C_col = (torch.randn(n, m, dtype=dtype, device=device)).t()
+    C_col = (utils.gemm_randn((n, m), dtype, device)).t()
     C_row = C_col.contiguous()
 
     if TO_CPU:
@@ -404,9 +404,9 @@ def test_cgemm_empty(m, n, k):
     rows_b, cols_b = (k, n) if k > 0 else (1, n)
     rows_c, cols_c = max(m, 1), max(n, 1)
 
-    A = torch.randn(rows_a, cols_a, dtype=torch.complex64, device=device)
-    B = torch.randn(rows_b, cols_b, dtype=torch.complex64, device=device)
-    C = torch.randn(rows_c, cols_c, dtype=torch.complex64, device=device)
+    A = utils.gemm_randn((rows_a, cols_a), torch.complex64, device)
+    B = utils.gemm_randn((rows_b, cols_b), torch.complex64, device)
+    C = utils.gemm_randn((rows_c, cols_c), torch.complex64, device)
     C_orig = C.clone()
 
     flag_blas.cgemm(

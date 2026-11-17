@@ -31,7 +31,9 @@ if IS_HYGON:
         get_hipblas_context,
         get_hipblas_library,
     )
-else:
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
 
 
@@ -39,6 +41,10 @@ PAIR_STRIDES = [(2, 2), (2, 3), (3, 2), (3, 3)]
 
 
 def load_cublas():
+    if flag_blas.vendor_name == "mthreads":
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -52,7 +58,7 @@ def load_cublas():
     raise RuntimeError("Cannot find libcublas.so in the system")
 
 
-_cublas = None if IS_HYGON else load_cublas()
+_cublas = None if IS_HYGON or flag_blas.vendor_name == "ascend" else load_cublas()
 
 
 def _get_cublas_func(*names):

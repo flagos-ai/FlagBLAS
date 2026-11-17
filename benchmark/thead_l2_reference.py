@@ -17,6 +17,13 @@ Memory uses both vendors' nominal bandwidth. Vector mode uses measured PPU
 FP32/FP64 rates because no reliable published nominal vector specification
 is available; it is a diagnostic scenario, not the default GEMV score.
 Logical FLOP and byte counts are displayed only; they do not enter the score.
+
+c/zgemm follow the same method because MMAO exposes no cublasCgemm/cublasZgemm,
+but they are Level 3 operators: their reference rows live in
+benchmark/baselines/h100_l3.json and they read the ``FLAGBLAS_L3_*`` environment
+variables (vector_fp32/vector_fp64 for the compute-bound cubic shapes).  Level 2
+rows stay in h100.json and keep using ``FLAGBLAS_L2_*``, so the two levels do
+not interfere with each other.
 """
 
 import gc
@@ -61,6 +68,16 @@ _THEAD_HER_OPS = {"cher", "zher"}
 _THEAD_HER2_OPS = {"cher2", "zher2"}
 _THEAD_SYR_OPS = {"csyr", "zsyr"}
 _THEAD_GER_OPS = {"cgeru", "cgerc", "zgeru", "zgerc"}
+_THEAD_GEMM_OPS = {
+    "cgemm",
+    "cgemm_tn",
+    "cgemm_nt",
+    "cgemm_tt",
+    "zgemm",
+    "zgemm_tn",
+    "zgemm_nt",
+    "zgemm_tt",
+}
 
 
 def _scalar(value):
@@ -70,18 +87,25 @@ def _scalar(value):
 
 
 class THeadGemvReference:
-    def __init__(self, ops=None, reference_label="c/zgemv"):
+    def __init__(
+        self,
+        ops=None,
+        reference_label="c/zgemv",
+        reference_file="h100.json",
+        env_prefix="FLAGBLAS_L2",
+    ):
         self.reference_label = reference_label
-        self.bottleneck = os.environ.get("FLAGBLAS_L2_BOTTLENECK", "memory")
-        self.threshold = float(os.environ.get("FLAGBLAS_L2_THRESHOLD", "0.8"))
+        self.bottleneck = os.environ.get(f"{env_prefix}_BOTTLENECK", "memory")
+        self.threshold = float(os.environ.get(f"{env_prefix}_THRESHOLD", "0.8"))
         if self.bottleneck not in ("memory", "vector"):
-            raise ValueError("T-Head L2 bottleneck must be memory or vector")
+            raise ValueError("T-Head reference bottleneck must be memory or vector")
         if not math.isfinite(self.threshold) or self.threshold <= 0:
-            raise ValueError("T-Head L2 threshold must be finite and positive")
+            raise ValueError("T-Head reference threshold must be finite and positive")
         self.hardware = json.loads((_BASE / "hardware.json").read_text())["thead"]
+        self.baseline_id = Path(reference_file).stem
         self.cases = {}
         selected_ops = _THEAD_GEMV_OPS if ops is None else ops
-        for row in json.loads((_BASE / "h100.json").read_text()):
+        for row in json.loads((_BASE / reference_file).read_text()):
             if row["op"] not in selected_ops:
                 continue
             key = self._key(row)
@@ -779,6 +803,51 @@ class THeadGerReference(THeadGemvReference):
         return self.cases[key]
 
 
+class THeadGemmReference(THeadGemvReference):
+    """Exact saved H100 cuBLAS reference for c/zgemm (all trans variants).
+
+    MMAO exposes no cublasCgemm/cublasZgemm, so the reference rows come from the
+    Level 3 baseline file; the matching key includes both transposition flags.
+    Level 3 must not be affected by Level 2 tuning, so this path reads the
+    ``FLAGBLAS_L3_*`` environment variables instead of ``FLAGBLAS_L2_*``.
+    """
+
+    def __init__(self):
+        super().__init__(
+            ops=_THEAD_GEMM_OPS,
+            reference_label="c/zgemm",
+            reference_file="h100_l3.json",
+            env_prefix="FLAGBLAS_L3",
+        )
+
+    @staticmethod
+    def _key(row):
+        return (
+            row["op"],
+            row["dtype"],
+            row["m"],
+            row["n"],
+            row["k"],
+            row["transa"],
+            row["transb"],
+            tuple(row["alpha"]),
+            tuple(row["beta"]),
+        )
+
+    def lookup(self, op, dtype, kwargs):
+        row = dict(
+            op=op,
+            dtype=str(dtype),
+            **{name: kwargs[name] for name in ("m", "n", "k", "transa", "transb")},
+            alpha=_scalar(kwargs["alpha"]),
+            beta=_scalar(kwargs["beta"]),
+        )
+        key = self._key(row)
+        if key not in self.cases:
+            raise ValueError(f"Missing exact H100 c/zgemm baseline case: {key}")
+        return self.cases[key]
+
+
 def run_thead_gemv(bench):
     if flag_blas.vendor_name != "thead":
         raise RuntimeError("T-Head equivalent GEMV path used on another platform")
@@ -836,7 +905,7 @@ def run_thead_gemv(bench):
                     flops=workload["flops"],
                     useful_gbps=metric.gbps,
                     useful_tflops=metric.tflops,
-                    baseline_id="h100",
+                    baseline_id=reference.baseline_id,
                 )
             )
             metrics.append(metric)
@@ -928,7 +997,7 @@ def run_thead_gbmv(bench):
                     flops=workload["flops"],
                     useful_gbps=metric.gbps,
                     useful_tflops=metric.tflops,
-                    baseline_id="h100",
+                    baseline_id=reference.baseline_id,
                 )
             )
             metrics.append(metric)
@@ -1081,6 +1150,15 @@ def run_thead_ger(bench):
     )
 
 
+def run_thead_gemm(bench):
+    return _run_thead_l2(
+        bench,
+        "gemm",
+        THeadGemmReference,
+        ("m", "n", "k", "transa", "transb", "alpha", "beta"),
+    )
+
+
 def _run_thead_l2(bench, family, reference_type, case_fields):
     if flag_blas.vendor_name != "thead":
         raise RuntimeError(
@@ -1138,7 +1216,7 @@ def _run_thead_l2(bench, family, reference_type, case_fields):
                     flops=workload["flops"],
                     useful_gbps=metric.gbps,
                     useful_tflops=metric.tflops,
-                    baseline_id="h100",
+                    baseline_id=reference.baseline_id,
                 )
             )
             metrics.append(metric)

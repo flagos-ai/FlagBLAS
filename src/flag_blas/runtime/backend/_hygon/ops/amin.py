@@ -159,17 +159,17 @@ def _amin(n, x, incx, result, dtype, common_name):
         )
 
 
-def samin(n, x, incx, result):
-    _amin(n, x, incx, result, torch.float32, "samin")
+def isamin(n, x, incx, result):
+    _amin(n, x, incx, result, torch.float32, "isamin")
 
 
-def damin(n, x, incx, result):
-    _amin(n, x, incx, result, torch.float64, "damin")
+def idamin(n, x, incx, result):
+    _amin(n, x, incx, result, torch.float64, "idamin")
 
 
-def camin(n, x, incx, result):
-    _amin(n, x, incx, result, torch.complex64, "camin")
+def icamin(n, x, incx, result):
+    _amin(n, x, incx, result, torch.complex64, "icamin")
 
 
-def zamin(n, x, incx, result):
-    _amin(n, x, incx, result, torch.complex128, "zamin")
+def izamin(n, x, incx, result):
+    _amin(n, x, incx, result, torch.complex128, "izamin")

@@ -23,6 +23,7 @@ from .accuracy_utils import (
     L1_AMAX_STRIDE_SHAPES,
     L1_AMAX_STRIDES,
     blas_assert_equal,
+    l1_randn,
     to_cpu_blas_tensor,
     to_reference,
 )
@@ -37,7 +38,9 @@ if IS_HYGON:
     from tests.accuracy_utils import get_l1_hipblas_context
 
     from .hipblas_reference import check_hipblas_status
-else:
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp, cublas
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -88,6 +91,17 @@ def cublas_amax_reference(n, x, incx, result):
         raise ValueError(f"Unsupported dtype for cuBLAS: {dtype}")
 
     handle = cp.cuda.device.get_cublas_handle()
+    if flag_blas.vendor_name == "mthreads":
+        # Device index outputs are not written by muBLAS for large reductions.
+        host_result = torch.empty(1, dtype=torch.int32, device="cpu")
+        previous_mode = cublas.getPointerMode(handle)
+        try:
+            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+            func(handle, n, x.data_ptr(), incx, host_result.data_ptr())
+        finally:
+            cublas.setPointerMode(handle, previous_mode)
+        result.copy_(host_result)
+        return
     cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
 
     func(handle, n, x.data_ptr(), incx, result.data_ptr())
@@ -133,8 +147,8 @@ def amax_reference(n, x, incx, result):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samax),
-        pytest.param(torch.float64, marks=pytest.mark.damax),
+        pytest.param(torch.float32, marks=pytest.mark.isamax),
+        pytest.param(torch.float64, marks=pytest.mark.idamax),
     ],
 )
 @pytest.mark.parametrize("shape", AMAX_SHAPES)
@@ -144,7 +158,7 @@ def test_accuracy_amax_real(dtype, shape):
 
     n = shape[0]
     incx = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -152,9 +166,9 @@ def test_accuracy_amax_real(dtype, shape):
     ref_result = amax_reference(n, x, incx, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.samax(n, x, incx, result)
+        flag_blas.isamax(n, x, incx, result)
     else:
-        flag_blas.damax(n, x, incx, result)
+        flag_blas.idamax(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -163,8 +177,8 @@ def test_accuracy_amax_real(dtype, shape):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.camax),
-        pytest.param(torch.complex128, marks=pytest.mark.zamax),
+        pytest.param(torch.complex64, marks=pytest.mark.icamax),
+        pytest.param(torch.complex128, marks=pytest.mark.izamax),
     ],
 )
 @pytest.mark.parametrize("shape", AMAX_SHAPES)
@@ -174,7 +188,7 @@ def test_accuracy_amax_complex(dtype, shape):
 
     n = shape[0]
     incx = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -182,9 +196,9 @@ def test_accuracy_amax_complex(dtype, shape):
     ref_result = amax_reference(n, x, incx, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.camax(n, x, incx, result)
+        flag_blas.icamax(n, x, incx, result)
     else:
-        flag_blas.zamax(n, x, incx, result)
+        flag_blas.izamax(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -193,10 +207,10 @@ def test_accuracy_amax_complex(dtype, shape):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samax),
-        pytest.param(torch.float64, marks=pytest.mark.damax),
-        pytest.param(torch.complex64, marks=pytest.mark.camax),
-        pytest.param(torch.complex128, marks=pytest.mark.zamax),
+        pytest.param(torch.float32, marks=pytest.mark.isamax),
+        pytest.param(torch.float64, marks=pytest.mark.idamax),
+        pytest.param(torch.complex64, marks=pytest.mark.icamax),
+        pytest.param(torch.complex128, marks=pytest.mark.izamax),
     ],
 )
 def test_accuracy_amax_empty_tensor(dtype):
@@ -206,19 +220,19 @@ def test_accuracy_amax_empty_tensor(dtype):
     ):
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(0, dtype=dtype, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
 
     n = 0
 
     if dtype == torch.float32:
-        flag_blas.samax(n, x, 1, result)
+        flag_blas.isamax(n, x, 1, result)
     elif dtype == torch.float64:
-        flag_blas.damax(n, x, 1, result)
+        flag_blas.idamax(n, x, 1, result)
     elif dtype == torch.complex64:
-        flag_blas.camax(n, x, 1, result)
+        flag_blas.icamax(n, x, 1, result)
     else:
-        flag_blas.zamax(n, x, 1, result)
+        flag_blas.izamax(n, x, 1, result)
 
     assert result.item() == 0
     assert result.dtype == torch.int32
@@ -229,8 +243,8 @@ def test_accuracy_amax_empty_tensor(dtype):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samax),
-        pytest.param(torch.float64, marks=pytest.mark.damax),
+        pytest.param(torch.float32, marks=pytest.mark.isamax),
+        pytest.param(torch.float64, marks=pytest.mark.idamax),
     ],
 )
 @pytest.mark.parametrize(
@@ -240,7 +254,7 @@ def test_accuracy_amax_different_n_real(dtype, n, vec_size):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -248,9 +262,9 @@ def test_accuracy_amax_different_n_real(dtype, n, vec_size):
     ref_result = amax_reference(n, x, 1, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.samax(n, x, 1, result)
+        flag_blas.isamax(n, x, 1, result)
     else:
-        flag_blas.damax(n, x, 1, result)
+        flag_blas.idamax(n, x, 1, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -259,8 +273,8 @@ def test_accuracy_amax_different_n_real(dtype, n, vec_size):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.camax),
-        pytest.param(torch.complex128, marks=pytest.mark.zamax),
+        pytest.param(torch.complex64, marks=pytest.mark.icamax),
+        pytest.param(torch.complex128, marks=pytest.mark.izamax),
     ],
 )
 @pytest.mark.parametrize(
@@ -270,7 +284,7 @@ def test_accuracy_amax_different_n_complex(dtype, n, vec_size):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -278,9 +292,9 @@ def test_accuracy_amax_different_n_complex(dtype, n, vec_size):
     ref_result = amax_reference(n, x, 1, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.camax(n, x, 1, result)
+        flag_blas.icamax(n, x, 1, result)
     else:
-        flag_blas.zamax(n, x, 1, result)
+        flag_blas.izamax(n, x, 1, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -289,8 +303,8 @@ def test_accuracy_amax_different_n_complex(dtype, n, vec_size):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samax),
-        pytest.param(torch.float64, marks=pytest.mark.damax),
+        pytest.param(torch.float32, marks=pytest.mark.isamax),
+        pytest.param(torch.float64, marks=pytest.mark.idamax),
     ],
 )
 @pytest.mark.parametrize("shape", L1_AMAX_STRIDE_SHAPES)
@@ -300,7 +314,7 @@ def test_accuracy_amax_different_n_with_stride_real(dtype, shape, incx):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -308,9 +322,9 @@ def test_accuracy_amax_different_n_with_stride_real(dtype, shape, incx):
     ref_result = amax_reference(n, x, incx, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.samax(n, x, incx, result)
+        flag_blas.isamax(n, x, incx, result)
     else:
-        flag_blas.damax(n, x, incx, result)
+        flag_blas.idamax(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -319,8 +333,8 @@ def test_accuracy_amax_different_n_with_stride_real(dtype, shape, incx):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.camax),
-        pytest.param(torch.complex128, marks=pytest.mark.zamax),
+        pytest.param(torch.complex64, marks=pytest.mark.icamax),
+        pytest.param(torch.complex128, marks=pytest.mark.izamax),
     ],
 )
 @pytest.mark.parametrize("shape", L1_AMAX_STRIDE_SHAPES)
@@ -330,7 +344,7 @@ def test_accuracy_amax_different_n_with_stride_complex(dtype, shape, incx):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -338,8 +352,8 @@ def test_accuracy_amax_different_n_with_stride_complex(dtype, shape, incx):
     ref_result = amax_reference(n, x, incx, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.camax(n, x, incx, result)
+        flag_blas.icamax(n, x, incx, result)
     else:
-        flag_blas.zamax(n, x, incx, result)
+        flag_blas.izamax(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)

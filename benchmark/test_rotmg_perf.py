@@ -10,7 +10,9 @@ from benchmark.performance_utils import Benchmark, run_correctness_then_benchmar
 from tests.test_rotmg import ROTMG_CASES
 
 IS_HYGON = flag_blas.vendor_name == "hygon"
-if not IS_HYGON:
+if flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp
+elif not IS_HYGON and flag_blas.vendor_name != "ascend":
     import cupy as cp
 if IS_HYGON:
     from tests.accuracy_utils import get_l1_hipblas_context
@@ -21,6 +23,10 @@ CUBLAS_POINTER_MODE_DEVICE = 1
 
 
 def load_cublas():
+    if flag_blas.vendor_name == "mthreads":
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -34,7 +40,7 @@ def load_cublas():
     raise RuntimeError("Cannot find libcublas.so in the system")
 
 
-if not IS_HYGON:
+if not IS_HYGON and flag_blas.vendor_name != "ascend":
     _cublas = load_cublas()
     _cublas.cublasCreate_v2.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
     _cublas.cublasCreate_v2.restype = ctypes.c_int
@@ -54,7 +60,7 @@ def normalize_rotmg_param(param):
         param[3].zero_()
 
 
-if not IS_HYGON:
+if not IS_HYGON and flag_blas.vendor_name != "ascend":
     for _rotmg_name in ("cublasSrotmg_v2", "cublasDrotmg_v2"):
         _rotmg_func = getattr(_cublas, _rotmg_name)
         _rotmg_func.argtypes = [

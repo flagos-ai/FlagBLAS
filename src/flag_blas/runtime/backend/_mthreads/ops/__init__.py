@@ -11,9 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from .amax import icamax, idamax, isamax, izamax
+from .amin import icamin, idamin, isamin, izamin
+from .asum import dasum, dzasum, sasum, scasum
+from .axpy import caxpy
 from .bfgemm import bfgemm
 from .cgemm import cgemm
 from .dgemm import dgemm
+from .dot import ddot, sdot
+from .dotc import cdotc, zdotc
+from .dotu import cdotu, zdotu
 from .gbmv import cgbmv, dgbmv, sgbmv, zgbmv
 from .gemv import bfgemv, cgemv, dgemv, hgemv, sgemv, zgemv
 from .ger import cgerc, cgeru, sger
@@ -26,11 +33,16 @@ from .hgemm import hgemm
 from .hpmv import chpmv, zhpmv
 from .hpr import chpr, zhpr
 from .hpr2 import chpr2, zhpr2
+from .nrm2 import dnrm2, dznrm2, scnrm2, snrm2
+from .rotg import drotg, srotg
+from .rotmg import drotmg
 from .sbmv import dsbmv, ssbmv
+from .scal import cscal, csscal
 from .sgemm import sgemm
 from .spmv import dspmv, sspmv
 from .spr import sspr
 from .spr2 import dspr2, sspr2
+from .swap import dswap, sswap
 from .symv import csymv, dsymv, ssymv
 from .syr import csyr, ssyr, zsyr
 from .syr2 import ssyr2
@@ -44,6 +56,36 @@ from .zgemm import zgemm
 
 __all__ = [
     "bfgemm",
+    "caxpy",
+    "cscal",
+    "csscal",
+    "sswap",
+    "dswap",
+    "srotg",
+    "drotg",
+    "drotmg",
+    "sdot",
+    "ddot",
+    "cdotc",
+    "zdotc",
+    "cdotu",
+    "zdotu",
+    "sasum",
+    "dasum",
+    "scasum",
+    "dzasum",
+    "isamax",
+    "idamax",
+    "icamax",
+    "izamax",
+    "isamin",
+    "idamin",
+    "icamin",
+    "izamin",
+    "snrm2",
+    "dnrm2",
+    "scnrm2",
+    "dznrm2",
     "bfgemv",
     "cgemm",
     "cgbmv",

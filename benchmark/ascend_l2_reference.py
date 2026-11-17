@@ -293,3 +293,263 @@ class AscendL2Benchmark(Benchmark):
                 + "".join(f"{v:>20}" for v in fields)
                 + f"          {metric.shape_detail}"
             )
+
+
+ASCEND_L1_FAMILIES = {
+    name: family
+    for family, names in {
+        "amax": ("isamax", "idamax", "icamax", "izamax"),
+        "amin": ("isamin", "idamin", "icamin", "izamin"),
+        "asum": ("sasum", "dasum", "scasum", "dzasum"),
+        "axpy": ("saxpy", "daxpy", "caxpy", "zaxpy"),
+        "copy": ("scopy", "dcopy", "ccopy", "zcopy"),
+        "dot": ("sdot", "ddot"),
+        "dotc": ("cdotc", "zdotc"),
+        "dotu": ("cdotu", "zdotu"),
+        "nrm2": ("snrm2", "dnrm2", "scnrm2", "dznrm2"),
+        "rot": ("srot", "drot", "csrot", "zdrot"),
+        "rotg": ("srotg", "drotg", "crotg", "zrotg"),
+        "rotm": ("srotm", "drotm"),
+        "rotmg": ("srotmg", "drotmg"),
+        "scal": ("sscal", "dscal", "cscal", "zscal", "csscal", "zdscal"),
+        "swap": ("sswap", "dswap", "cswap", "zswap"),
+    }.items()
+    for name in names
+}
+
+
+def _l1_key(op, dtype, params):
+    return op, str(dtype), json.dumps(params, sort_keys=True, allow_nan=False)
+
+
+def _l1_parameters(bench, family, kwargs):
+    if family == "rotg":
+        return {
+            name: [complex(value).real, complex(value).imag]
+            for name, value in bench.scalar_case.items()
+        }
+    if family == "rotmg":
+        return dict(bench.scalar_case)
+    params = {"n": kwargs["n"], "incx": kwargs.get("incx", 1)}
+    if family in ("axpy", "copy", "dot", "dotc", "dotu", "rot", "rotm", "swap"):
+        params["incy"] = kwargs.get("incy", 1)
+    if family in ("axpy", "scal"):
+        value = complex(kwargs["alpha"])
+        params["alpha"] = (
+            value.real
+            if bench.op_name.split("_", 1)[0] in ("csscal", "zdscal")
+            else [value.real, value.imag]
+        )
+    if family == "rot":
+        params.update(c=kwargs["c"], s=kwargs["s"])
+    if family == "rotm":
+        params["flag"] = bench.flag
+    return params
+
+
+def _l1_scalar(value, dtype, device):
+    if dtype.is_complex:
+        value = complex(value)
+        real_dtype = torch.float32 if dtype == torch.complex64 else torch.float64
+        return torch.view_as_complex(
+            torch.tensor([[value.real, value.imag]], dtype=real_dtype, device=device)
+        )
+    return torch.tensor([value], dtype=dtype, device=device)
+
+
+def _l1_inputs(bench, family, dtype):
+    """Keep Ascend input preparation independent of CUDA vendor handles."""
+    incx, incy = getattr(bench, "incx", 1), getattr(bench, "incy", 1)
+    real_dtype = (
+        torch.float32 if dtype in (torch.float32, torch.complex64) else torch.float64
+    )
+    for shape in bench.shapes:
+        if family == "rotg":
+            if dtype.is_complex:
+                a, b = complex(*shape[:2]), complex(*shape[2:])
+            else:
+                a, b = shape
+            bench.scalar_case = {"a": str(a), "b": str(b)}
+            yield (
+                _l1_scalar(a, dtype, bench.device),
+                _l1_scalar(b, dtype, bench.device),
+                _l1_scalar(0, real_dtype, bench.device),
+                _l1_scalar(0, dtype, bench.device),
+                {},
+            )
+            continue
+        if family == "rotmg":
+            bench.scalar_case = dict(zip(("d1", "d2", "x1", "y1"), shape))
+            values = [_l1_scalar(v, dtype, bench.device) for v in shape]
+            yield (*values, torch.zeros(5, dtype=dtype, device=bench.device), {})
+            continue
+        n = math.prod(shape)
+        x = randn(n * incx, dtype=dtype, device=bench.device)
+        kwargs = {"n": n, "incx": incx}
+        if family in ("amax", "amin", "asum", "nrm2"):
+            result_dtype = torch.int32 if family in ("amax", "amin") else real_dtype
+            kwargs["result"] = torch.zeros(1, dtype=result_dtype, device=bench.device)
+            yield x, kwargs
+            continue
+        if family == "scal":
+            kwargs["alpha"] = bench.alpha
+            yield x, kwargs
+            continue
+        y = randn(n * incy, dtype=dtype, device=bench.device)
+        kwargs["incy"] = incy
+        if family in ("dot", "dotc", "dotu"):
+            yield x, y, _l1_scalar(0, dtype, bench.device), kwargs
+        elif family == "rotm":
+            param = torch.tensor(
+                [bench.flag, 0.8, 0.2, -0.3, 0.7], dtype=dtype, device=bench.device
+            )
+            yield x, y, param, kwargs
+        else:
+            if family == "axpy":
+                kwargs["alpha"] = bench.alpha
+            if family == "rot":
+                kwargs.update(c=bench.c, s=bench.s)
+            yield x, y, kwargs
+
+
+def run_ascend_l1(bench):
+    """Use the official benchmark timer with exact saved H100 L1 cases."""
+    if flag_blas.vendor_name != "ascend":
+        raise RuntimeError("Ascend L1 reference used on another platform")
+    # Keep stride and scalar parameters in each case, not in the operator name.
+    bench.op_name = bench.op_name.split("_", 1)[0]
+    if Config.query:
+        return bench.run()
+    if Config.mode != BenchMode.KERNEL:
+        raise ValueError("Saved H100 L1 timings require --mode kernel")
+    bench.init_user_config()
+    family = ASCEND_L1_FAMILIES[bench.op_name.split("_", 1)[0]]
+    mode = os.environ.get("FLAGBLAS_L1_REFERENCE", "h100")
+    bottleneck = os.environ.get("FLAGBLAS_L1_BOTTLENECK", "memory")
+    threshold = float(os.environ.get("FLAGBLAS_L1_THRESHOLD", "0.8"))
+    if mode not in ("none", "h100") or bottleneck not in ("memory", "vector"):
+        raise ValueError("Invalid Ascend L1 reference or resource assumption")
+    if not math.isfinite(threshold) or threshold <= 0:
+        raise ValueError("L1 threshold must be finite and positive")
+    project = Path(__file__).resolve().parents[1]
+    cases = {}
+    if mode == "h100":
+        path = project / os.environ.get(
+            "FLAGBLAS_L1_REFERENCE_FILE", "benchmark/baselines/h100_l1.json"
+        )
+        for row in json.loads(path.read_text()):
+            key = _l1_key(row["op"], row["dtype"], row["params"])
+            if (
+                key in cases
+                or not math.isfinite(row["latency_ms"])
+                or row["latency_ms"] <= 0
+            ):
+                raise ValueError(f"Invalid or duplicate H100 L1 reference: {key}")
+            cases[key] = row
+    hardware = json.loads((project / "benchmark/baselines/hardware.json").read_text())[
+        "ascend"
+    ]
+    scalar = family in ("rotg", "rotmg") or (family == "rotm" and bench.flag == -2.0)
+    resource = "latency" if scalar else bottleneck
+    factor = (
+        1.0
+        if scalar
+        else hardware[bottleneck]["h100_theoretical"]
+        / hardware[bottleneck]["ascend_measured"]
+    )
+    override = os.environ.get("FLAGBLAS_L1_CONVERSION_FACTOR")
+    if override is not None:
+        factor = float(override)
+    if not math.isfinite(factor) or factor <= 0:
+        raise ValueError("L1 conversion factor must be finite and positive")
+    print(
+        f"[conversion] Ascend L1: reference={mode}; score=K*T_H100/T_Ascend; "
+        f"resource={resource}; K={factor:.12g}; threshold={threshold}; "
+        "ROTG/ROTMG default to unscaled scalar latency"
+    )
+    for name in ("memory", "vector"):
+        value = hardware[name]
+        print(
+            f"[hardware] {name}: H100_nominal={value['h100_theoretical']}; "
+            f"Ascend_measured={value['ascend_measured']} {value['unit']}; "
+            "same calibration as Ascend L2"
+        )
+    print(
+        f"[correctness] {bench.op_name}: official L1 reference unavailable; "
+        "validate separately with tests/run_tests.py --ref cpu, outside this timer"
+    )
+    driver = triton.runtime.driver.active
+    cache = driver.get_empty_cache_for_benchmark()
+    driver.clear_cache(cache)
+    driver.get_device_interface().synchronize()
+    del cache
+    operation = bench.blas_op or bench.gems_op
+    for dtype in bench.to_bench_dtypes:
+        metrics, records = [], []
+        for inputs in _l1_inputs(bench, family, dtype):
+            args, kwargs = bench.unpack_to_args_kwargs(inputs)
+            params = _l1_parameters(bench, family, kwargs)
+            saved = None
+            if mode == "h100":
+                key = _l1_key(bench.op_name, dtype, params)
+                if key not in cases:
+                    raise ValueError(f"Missing exact H100 L1 baseline: {key}")
+                saved = cases[key]
+            metric = BenchmarkMetrics()
+            record_kwargs = dict(kwargs)
+            if family in ("rotg", "rotmg"):
+                record_kwargs["scalar_case"] = bench.scalar_case
+            metric.shape_detail = bench.record_shapes(*args, **record_kwargs)
+            metric.latency = float(bench.get_latency(operation, *args, **kwargs))
+            if not math.isfinite(metric.latency) or metric.latency <= 0:
+                raise ValueError("L1 latency must be finite and positive")
+            if not scalar:
+                metric.gbps = bench.get_gbps(args, latency=metric.latency)
+                metric.tflops = (
+                    bench.get_tflops(operation, *args, **kwargs) / metric.latency / 1e9
+                )
+            if saved is not None:
+                metric.latency_base = saved["latency_ms"]
+                metric.speedup = factor * metric.latency_base / metric.latency
+                if not scalar:
+                    metric.gbps_base = bench.get_gbps(args, latency=metric.latency_base)
+            records.append(
+                dict(
+                    op=bench.op_name,
+                    dtype=str(dtype),
+                    params=params,
+                    shape=str((params["n"],)) if "n" in params else "(1,)",
+                    attrs=", ".join(f"{k}={v}" for k, v in params.items() if k != "n"),
+                    triton_ms=metric.latency,
+                    cutensor_ms=metric.latency_base,
+                    speedup=metric.speedup,
+                    raw_speedup=metric.latency_base / metric.latency if saved else None,
+                    conversion_factor=factor,
+                    bottleneck_assumption=resource,
+                    threshold=threshold,
+                    performance_status="NO_REFERENCE"
+                    if saved is None
+                    else "PASS"
+                    if metric.speedup > threshold
+                    else "UNDERPERFORM",
+                    tflops=metric.tflops,
+                    gbps=metric.gbps,
+                    gbps_base=metric.gbps_base,
+                    tflops_base=None,
+                    ascend_l1=True,
+                )
+            )
+            metrics.append(metric)
+            gc.collect()
+        result = BenchmarkResult(
+            level=Config.bench_level.value,
+            op_name=bench.op_name,
+            dtype=str(dtype),
+            mode=Config.mode.value,
+            result=metrics,
+        )
+        print("Metrics: ascend_l1=true; Torch=H100 saved cuBLAS; Gems=Ascend FlagBLAS")
+        print(result, end="")
+        print("[ascend-l1-results] " + json.dumps(records, allow_nan=False))
+        emit_record_logger(result.to_json())
+    flag_blas.runtime.torch_device_fn.empty_cache()

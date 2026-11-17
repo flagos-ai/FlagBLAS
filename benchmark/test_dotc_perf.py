@@ -27,7 +27,9 @@ IS_HYGON = flag_blas.vendor_name == "hygon"
 if IS_HYGON:
     from tests.accuracy_utils import get_l1_hipblas_context
     from tests.hipblas_reference import check_hipblas_status, get_hipblas_library
-else:
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp, cublas
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 

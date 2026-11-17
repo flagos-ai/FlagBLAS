@@ -22,6 +22,7 @@ from .accuracy_utils import (
     AMIN_SHAPES,
     L1_STRIDES,
     blas_assert_equal,
+    l1_randn,
     to_cpu_blas_tensor,
     to_reference,
 )
@@ -33,7 +34,9 @@ if IS_HYGON:
 
     from tests.accuracy_utils import get_l1_hipblas_context
     from tests.hipblas_reference import check_hipblas_status, get_hipblas_library
-else:
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp, cublas
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -85,14 +88,14 @@ def amin_reference(n, x, incx, result):
 
 
 def call_amin(op_name, n, x, incx, result):
-    if op_name == "samin":
-        flag_blas.samin(n, x, incx, result)
-    elif op_name == "damin":
-        flag_blas.damin(n, x, incx, result)
-    elif op_name == "camin":
-        flag_blas.camin(n, x, incx, result)
-    elif op_name == "zamin":
-        flag_blas.zamin(n, x, incx, result)
+    if op_name == "isamin":
+        flag_blas.isamin(n, x, incx, result)
+    elif op_name == "idamin":
+        flag_blas.idamin(n, x, incx, result)
+    elif op_name == "icamin":
+        flag_blas.icamin(n, x, incx, result)
+    elif op_name == "izamin":
+        flag_blas.izamin(n, x, incx, result)
     else:
         raise ValueError(f"Unsupported amin op: {op_name}")
 
@@ -157,8 +160,10 @@ else:
             raise ValueError(f"Unsupported dtype for cuBLAS: {dtype}")
 
         handle = cp.cuda.device.get_cublas_handle()
-        if flag_blas.vendor_name == "thead" and not x.is_complex():
-            # PPU real AMIN requires host memory for its output index.
+        if flag_blas.vendor_name == "mthreads" or (
+            flag_blas.vendor_name == "thead" and not x.is_complex()
+        ):
+            # Use the supported host output index for this vendor interface.
             host_result = torch.empty(1, dtype=torch.int32, device="cpu")
             previous_mode = cublas.getPointerMode(handle)
             try:
@@ -178,24 +183,24 @@ else:
     "dtype,values,expected,func_name",
     [
         pytest.param(
-            torch.float32, [3.0, -1.0, 2.0], 2, "dasum", marks=pytest.mark.samin
+            torch.float32, [3.0, -1.0, 2.0], 2, "dasum", marks=pytest.mark.isamin
         ),
         pytest.param(
-            torch.float64, [3.0, -1.0, 2.0], 2, "dasum", marks=pytest.mark.damin
+            torch.float64, [3.0, -1.0, 2.0], 2, "dasum", marks=pytest.mark.idamin
         ),
         pytest.param(
             torch.complex64,
             [3.0 + 4.0j, 1.0 - 1.0j, 2.0 + 0.0j],
             2,
             "dzasum",
-            marks=pytest.mark.camin,
+            marks=pytest.mark.icamin,
         ),
         pytest.param(
             torch.complex128,
             [3.0 + 4.0j, 1.0 - 1.0j, 2.0 + 0.0j],
             2,
             "dzasum",
-            marks=pytest.mark.zamin,
+            marks=pytest.mark.izamin,
         ),
     ],
 )
@@ -228,8 +233,8 @@ def test_cpu_amin_reference_uses_scipy_blas(
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samin),
-        pytest.param(torch.float64, marks=pytest.mark.damin),
+        pytest.param(torch.float32, marks=pytest.mark.isamin),
+        pytest.param(torch.float64, marks=pytest.mark.idamin),
     ],
 )
 @pytest.mark.parametrize("shape", AMIN_SHAPES)
@@ -239,7 +244,7 @@ def test_accuracy_amin_real(dtype, shape, incx):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -247,9 +252,9 @@ def test_accuracy_amin_real(dtype, shape, incx):
     ref_result = amin_reference(n, x, incx, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.samin(n, x, incx, result)
+        flag_blas.isamin(n, x, incx, result)
     else:
-        flag_blas.damin(n, x, incx, result)
+        flag_blas.idamin(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -258,8 +263,8 @@ def test_accuracy_amin_real(dtype, shape, incx):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.camin),
-        pytest.param(torch.complex128, marks=pytest.mark.zamin),
+        pytest.param(torch.complex64, marks=pytest.mark.icamin),
+        pytest.param(torch.complex128, marks=pytest.mark.izamin),
     ],
 )
 @pytest.mark.parametrize("shape", AMIN_SHAPES)
@@ -269,7 +274,7 @@ def test_accuracy_amin_complex(dtype, shape, incx):
         pytest.skip("Device does not support float64")
 
     n = shape[0]
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
@@ -277,9 +282,9 @@ def test_accuracy_amin_complex(dtype, shape, incx):
     ref_result = amin_reference(n, x, incx, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.camin(n, x, incx, result)
+        flag_blas.icamin(n, x, incx, result)
     else:
-        flag_blas.zamin(n, x, incx, result)
+        flag_blas.izamin(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)
 
@@ -288,10 +293,10 @@ def test_accuracy_amin_complex(dtype, shape, incx):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samin),
-        pytest.param(torch.float64, marks=pytest.mark.damin),
-        pytest.param(torch.complex64, marks=pytest.mark.camin),
-        pytest.param(torch.complex128, marks=pytest.mark.zamin),
+        pytest.param(torch.float32, marks=pytest.mark.isamin),
+        pytest.param(torch.float64, marks=pytest.mark.idamin),
+        pytest.param(torch.complex64, marks=pytest.mark.icamin),
+        pytest.param(torch.complex128, marks=pytest.mark.izamin),
     ],
 )
 def test_accuracy_amin_empty_tensor(dtype):
@@ -301,18 +306,18 @@ def test_accuracy_amin_empty_tensor(dtype):
     ):
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(0, dtype=dtype, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     n = 0
 
     if dtype == torch.float32:
-        flag_blas.samin(n, x, 1, result)
+        flag_blas.isamin(n, x, 1, result)
     elif dtype == torch.float64:
-        flag_blas.damin(n, x, 1, result)
+        flag_blas.idamin(n, x, 1, result)
     elif dtype == torch.complex64:
-        flag_blas.camin(n, x, 1, result)
+        flag_blas.icamin(n, x, 1, result)
     else:
-        flag_blas.zamin(n, x, 1, result)
+        flag_blas.izamin(n, x, 1, result)
 
     assert result.item() == 0
     assert result.dtype == torch.int32
@@ -323,8 +328,8 @@ def test_accuracy_amin_empty_tensor(dtype):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samin),
-        pytest.param(torch.float64, marks=pytest.mark.damin),
+        pytest.param(torch.float32, marks=pytest.mark.isamin),
+        pytest.param(torch.float64, marks=pytest.mark.idamin),
     ],
 )
 @pytest.mark.parametrize(
@@ -335,16 +340,16 @@ def test_accuracy_amin_different_n_real(dtype, n, vec_size):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
 
     ref_result = amin_reference(n, x, 1, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.samin(n, x, 1, result)
+        flag_blas.isamin(n, x, 1, result)
     else:
-        flag_blas.damin(n, x, 1, result)
+        flag_blas.idamin(n, x, 1, result)
 
     blas_assert_equal(result, ref_result)
     if n > 0:
@@ -355,8 +360,8 @@ def test_accuracy_amin_different_n_real(dtype, n, vec_size):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.camin),
-        pytest.param(torch.complex128, marks=pytest.mark.zamin),
+        pytest.param(torch.complex64, marks=pytest.mark.icamin),
+        pytest.param(torch.complex128, marks=pytest.mark.izamin),
     ],
 )
 @pytest.mark.parametrize(
@@ -367,16 +372,16 @@ def test_accuracy_amin_different_n_complex(dtype, n, vec_size):
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
 
     ref_result = amin_reference(n, x, 1, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.camin(n, x, 1, result)
+        flag_blas.icamin(n, x, 1, result)
     else:
-        flag_blas.zamin(n, x, 1, result)
+        flag_blas.izamin(n, x, 1, result)
 
     blas_assert_equal(result, ref_result)
     if n > 0:
@@ -387,8 +392,8 @@ def test_accuracy_amin_different_n_complex(dtype, n, vec_size):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.float32, marks=pytest.mark.samin),
-        pytest.param(torch.float64, marks=pytest.mark.damin),
+        pytest.param(torch.float32, marks=pytest.mark.isamin),
+        pytest.param(torch.float64, marks=pytest.mark.idamin),
     ],
 )
 @pytest.mark.parametrize(
@@ -404,16 +409,16 @@ def test_accuracy_amin_different_n_with_stride_real(dtype, n, vec_size, incx):
     if dtype == torch.float64 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
 
     ref_result = amin_reference(n, x, incx, ref_result)
 
     if dtype == torch.float32:
-        flag_blas.samin(n, x, incx, result)
+        flag_blas.isamin(n, x, incx, result)
     else:
-        flag_blas.damin(n, x, incx, result)
+        flag_blas.idamin(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)
     if n > 0:
@@ -424,8 +429,8 @@ def test_accuracy_amin_different_n_with_stride_real(dtype, n, vec_size, incx):
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.complex64, marks=pytest.mark.camin),
-        pytest.param(torch.complex128, marks=pytest.mark.zamin),
+        pytest.param(torch.complex64, marks=pytest.mark.icamin),
+        pytest.param(torch.complex128, marks=pytest.mark.izamin),
     ],
 )
 @pytest.mark.parametrize(
@@ -441,16 +446,16 @@ def test_accuracy_amin_different_n_with_stride_complex(dtype, n, vec_size, incx)
     if dtype == torch.complex128 and not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
 
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
     ref_result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
     result = torch.zeros(1, dtype=torch.int32, device=flag_blas.device)
 
     ref_result = amin_reference(n, x, incx, ref_result)
 
     if dtype == torch.complex64:
-        flag_blas.camin(n, x, incx, result)
+        flag_blas.icamin(n, x, incx, result)
     else:
-        flag_blas.zamin(n, x, incx, result)
+        flag_blas.izamin(n, x, incx, result)
 
     blas_assert_equal(result, ref_result)
     if n > 0:

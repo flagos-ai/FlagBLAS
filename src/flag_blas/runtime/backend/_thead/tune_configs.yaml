@@ -600,7 +600,7 @@ thead_l1_update_scal_wide:
     num_warps: 4
     num_stages: 1
 
-thead_l1_camax:
+thead_l1_icamax:
   - META: {BLOCK: 512, CAP: 128, CHUNK: true, PAIR: false, FILTER: true, PIPE_STAGES: 1}
     num_warps: 4
     num_stages: 1

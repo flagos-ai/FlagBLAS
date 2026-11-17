@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from .amax import samax
+from .amax import isamax
 from .asum import sasum, scasum
 from .bfgemm import bfgemm
 from .cgemm import cgemm
@@ -33,7 +33,7 @@ from .trmv import ctrmv, strmv
 from .trsv import ctrsv, strsv
 
 __all__ = [
-    "samax",
+    "isamax",
     "sasum",
     "scasum",
     "sdot",

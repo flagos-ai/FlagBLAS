@@ -60,15 +60,15 @@ def _amax(n, x, incx, result, dtype, common_name):
         )
 
 
-def samax(n, x, incx, result):
-    _amax(n, x, incx, result, torch.float32, "samax")
+def isamax(n, x, incx, result):
+    _amax(n, x, incx, result, torch.float32, "isamax")
 
 
-def damax(n, x, incx, result):
-    _amax(n, x, incx, result, torch.float64, "damax")
+def idamax(n, x, incx, result):
+    _amax(n, x, incx, result, torch.float64, "idamax")
 
 
-def camax(n, x, incx, result):
+def icamax(n, x, incx, result):
     if 1048576 <= n < 33554432 and incx > 0:
         assert x.dtype == torch.complex64, "x must be complex64"
         assert result.dtype == torch.int32, "result must be int32"
@@ -77,16 +77,16 @@ def camax(n, x, incx, result):
         assert x.numel() >= required_size, "x is too short"
         grid = lambda meta: (min(triton.cdiv(n, meta["BLOCK"]), meta["CAP"]),)
         with torch_device_fn.device(x.device):
-            _camax_atomic[grid](torch.view_as_real(x), result, n, incx)
+            _icamax_atomic[grid](torch.view_as_real(x), result, n, incx)
         return
-    _amax(n, x, incx, result, torch.complex64, "camax")
+    _amax(n, x, incx, result, torch.complex64, "icamax")
 
 
-def zamax(n, x, incx, result):
-    _amax(n, x, incx, result, torch.complex128, "zamax")
+def izamax(n, x, incx, result):
+    _amax(n, x, incx, result, torch.complex128, "izamax")
 
 
-def _prune_camax(configs, named_args, **kwargs):
+def _prune_icamax(configs, named_args, **kwargs):
     caps = {128} if named_args["INC"] > 1 else {256}
     if named_args["INC"] == 1 and named_args["N"] >= 8388608:
         caps.add(512)
@@ -95,12 +95,12 @@ def _prune_camax(configs, named_args, **kwargs):
 
 @libentry()
 @libtuner(
-    configs=runtime.get_tuned_config("thead_l1_camax"),
+    configs=runtime.get_tuned_config("thead_l1_icamax"),
     key=["N", "INC"],
-    prune_configs_by={"early_config_prune": _prune_camax},
+    prune_configs_by={"early_config_prune": _prune_icamax},
 )
 @triton.jit
-def _camax_atomic(
+def _icamax_atomic(
     X,
     OUT,
     N: tl.constexpr,

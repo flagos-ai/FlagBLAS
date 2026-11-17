@@ -30,28 +30,35 @@ if IS_HYGON:
 
     from tests.accuracy_utils import get_l1_hipblas_context
     from tests.hipblas_reference import check_hipblas_status, get_hipblas_library
-else:
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import (
+        cp,
+        cublas,
+        mublas_index_baseline,
+        mublas_index_op,
+    )
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
 
-def blas_samax_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.samax(n, x, incx, result)
+def blas_isamax_wrapper(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.isamax(n, x, incx, result)
     return result
 
 
-def blas_damax_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.damax(n, x, incx, result)
+def blas_idamax_wrapper(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.idamax(n, x, incx, result)
     return result
 
 
-def blas_camax_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.camax(n, x, incx, result)
+def blas_icamax_wrapper(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.icamax(n, x, incx, result)
     return result
 
 
-def blas_zamax_wrapper(x, incx=1, n=None, handle=None, result=None):
-    flag_blas.zamax(n, x, incx, result)
+def blas_izamax_wrapper(x, incx=1, n=None, handle=None, result=None):
+    flag_blas.izamax(n, x, incx, result)
     return result
 
 
@@ -88,13 +95,19 @@ if IS_HYGON:
         return wrapper
 
     cublas_isamax = hipblas_amax_baseline
-    blas_samax_wrapper = _hygon_amax_wrapper(blas_samax_wrapper)
+    blas_isamax_wrapper = _hygon_amax_wrapper(blas_isamax_wrapper)
     cublas_idamax = hipblas_amax_baseline
-    blas_damax_wrapper = _hygon_amax_wrapper(blas_damax_wrapper)
+    blas_idamax_wrapper = _hygon_amax_wrapper(blas_idamax_wrapper)
     cublas_icamax = hipblas_amax_baseline
-    blas_camax_wrapper = _hygon_amax_wrapper(blas_camax_wrapper)
+    blas_icamax_wrapper = _hygon_amax_wrapper(blas_icamax_wrapper)
     cublas_izamax = hipblas_amax_baseline
-    blas_zamax_wrapper = _hygon_amax_wrapper(blas_zamax_wrapper)
+    blas_izamax_wrapper = _hygon_amax_wrapper(blas_izamax_wrapper)
+
+elif flag_blas.vendor_name == "mthreads":
+    cublas_isamax = mublas_index_baseline(cublas.isamax)
+    cublas_idamax = mublas_index_baseline(cublas.idamax)
+    cublas_icamax = mublas_index_baseline(cublas.icamax)
+    cublas_izamax = mublas_index_baseline(cublas.izamax)
 
 else:
 
@@ -115,7 +128,22 @@ else:
         return result
 
 
+if flag_blas.vendor_name == "mthreads":
+    blas_isamax_wrapper = mublas_index_op(blas_isamax_wrapper)
+    blas_idamax_wrapper = mublas_index_op(blas_idamax_wrapper)
+    blas_icamax_wrapper = mublas_index_op(blas_icamax_wrapper)
+    blas_izamax_wrapper = mublas_index_op(blas_izamax_wrapper)
+
+
 class AmaxBenchmark(Benchmark):
+    def validate_results(self, reference_result, blas_result, dtype, reduce_dim=1):
+        if flag_blas.vendor_name == "mthreads":
+            reference_result = reference_result.cpu()
+            blas_result = blas_result.cpu()
+        return super().validate_results(
+            reference_result, blas_result, dtype, reduce_dim=reduce_dim
+        )
+
     def set_more_metrics(self):
         return ["gbps"]
 
@@ -127,7 +155,10 @@ class AmaxBenchmark(Benchmark):
             c_func = _resolve_hipblas_amax(cur_dtype)
         else:
             handle = cp.cuda.device.get_cublas_handle()
-            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
+            if flag_blas.vendor_name == "mthreads":
+                cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+            else:
+                cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
 
         for shape in self.shapes:
             inp = torch.randn(shape, dtype=cur_dtype, device=self.device)
@@ -141,6 +172,10 @@ class AmaxBenchmark(Benchmark):
                 kwargs = {"n": n, "handle": handle, "result": result}
                 if IS_HYGON:
                     kwargs["c_func"] = c_func
+                if flag_blas.vendor_name == "mthreads":
+                    kwargs["host_result"] = torch.empty(
+                        1, dtype=torch.int32, device="cpu"
+                    )
                 yield inp, kwargs
 
     def get_gbps(self, args, latency):
@@ -161,6 +196,14 @@ class AmaxStrideBenchmark(Benchmark):
         super().__init__(*args, **kwargs)
         self.incx = incx
 
+    def validate_results(self, reference_result, blas_result, dtype, reduce_dim=1):
+        if flag_blas.vendor_name == "mthreads":
+            reference_result = reference_result.cpu()
+            blas_result = blas_result.cpu()
+        return super().validate_results(
+            reference_result, blas_result, dtype, reduce_dim=reduce_dim
+        )
+
     def set_more_metrics(self):
         return ["gbps"]
 
@@ -172,7 +215,10 @@ class AmaxStrideBenchmark(Benchmark):
             c_func = _resolve_hipblas_amax(cur_dtype)
         else:
             handle = cp.cuda.device.get_cublas_handle()
-            cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
+            if flag_blas.vendor_name == "mthreads":
+                cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+            else:
+                cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_DEVICE)
 
         for shape in self.shapes:
             n = shape[0]
@@ -191,6 +237,10 @@ class AmaxStrideBenchmark(Benchmark):
                 }
                 if IS_HYGON:
                     kwargs["c_func"] = c_func
+                if flag_blas.vendor_name == "mthreads":
+                    kwargs["host_result"] = torch.empty(
+                        1, dtype=torch.int32, device="cpu"
+                    )
                 yield inp, kwargs
 
     def get_gbps(self, args, latency):
@@ -213,104 +263,104 @@ if IS_HYGON:
     AmaxStrideBenchmark.correctness_reference = "hipBLAS"
 
 
-@pytest.mark.samax
-def test_perf_samax():
+@pytest.mark.isamax
+def test_perf_isamax():
     bench = AmaxBenchmark(
-        op_name="samax",
+        op_name="isamax",
         torch_op=cublas_isamax,
-        blas_op=blas_samax_wrapper,
+        blas_op=blas_isamax_wrapper,
         dtypes=[torch.float32],
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.damax
-def test_perf_damax():
+@pytest.mark.idamax
+def test_perf_idamax():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
     bench = AmaxBenchmark(
-        op_name="damax",
+        op_name="idamax",
         torch_op=cublas_idamax,
-        blas_op=blas_damax_wrapper,
+        blas_op=blas_idamax_wrapper,
         dtypes=[torch.float64],
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.camax
-def test_perf_camax():
+@pytest.mark.icamax
+def test_perf_icamax():
     bench = AmaxBenchmark(
-        op_name="camax",
+        op_name="icamax",
         torch_op=cublas_icamax,
-        blas_op=blas_camax_wrapper,
+        blas_op=blas_icamax_wrapper,
         dtypes=[torch.complex64],
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.zamax
-def test_perf_zamax():
+@pytest.mark.izamax
+def test_perf_izamax():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
     bench = AmaxBenchmark(
-        op_name="zamax",
+        op_name="izamax",
         torch_op=cublas_izamax,
-        blas_op=blas_zamax_wrapper,
+        blas_op=blas_izamax_wrapper,
         dtypes=[torch.complex128],
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.samax
+@pytest.mark.isamax
 @pytest.mark.parametrize("incx", [2, 5])
-def test_perf_samax_stride(incx):
+def test_perf_isamax_stride(incx):
     bench = AmaxStrideBenchmark(
-        op_name=f"samax_stride_incx{incx}",
+        op_name=f"isamax_stride_incx{incx}",
         torch_op=cublas_isamax,
-        blas_op=blas_samax_wrapper,
+        blas_op=blas_isamax_wrapper,
         dtypes=[torch.float32],
         incx=incx,
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.damax
+@pytest.mark.idamax
 @pytest.mark.parametrize("incx", [2, 5])
-def test_perf_damax_stride(incx):
+def test_perf_idamax_stride(incx):
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
     bench = AmaxStrideBenchmark(
-        op_name=f"damax_stride_incx{incx}",
+        op_name=f"idamax_stride_incx{incx}",
         torch_op=cublas_idamax,
-        blas_op=blas_damax_wrapper,
+        blas_op=blas_idamax_wrapper,
         dtypes=[torch.float64],
         incx=incx,
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.camax
+@pytest.mark.icamax
 @pytest.mark.parametrize("incx", [2, 5])
-def test_perf_camax_stride(incx):
+def test_perf_icamax_stride(incx):
     bench = AmaxStrideBenchmark(
-        op_name=f"camax_stride_incx{incx}",
+        op_name=f"icamax_stride_incx{incx}",
         torch_op=cublas_icamax,
-        blas_op=blas_camax_wrapper,
+        blas_op=blas_icamax_wrapper,
         dtypes=[torch.complex64],
         incx=incx,
     )
     run_correctness_then_benchmark(bench)
 
 
-@pytest.mark.zamax
+@pytest.mark.izamax
 @pytest.mark.parametrize("incx", [2, 5])
-def test_perf_zamax_stride(incx):
+def test_perf_izamax_stride(incx):
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64")
     bench = AmaxStrideBenchmark(
-        op_name=f"zamax_stride_incx{incx}",
+        op_name=f"izamax_stride_incx{incx}",
         torch_op=cublas_izamax,
-        blas_op=blas_zamax_wrapper,
+        blas_op=blas_izamax_wrapper,
         dtypes=[torch.complex128],
         incx=incx,
     )

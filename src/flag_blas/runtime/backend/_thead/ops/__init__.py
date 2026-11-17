@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .amax import camax, damax, samax, zamax
-from .amin import camin, damin, samin, zamin
+from .amax import icamax, idamax, isamax, izamax
+from .amin import icamin, idamin, isamin, izamin
 from .asum import dzasum, scasum
 from .axpy import caxpy, zaxpy
 from .bfgemm import bfgemm
@@ -27,7 +27,7 @@ from .group_gemm import group_bfgemm, group_hgemm, group_tf32gemm
 from .hemv import chemv, zhemv
 from .hgemm import hgemm
 from .nrm2 import dnrm2, dznrm2, scnrm2, snrm2
-from .rotg import zrotg
+from .rotg import drotg, srotg, zrotg
 from .scal import cscal, csscal, zdscal, zscal
 from .sgemm import sgemm
 from .spmv import dspmv, sspmv
@@ -43,20 +43,22 @@ from .trsv import ctrsv, dtrsv, strsv, ztrsv
 from .zgemm import zgemm
 
 __all__ = [
-    "samax",
-    "damax",
-    "camax",
-    "zamax",
-    "samin",
-    "damin",
-    "camin",
-    "zamin",
+    "isamax",
+    "idamax",
+    "icamax",
+    "izamax",
+    "isamin",
+    "idamin",
+    "icamin",
+    "izamin",
     "scasum",
     "dzasum",
     "snrm2",
     "dnrm2",
     "scnrm2",
     "dznrm2",
+    "srotg",
+    "drotg",
     "zrotg",
     "cdotu",
     "cdotc",

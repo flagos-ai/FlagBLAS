@@ -55,6 +55,43 @@ else:
     torch_backend_device.matmul.allow_tf32 = False
 
 
+def _do_bench_ascend(fn, warmup=1000, rep=100):
+    """Benchmark ``fn`` on Ascend using mspti kernel-level timing.
+
+    The generic ``triton.testing.do_bench`` measures the time between device
+    events, which on Ascend includes a large fixed kernel dispatch cost
+    (roughly 100us) that is identical for every kernel regardless of its size
+    and has nothing to do with the kernel itself.  ``do_bench_npu`` reads the
+    per-kernel task duration from the profiler (mspti), so it measures the
+    actual GEMM execution time and is the right tool for the KERNEL benchmark
+    mode on this platform.
+    """
+    import math
+
+    from triton.backends.ascend.testing import do_bench_npu
+
+    try:
+        fn()
+        torch_device_fn.synchronize()
+        # Estimate the per-call time so warmup/rep (given in ms) can be turned
+        # into kernel counts, mirroring triton.testing.do_bench's behaviour.
+        estimate = do_bench_npu(fn, warmup=1, active=3)
+        if estimate is None or math.isinf(estimate) or estimate <= 0:
+            raise RuntimeError("mspti estimate failed")
+        # Cap the iteration counts: converting a tiny estimate (e.g. 1.5us)
+        # naively would require ~600k launches per measurement.
+        n_warmup = max(1, min(500, int(warmup / estimate)))
+        n_repeat = max(1, min(200, int(rep / estimate)))
+        result = do_bench_npu(fn, warmup=n_warmup, active=n_repeat)
+        if result is None or math.isinf(result):
+            raise RuntimeError("mspti benchmark failed")
+        return result
+    except Exception as e:
+        # Fall back to the wall-clock do_bench if mspti is unavailable.
+        print(f"[_do_bench_ascend] mspti failed, fallback: {e}", flush=True)
+        return triton.testing.do_bench(fn, warmup=warmup, rep=rep, return_mode="median")
+
+
 def SkipVersion(module_name, skip_pattern):
     if importlib.util.find_spec(module_name) is None:
         return True
@@ -231,38 +268,6 @@ class Benchmark:
                         self.shapes = self.DEFAULT_SHAPES
 
             self.shapes = [tuple(shape) for shape in self.shapes]
-            # Use a partial Ascend-only shape overlay for the default core benchmark.
-            if (
-                vendor_name == "ascend"
-                and Config.bench_level == BenchLevel.CORE
-                and not Config.query
-                and os.path.realpath(shape_file_path)
-                == os.path.realpath(
-                    os.path.join(os.path.dirname(__file__), "core_shapes.yaml")
-                )
-            ):
-                overlay_path = os.path.join(
-                    os.path.dirname(__file__), "core_shapes_ascend_l2.yaml"
-                )
-                with open(overlay_path, "r") as overlay_file:
-                    overlay = yaml.safe_load(overlay_file) or {}
-                keys = [self.op_name]
-                if hasattr(self, "trans"):
-                    keys.insert(0, f"{self.op_name}@trans={self.trans}")
-                if (
-                    self.op_name == "csymv"
-                    and hasattr(self, "uplo")
-                    and os.environ.get("FLAGBLAS_ASCEND_TOOLS_CSYMV_SHAPES") == "1"
-                ):
-                    keys.insert(0, f"{self.op_name}@uplo={self.uplo}")
-                keys.extend(cls.__name__ for cls in type(self).__mro__)
-                for key in keys:
-                    if key in overlay:
-                        shapes = overlay[key]["shapes"]
-                        if not isinstance(shapes, list) or not shapes:
-                            raise ValueError(f"Invalid Ascend core shapes for {key}")
-                        self.shapes = [tuple(shape) for shape in shapes]
-                        break
             if vendor_name == "kunlunxin":
                 if self.op_name in ["isin", "nonzero"]:
                     # isin oom  # nonzero oot
@@ -362,35 +367,42 @@ class Benchmark:
             end = time.time()
             latency = (end - start) / Config.repetition * 1000
         elif Config.mode == BenchMode.KERNEL:
-            # Newer Triton-MUSA exposes the standard benchmark helper with a
-            # device_type selector; older vendor builds may still provide the
-            # legacy ``triton.musa_testing`` namespace.
-            if device == "musa" and hasattr(triton, "musa_testing"):
-                do_bench = triton.musa_testing.do_bench
-                bench_kwargs = {}
-            else:
-                do_bench = triton.testing.do_bench
-                bench_kwargs = {"device_type": device} if device == "musa" else {}
-            timing_kwargs = dict(
-                warmup=Config.warm_up,
-                rep=Config.repetition,
-                grad_to_none=xs if self.is_backward else None,
-                **bench_kwargs,
+            ascend_gemv_ops = {"sgemv", "cgemv", "hgemv", "bfgemv"}
+            is_ascend_gemv = (
+                vendor_name == "ascend"
+                and self.op_name.split("_", 1)[0] in ascend_gemv_ops
             )
-            if vendor_name == "ascend" and self.op_name.split("_", 1)[0] in {
-                "sgemv",
-                "cgemv",
-                "hgemv",
-                "bfgemv",
-            }:
-                # Triton estimates the repeat count before warming the device.
-                # Cold startup can leave a GEMV shape with only 1-3 samples.
-                samples = do_bench(fn, return_mode="all", **timing_kwargs)
-                if len(samples) < 20:
-                    samples = do_bench(fn, return_mode="all", **timing_kwargs)
-                latency = statistics.median(samples)
+            if device == "npu" and not is_ascend_gemv:
+                # On Ascend the generic wall-clock do_bench is dominated by a
+                # large fixed kernel dispatch cost (~100us) that is unrelated to
+                # the kernel itself, so use the mspti kernel-level profiler to
+                # measure the actual GEMM execution time.
+                latency = _do_bench_ascend(fn)
             else:
-                latency = do_bench(fn, return_mode="median", **timing_kwargs)
+                # Newer Triton-MUSA exposes the standard benchmark helper with a
+                # device_type selector; older vendor builds may still provide the
+                # legacy ``triton.musa_testing`` namespace.
+                if device == "musa" and hasattr(triton, "musa_testing"):
+                    do_bench = triton.musa_testing.do_bench
+                    bench_kwargs = {}
+                else:
+                    do_bench = triton.testing.do_bench
+                    bench_kwargs = {"device_type": device} if device == "musa" else {}
+                timing_kwargs = dict(
+                    warmup=Config.warm_up,
+                    rep=Config.repetition,
+                    grad_to_none=xs if self.is_backward else None,
+                    **bench_kwargs,
+                )
+                if is_ascend_gemv:
+                    # Triton estimates the repeat count before warming the device.
+                    # Cold startup can leave a GEMV shape with only 1-3 samples.
+                    samples = do_bench(fn, return_mode="all", **timing_kwargs)
+                    if len(samples) < 20:
+                        samples = do_bench(fn, return_mode="all", **timing_kwargs)
+                    latency = statistics.median(samples)
+                else:
+                    latency = do_bench(fn, return_mode="median", **timing_kwargs)
         elif Config.mode == BenchMode.WRAPPER:
             for i in range(Config.warm_up):
                 fn()
@@ -645,6 +657,16 @@ class Benchmark:
 
 
 def run_correctness_then_benchmark(bench):
+    if flag_blas.vendor_name == "ascend":
+        from benchmark.ascend_l2_reference import ASCEND_L1_FAMILIES, run_ascend_l1
+
+        if bench.op_name.split("_", 1)[0] in ASCEND_L1_FAMILIES:
+            return run_ascend_l1(bench)
+    if (
+        flag_blas.vendor_name == "mthreads"
+        and getattr(bench, "correctness_reference", "cuBLAS") == "cuBLAS"
+    ):
+        bench.correctness_reference = "muBLAS"
     if flag_blas.vendor_name == "thead":
         from benchmark.thead_l1_reference import needs_h100_l1_reference, run_thead_l1
 

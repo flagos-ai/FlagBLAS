@@ -26,7 +26,7 @@ from flag_blas.utils import triton_lang_extension as tle
 
 logger = logging.getLogger(__name__)
 
-ScalarType = Union[float, int, complex, torch.Tensor]
+ScalarType = Union[float, int, torch.Tensor]
 
 
 def _f64_to_i64(value: float) -> int:
@@ -126,12 +126,11 @@ def drot_kernel(
     restore_value=["x_ptr", "y_ptr"],
 )
 @triton.jit
-def crot_kernel(
+def csrot_kernel(
     x_ptr,
     y_ptr,
     c: tl.float32,
-    s_real: tl.float32,
-    s_imag: tl.float32,
+    s: tl.float32,
     n,
     INCX,
     INCY,
@@ -149,11 +148,11 @@ def crot_kernel(
     y_real = tl.load(y_ptr + y_base_offset, mask=mask, other=0.0)
     y_imag = tl.load(y_ptr + y_base_offset + 1, mask=mask, other=0.0)
 
-    new_x_real = c * x_real + s_real * y_real - s_imag * y_imag
-    new_x_imag = c * x_imag + s_real * y_imag + s_imag * y_real
+    new_x_real = c * x_real + s * y_real
+    new_x_imag = c * x_imag + s * y_imag
 
-    new_y_real = -s_real * x_real - s_imag * x_imag + c * y_real
-    new_y_imag = -s_real * x_imag + s_imag * x_real + c * y_imag
+    new_y_real = -s * x_real + c * y_real
+    new_y_imag = -s * x_imag + c * y_imag
 
     tl.store(x_ptr + x_base_offset, new_x_real, mask=mask)
     tl.store(x_ptr + x_base_offset + 1, new_x_imag, mask=mask)
@@ -173,12 +172,11 @@ def crot_kernel(
     restore_value=["x_ptr", "y_ptr"],
 )
 @triton.jit
-def zrot_kernel(
+def zdrot_kernel(
     x_ptr,
     y_ptr,
     c_int: tl.int64,
-    s_real_int: tl.int64,
-    s_imag_int: tl.int64,
+    s_int: tl.int64,
     n,
     INCX,
     INCY,
@@ -189,8 +187,7 @@ def zrot_kernel(
     mask = idx < n
 
     c = c_int.to(tl.float64, bitcast=True)
-    s_real = s_real_int.to(tl.float64, bitcast=True)
-    s_imag = s_imag_int.to(tl.float64, bitcast=True)
+    s = s_int.to(tl.float64, bitcast=True)
 
     x_base_offset = idx * INCX * 2
     y_base_offset = idx * INCY * 2
@@ -200,11 +197,11 @@ def zrot_kernel(
     y_real = tl.load(y_ptr + y_base_offset, mask=mask, other=0.0)
     y_imag = tl.load(y_ptr + y_base_offset + 1, mask=mask, other=0.0)
 
-    new_x_real = c * x_real + s_real * y_real - s_imag * y_imag
-    new_x_imag = c * x_imag + s_real * y_imag + s_imag * y_real
+    new_x_real = c * x_real + s * y_real
+    new_x_imag = c * x_imag + s * y_imag
 
-    new_y_real = -s_real * x_real - s_imag * x_imag + c * y_real
-    new_y_imag = -s_real * x_imag + s_imag * x_real + c * y_imag
+    new_y_real = -s * x_real + c * y_real
+    new_y_imag = -s * x_imag + c * y_imag
 
     tl.store(x_ptr + x_base_offset, new_x_real, mask=mask)
     tl.store(x_ptr + x_base_offset + 1, new_x_imag, mask=mask)
@@ -294,7 +291,7 @@ def drot(
         drot_kernel[grid](x, y, c_int, s_int, n, incx, incy)
 
 
-def crot(
+def csrot(
     n: int,
     x: torch.Tensor,
     incx: int,
@@ -303,7 +300,7 @@ def crot(
     c: ScalarType,
     s: ScalarType,
 ) -> None:
-    logger.debug("FLAG_BLAS CROT")
+    logger.debug("FLAG_BLAS CSROT")
 
     assert x.device == y.device, "x and y must be on the same device"
     assert x.dtype == torch.complex64, "x must be complex64"
@@ -317,10 +314,8 @@ def crot(
     if n <= 0:
         return
 
-    c = c.item() if isinstance(c, torch.Tensor) else float(c)
-    s = s.item() if isinstance(s, torch.Tensor) else s
-    s_real = float(s.real) if isinstance(s, complex) else float(s)
-    s_imag = float(s.imag) if isinstance(s, complex) else 0.0
+    c = float(c.item() if isinstance(c, torch.Tensor) else c)
+    s = float(s.item() if isinstance(s, torch.Tensor) else s)
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy
@@ -336,10 +331,10 @@ def crot(
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
-        crot_kernel[grid](x_real, y_real, c, s_real, s_imag, n, incx, incy)
+        csrot_kernel[grid](x_real, y_real, c, s, n, incx, incy)
 
 
-def zrot(
+def zdrot(
     n: int,
     x: torch.Tensor,
     incx: int,
@@ -348,7 +343,7 @@ def zrot(
     c: ScalarType,
     s: ScalarType,
 ) -> None:
-    logger.debug("FLAG_BLAS ZROT")
+    logger.debug("FLAG_BLAS ZDROT")
 
     assert x.device == y.device, "x and y must be on the same device"
     assert x.dtype == torch.complex128, "x must be complex128"
@@ -363,13 +358,10 @@ def zrot(
         return
 
     c_val = float(c.item() if isinstance(c, torch.Tensor) else c)
-    s = s.item() if isinstance(s, torch.Tensor) else s
-    s_real = float(s.real) if isinstance(s, complex) else float(s)
-    s_imag = float(s.imag) if isinstance(s, complex) else 0.0
+    s = float(s.item() if isinstance(s, torch.Tensor) else s)
 
     c_int = _f64_to_i64(c_val)
-    s_real_int = _f64_to_i64(s_real)
-    s_imag_int = _f64_to_i64(s_imag)
+    s_int = _f64_to_i64(s)
 
     req_size_x = 1 + (n - 1) * incx
     req_size_y = 1 + (n - 1) * incy
@@ -385,4 +377,4 @@ def zrot(
 
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     with torch_device_fn.device(x.device):
-        zrot_kernel[grid](x_real, y_real, c_int, s_real_int, s_imag_int, n, incx, incy)
+        zdrot_kernel[grid](x_real, y_real, c_int, s_int, n, incx, incy)

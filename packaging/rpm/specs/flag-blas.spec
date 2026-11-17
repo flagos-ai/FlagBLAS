@@ -15,7 +15,7 @@
 # Reason: distro torch is CPU-only; users install GPU torch via pip.
 # See packaging/INSTALL.md (or future flagos-packaging install docs) for the
 # user-side pip install incantation.
-%global __requires_exclude ^python3(\.[0-9]+)?dist\((torch)\)$
+%global __requires_exclude ^python3([.][0-9]+)?dist[(]torch[)]( .*)?$
 Name:           python3-flag-blas
 Version:        0.3.0
 Release:        1%{?dist}
@@ -69,7 +69,11 @@ PYTHONDONTWRITEBYTECODE=1 \
 %else
 %files
 %{python3_sitelib}/flag_blas/
-%{python3_sitelib}/flag_blas-%{version}.dist-info/
+# Globbed, not %%{version}: the dist-info directory is named for the version
+# in pyproject.toml, which need not equal this spec's Version -- a release
+# pipeline may stamp one and not the other. Binding them made the build
+# fail with "Directory not found".
+%{python3_sitelib}/flag_blas-*.dist-info/
 %endif
 %license LICENSE
 

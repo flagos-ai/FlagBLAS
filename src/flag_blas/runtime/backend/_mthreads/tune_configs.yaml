@@ -455,3 +455,11 @@ bfgemm_nt:
   - META: {BLOCK_M: 128, BLOCK_N: 128, BLOCK_K: 64, GROUP_M: 8}
     num_warps: 8
     num_stages: 2
+
+mthreads_amax_fp64:
+  - META: {BLOCK: 512}
+    num_warps: 4
+    num_stages: 1
+  - META: {BLOCK: 2048}
+    num_warps: 8
+    num_stages: 1

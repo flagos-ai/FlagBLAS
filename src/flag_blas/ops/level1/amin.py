@@ -27,14 +27,14 @@ BLOCK_SIZE = 2048
 MAX_NUM_BLOCKS = 1024
 MAX_SMALL_BLOCK = 16384
 MAX_SMALL_CHUNKED_BLOCK = 32768
-DAMIN_LARGE_NUM_BLOCKS = 8192
-CAMIN_LARGE_NUM_BLOCKS = 2048
-CAMIN_XLARGE_NUM_BLOCKS = 4096
-CAMIN_LARGE_BLOCK_SIZE = 4096
-CAMIN_LARGE_TILE_BLOCK_SIZE = 4096
-CAMIN_LARGE_REDUCE_BLOCK_SIZE = 1024
-CAMIN_LARGE_NOMASK_SIZES = (83886080, 167772160, 335544320, 671088640)
-CAMIN_LARGE_MASKED_SIZES = (250000000,)
+IDAMIN_LARGE_NUM_BLOCKS = 8192
+ICAMIN_LARGE_NUM_BLOCKS = 2048
+ICAMIN_XLARGE_NUM_BLOCKS = 4096
+ICAMIN_LARGE_BLOCK_SIZE = 4096
+ICAMIN_LARGE_TILE_BLOCK_SIZE = 4096
+ICAMIN_LARGE_REDUCE_BLOCK_SIZE = 1024
+ICAMIN_LARGE_NOMASK_SIZES = (83886080, 167772160, 335544320, 671088640)
+ICAMIN_LARGE_MASKED_SIZES = (250000000,)
 
 
 @libentry()
@@ -203,7 +203,7 @@ def amin_kernel2_fast(
     key=["n"],
 )
 @triton.jit
-def camin_kernel1_large_contiguous(
+def icamin_kernel1_large_contiguous(
     x_ptr,
     mid_val_ptr,
     mid_idx_ptr,
@@ -300,7 +300,7 @@ def camin_kernel1_large_contiguous(
     key=["n"],
 )
 @triton.jit
-def camin_kernel1_large_contiguous_nomask(
+def icamin_kernel1_large_contiguous_nomask(
     x_ptr,
     mid_val_ptr,
     mid_idx_ptr,
@@ -356,7 +356,7 @@ def camin_kernel1_large_contiguous_nomask(
     key=["n"],
 )
 @triton.jit
-def camin_kernel1_large_4096_nomask(
+def icamin_kernel1_large_4096_nomask(
     x_ptr,
     mid_val_ptr,
     mid_idx_ptr,
@@ -416,7 +416,7 @@ def camin_kernel1_large_4096_nomask(
     key=["n"],
 )
 @triton.jit
-def camin_kernel1_large_packed_i64(
+def icamin_kernel1_large_packed_i64(
     x_ptr,
     mid_val_ptr,
     mid_idx_ptr,
@@ -501,7 +501,7 @@ def camin_kernel1_large_packed_i64(
     key=["BLOCK_SIZE"],
 )
 @triton.jit
-def camin_kernel1_large_tile_nomask(
+def icamin_kernel1_large_tile_nomask(
     x_ptr,
     mid_val_ptr,
     mid_idx_ptr,
@@ -542,7 +542,7 @@ def camin_kernel1_large_tile_nomask(
     key=["BLOCK_SIZE"],
 )
 @triton.jit
-def camin_kernel1_large_tile_tail(
+def icamin_kernel1_large_tile_tail(
     x_ptr,
     mid_val_ptr,
     mid_idx_ptr,
@@ -634,7 +634,7 @@ def amin_kernel_reduce_pairs(
     key=["n"],
 )
 @triton.jit
-def camin_kernel1_large_vectorized(
+def icamin_kernel1_large_vectorized(
     x_ptr,
     mid_val_ptr,
     mid_idx_ptr,
@@ -889,7 +889,7 @@ def amin_kernel_small_chunked_complex(
 
 @libentry()
 @triton.jit
-def zamin_kernel_small_exact(
+def izamin_kernel_small_exact(
     x_ptr,
     out_ptr,
     N: tl.constexpr,
@@ -915,7 +915,7 @@ def zamin_kernel_small_exact(
 
 @libentry()
 @triton.jit
-def zamin_kernel_small_split2(
+def izamin_kernel_small_split2(
     x_ptr,
     out_ptr,
     N: tl.constexpr,
@@ -956,7 +956,7 @@ def zamin_kernel_small_split2(
 
 @libentry()
 @triton.jit
-def camin_kernel_small_26665(
+def icamin_kernel_small_26665(
     x_ptr,
     out_ptr,
     N: tl.constexpr,
@@ -1020,7 +1020,7 @@ def camin_kernel_small_26665(
     key=["N", "CHUNK_SIZE"],
 )
 @triton.jit
-def camin_kernel_small_26665_split2(
+def icamin_kernel_small_26665_split2(
     x_ptr,
     out_ptr,
     N: tl.constexpr,
@@ -1068,7 +1068,7 @@ def camin_kernel_small_26665_split2(
     key=["N", "BLOCK_SIZE"],
 )
 @triton.jit
-def camin_kernel_small_26665_single(
+def icamin_kernel_small_26665_single(
     x_ptr,
     out_ptr,
     N: tl.constexpr,
@@ -1133,11 +1133,11 @@ def _amin_impl(
     with torch_device_fn.device(x.device):
         if x.dtype == torch.complex128 and incx == 1 and n in (10666, 15999):
             x_real = torch.view_as_real(x).reshape(-1)
-            zamin_kernel_small_split2[(1, 1, 1)](x_real, result, N=n, CHUNK_SIZE=8192)
+            izamin_kernel_small_split2[(1, 1, 1)](x_real, result, N=n, CHUNK_SIZE=8192)
             return
         if x.dtype == torch.complex64 and incx == 1 and n == 26665:
             x_real = torch.view_as_real(x).reshape(-1)
-            camin_kernel_small_26665_single[(1, 1, 1)](
+            icamin_kernel_small_26665_single[(1, 1, 1)](
                 x_real, result, N=n, BLOCK_SIZE=32768
             )
             return
@@ -1145,20 +1145,20 @@ def _amin_impl(
             x_real = torch.view_as_real(x).reshape(-1)
             amin_kernel_small_complex_nomask[(1, 1, 1)](x_real, result, BLOCK_SIZE=4096)
             return
-        if x.dtype == torch.complex64 and incx == 1 and n in CAMIN_LARGE_NOMASK_SIZES:
-            grid_size = CAMIN_LARGE_NUM_BLOCKS
+        if x.dtype == torch.complex64 and incx == 1 and n in ICAMIN_LARGE_NOMASK_SIZES:
+            grid_size = ICAMIN_LARGE_NUM_BLOCKS
             mid_val = torch.empty((grid_size,), dtype=val_dtype, device=x.device)
             mid_idx = torch.empty((grid_size,), dtype=torch.int32, device=x.device)
             x_real = torch.view_as_real(x).reshape(-1)
             if n == 671088640:
-                camin_kernel1_large_4096_nomask[(grid_size, 1, 1)](
+                icamin_kernel1_large_4096_nomask[(grid_size, 1, 1)](
                     x_real,
                     mid_val,
                     mid_idx,
                     n,
                 )
             else:
-                camin_kernel1_large_contiguous_nomask[(grid_size, 1, 1)](
+                icamin_kernel1_large_contiguous_nomask[(grid_size, 1, 1)](
                     x_real,
                     mid_val,
                     mid_idx,
@@ -1167,12 +1167,12 @@ def _amin_impl(
             block_mid = triton.next_power_of_2(grid_size)
             amin_kernel2_fast[(1, 1, 1)](mid_val, mid_idx, result, grid_size, block_mid)
             return
-        if x.dtype == torch.complex64 and incx == 1 and n in CAMIN_LARGE_MASKED_SIZES:
-            grid_size = CAMIN_LARGE_NUM_BLOCKS
+        if x.dtype == torch.complex64 and incx == 1 and n in ICAMIN_LARGE_MASKED_SIZES:
+            grid_size = ICAMIN_LARGE_NUM_BLOCKS
             mid_val = torch.empty((grid_size,), dtype=val_dtype, device=x.device)
             mid_idx = torch.empty((grid_size,), dtype=torch.int32, device=x.device)
             x_real = torch.view_as_real(x).reshape(-1)
-            camin_kernel1_large_contiguous[(grid_size, 1, 1)](
+            icamin_kernel1_large_contiguous[(grid_size, 1, 1)](
                 x_real,
                 mid_val,
                 mid_idx,
@@ -1220,7 +1220,7 @@ def _amin_impl(
                 )
             return
         if x.dtype == torch.float64 and incx == 1 and n >= 1048576:
-            grid_size = min(triton.cdiv(n, BLOCK_SIZE), DAMIN_LARGE_NUM_BLOCKS)
+            grid_size = min(triton.cdiv(n, BLOCK_SIZE), IDAMIN_LARGE_NUM_BLOCKS)
         else:
             grid_size = min(triton.cdiv(n, BLOCK_SIZE), MAX_NUM_BLOCKS)
         mid_val = torch.empty((grid_size,), dtype=val_dtype, device=x.device)
@@ -1236,29 +1236,29 @@ def _amin_impl(
         amin_kernel2[(1, 1, 1)](mid_val, mid_idx, result, grid_size, block_mid)
 
 
-def samin(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
-    logger.debug("FLAG_BLAS SAMIN")
+def isamin(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
+    logger.debug("FLAG_BLAS ISAMIN")
     if x.dtype != torch.float32:
-        raise TypeError("samin expects x dtype=torch.float32")
+        raise TypeError("isamin expects x dtype=torch.float32")
     _amin_impl(n, x, incx, result, is_complex=False, val_dtype=torch.float32)
 
 
-def damin(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
-    logger.debug("FLAG_BLAS DAMIN")
+def idamin(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
+    logger.debug("FLAG_BLAS IDAMIN")
     if x.dtype != torch.float64:
-        raise TypeError("damin expects x dtype=torch.float64")
+        raise TypeError("idamin expects x dtype=torch.float64")
     _amin_impl(n, x, incx, result, is_complex=False, val_dtype=torch.float64)
 
 
-def camin(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
-    logger.debug("FLAG_BLAS CAMIN")
+def icamin(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
+    logger.debug("FLAG_BLAS ICAMIN")
     if x.dtype != torch.complex64:
-        raise TypeError("camin expects x dtype=torch.complex64")
+        raise TypeError("icamin expects x dtype=torch.complex64")
     _amin_impl(n, x, incx, result, is_complex=True, val_dtype=torch.float32)
 
 
-def zamin(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
-    logger.debug("FLAG_BLAS ZAMIN")
+def izamin(n: int, x: torch.Tensor, incx: int, result: torch.Tensor) -> None:
+    logger.debug("FLAG_BLAS IZAMIN")
     if x.dtype != torch.complex128:
-        raise TypeError("zamin expects x dtype=torch.complex128")
+        raise TypeError("izamin expects x dtype=torch.complex128")
     _amin_impl(n, x, incx, result, is_complex=True, val_dtype=torch.float64)

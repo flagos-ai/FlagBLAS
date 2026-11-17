@@ -28,6 +28,7 @@ from .accuracy_utils import (
     SCAL_SHAPES,
     SCALARS,
     blas_assert_close,
+    l1_randn,
     to_cpu_blas_tensor,
     to_reference,
 )
@@ -37,7 +38,9 @@ IS_HYGON = flag_blas.vendor_name == "hygon"
 
 if IS_HYGON:
     from .hipblas_reference import check_hipblas_status, get_hipblas_context
-else:
+elif flag_blas.vendor_name == "mthreads":
+    from benchmark.mublas_compat import cp, cublas
+elif flag_blas.vendor_name != "ascend":
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
 
@@ -46,6 +49,10 @@ COMPLEX_SCALARS = [1.0 + 2.0j, -0.5 + 1.5j]
 
 
 def load_cublas():
+    if flag_blas.vendor_name == "mthreads":
+        from benchmark.mublas_compat import load_mublas
+
+        return load_mublas()
     lib_names = ["libcublas.so", "libcublas.so.12", "libcublas.so.11"]
     found_path = ctypes.util.find_library("cublas")
     if found_path:
@@ -59,7 +66,7 @@ def load_cublas():
     raise RuntimeError("Cannot find libcublas.so in the system")
 
 
-_cublas = None if IS_HYGON else load_cublas()
+_cublas = None if IS_HYGON or flag_blas.vendor_name == "ascend" else load_cublas()
 
 
 def hipblas_scal_reference(n, alpha, x, incx, real_alpha=False):
@@ -128,6 +135,8 @@ def cublas_csscal_reference(n, alpha, x, incx):
         return
 
     handle = cp.cuda.device.get_cublas_handle()
+    if flag_blas.vendor_name == "mthreads":
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
     alpha_c = ctypes.c_float(alpha)
     status = _cublas.cublasCsscal_v2(
         ctypes.c_void_p(handle),
@@ -148,6 +157,8 @@ def cublas_zdscal_reference(n, alpha, x, incx):
         return
 
     handle = cp.cuda.device.get_cublas_handle()
+    if flag_blas.vendor_name == "mthreads":
+        cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
     alpha_c = ctypes.c_double(alpha)
     status = _cublas.cublasZdscal_v2(
         ctypes.c_void_p(handle),
@@ -246,7 +257,7 @@ def zdscal_reference(n, alpha, x, incx):
 def test_accuracy_csscal(shape, alpha):
     n = shape[0]
     incx = 1
-    x = torch.randn(n * incx, dtype=torch.complex64, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=torch.complex64, device=flag_blas.device)
 
     ref_x = csscal_reference(n, alpha, x, incx)
 
@@ -264,7 +275,7 @@ def test_accuracy_zdscal(shape, alpha):
 
     n = shape[0]
     incx = 1
-    x = torch.randn(n * incx, dtype=torch.complex128, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=torch.complex128, device=flag_blas.device)
 
     ref_x = zdscal_reference(n, alpha, x, incx)
 
@@ -288,7 +299,7 @@ def test_accuracy_scal_real(dtype, shape, alpha):
 
     n = shape[0]
     incx = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_x = scal_reference(n, alpha, x, incx)
 
@@ -316,7 +327,7 @@ def test_accuracy_scal_complex(dtype, shape, alpha):
 
     n = shape[0]
     incx = 1
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_x = scal_reference(n, alpha, x, incx)
 
@@ -345,7 +356,7 @@ def test_accuracy_scal_empty_tensor(dtype):
     ):
         pytest.skip("Device does not support float64/complex128")
 
-    x = torch.randn(0, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(0, dtype=dtype, device=flag_blas.device)
     ref_x = to_reference(x).clone()
 
     alpha = 2.0 + 1.0j if dtype in [torch.complex64, torch.complex128] else 2.0
@@ -366,7 +377,7 @@ def test_accuracy_scal_empty_tensor(dtype):
 @pytest.mark.csscal
 @pytest.mark.scal
 def test_accuracy_csscal_empty_tensor():
-    x = torch.randn(0, dtype=torch.complex64, device=flag_blas.device)
+    x = l1_randn(0, dtype=torch.complex64, device=flag_blas.device)
     ref_x = to_reference(x).clone()
 
     alpha = 2.0
@@ -383,7 +394,7 @@ def test_accuracy_zdscal_empty_tensor():
     if not flag_blas.runtime.device.support_fp64:
         pytest.skip("Device does not support float64/complex128")
 
-    x = torch.randn(0, dtype=torch.complex128, device=flag_blas.device)
+    x = l1_randn(0, dtype=torch.complex128, device=flag_blas.device)
     ref_x = to_reference(x).clone()
 
     alpha = 2.0
@@ -410,7 +421,7 @@ def test_accuracy_scal_different_n_real(dtype, n, vec_size):
         pytest.skip("Device does not support float64")
 
     alpha = 2.5
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     ref_x = scal_reference(n, alpha, x, 1)
 
@@ -438,7 +449,7 @@ def test_accuracy_scal_different_n_complex(dtype, n, vec_size):
         pytest.skip("Device does not support float64/complex128")
 
     alpha = 2.0 + 1.0j
-    x = torch.randn(vec_size, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=dtype, device=flag_blas.device)
 
     ref_x = scal_reference(n, alpha, x, 1)
 
@@ -457,7 +468,7 @@ def test_accuracy_scal_different_n_complex(dtype, n, vec_size):
 )
 def test_accuracy_csscal_different_n(n, vec_size):
     alpha = 2.5
-    x = torch.randn(vec_size, dtype=torch.complex64, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=torch.complex64, device=flag_blas.device)
 
     ref_x = csscal_reference(n, alpha, x, 1)
 
@@ -475,7 +486,7 @@ def test_accuracy_zdscal_different_n(n, vec_size):
         pytest.skip("Device does not support float64/complex128")
 
     alpha = 2.5
-    x = torch.randn(vec_size, dtype=torch.complex128, device=flag_blas.device)
+    x = l1_randn(vec_size, dtype=torch.complex128, device=flag_blas.device)
 
     ref_x = zdscal_reference(n, alpha, x, 1)
 
@@ -499,7 +510,7 @@ def test_accuracy_scal_different_n_with_stride_real(dtype, shape, incx):
 
     n = shape[0]
     alpha = -0.75
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_x = scal_reference(n, alpha, x, incx)
 
@@ -527,7 +538,7 @@ def test_accuracy_scal_different_n_with_stride_complex(dtype, shape, incx):
 
     n = shape[0]
     alpha = -0.5 + 1.5j
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
 
     ref_x = scal_reference(n, alpha, x, incx)
 
@@ -546,7 +557,7 @@ def test_accuracy_scal_different_n_with_stride_complex(dtype, shape, incx):
 def test_accuracy_csscal_different_n_with_stride(shape, incx):
     n = shape[0]
     alpha = -0.75
-    x = torch.randn(n * incx, dtype=torch.complex64, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=torch.complex64, device=flag_blas.device)
 
     ref_x = csscal_reference(n, alpha, x, incx)
 
@@ -564,7 +575,7 @@ def test_accuracy_zdscal_different_n_with_stride(shape, incx):
 
     n = shape[0]
     alpha = -0.75
-    x = torch.randn(n * incx, dtype=torch.complex128, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=torch.complex128, device=flag_blas.device)
 
     ref_x = zdscal_reference(n, alpha, x, incx)
 
@@ -603,7 +614,7 @@ def test_accuracy_scal_perf_inputs(op_name, dtype, shape, incx):
         if op_name in ("csscal", "zdscal")
         else 1e-5
     )
-    x = torch.randn(n * incx, dtype=dtype, device=flag_blas.device)
+    x = l1_randn(n * incx, dtype=dtype, device=flag_blas.device)
     reference = {"csscal": csscal_reference, "zdscal": zdscal_reference}.get(
         op_name, scal_reference
     )
