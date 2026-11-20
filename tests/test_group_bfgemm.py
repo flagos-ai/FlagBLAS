@@ -196,6 +196,7 @@ def cublas_group_gemm_reference(group_A, group_B, group_C, offs_table, alpha, be
     global _cublas
     import cupy as cp
     from cupy_backends.cuda.libs import cublas
+
     if _cublas is None:
         _cublas = load_cublas()
         cublas.cublasGemmGroupedBatchedEx = _cublasGemmGroupedBatchedEx
@@ -485,6 +486,29 @@ def test_accuracy_group_gemm(k, e, n):
         alpha=alpha,
         beta=beta,
     )
+    utils.blas_assert_close(out, ref, torch.bfloat16, reduce_dim=k)
+
+
+@pytest.mark.group_gemm
+@pytest.mark.skipif(not IS_HYGPON, reason="Hygon prepacked-B layout")
+def test_hygon_group_gemm_prepacked_b():
+    counts = [1, 17, 33, 129]
+    k, n = 512, 512
+    device = flag_blas.device
+    group_A = torch.randn(sum(counts), k, device=device, dtype=torch.bfloat16)
+    group_B = torch.randn(len(counts), k, n, device=device, dtype=torch.bfloat16)
+    group_B = group_B.transpose(1, 2).contiguous().transpose(1, 2)
+    group_list = torch.tensor(counts, dtype=torch.int32, device=device).cumsum(0)
+    ref = torch.empty(sum(counts), n, device=device, dtype=torch.bfloat16)
+    start = 0
+    for expert, rows in enumerate(counts):
+        end = start + rows
+        ref[start:end] = group_A[start:end] @ group_B[expert]
+        start = end
+    out = flag_blas.group_bfgemm(group_A, group_B, group_list, torch.empty_like(ref))
+    if TO_CPU:
+        out = out.cpu()
+        ref = ref.cpu()
     utils.blas_assert_close(out, ref, torch.bfloat16, reduce_dim=k)
 
 

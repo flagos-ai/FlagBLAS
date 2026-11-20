@@ -4407,6 +4407,25 @@ group_bfgemm:
     num_stages: 2
     num_warps: 8
 
+group_bfgemm_balanced:
+  - META: {NUM_WM: 2048}
+    num_stages: 2
+    num_warps: 16
+  - META: {NUM_WM: 4096}
+    num_stages: 1
+    num_warps: 16
+
+group_hgemm_balanced:
+  - META: {NUM_WM: 256}
+    num_stages: 2
+    num_warps: 16
+  - META: {NUM_WM: 1024}
+    num_stages: 1
+    num_warps: 8
+  - META: {NUM_WM: 2048}
+    num_stages: 2
+    num_warps: 16
+
 group_tf32gemm_tail:
   - META: {BLOCK_M: 64, BLOCK_N: 256, BLOCK_K: 32}
     num_stages: 2

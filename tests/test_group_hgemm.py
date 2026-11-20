@@ -291,8 +291,6 @@ def hygon_group_hgemm(group_A, group_B, group_C, offs_table, alpha, beta):
         group_C,
         group_list,
         torch.empty_like(group_C),
-        alpha=alpha,
-        beta=beta,
     )
 
 
@@ -360,7 +358,7 @@ def test_iluvatar_group_gemm_group_list_mutation():
 @pytest.mark.parametrize("k,e,n", utils.GROUP_GEMM_SHAPES)
 def test_accuracy_group_gemm(k, e, n):
     device = flag_blas.device
-    alpha, beta = 1.5, 0.5
+    alpha, beta = (1.0, 0.0) if IS_HYGPON else (1.5, 0.5)
     scale = k**-0.5
 
     m_list = [random.randint(1, 4096) for _ in range(e)]
@@ -474,7 +472,8 @@ def test_accuracy_group_gemm(k, e, n):
 
 @pytest.mark.group_gemm
 @pytest.mark.skipif(
-    IS_ASCEND or IS_ILUVATAR or IS_PPU, reason="Hopper-only alpha/beta interface"
+    IS_ASCEND or IS_ILUVATAR or IS_PPU or IS_HYGPON,
+    reason="alpha/beta interface is unavailable on this backend",
 )
 def test_group_gemm_alpha_zero():
     m, k, e, n = 16, 64, 4, 128
@@ -501,7 +500,8 @@ def test_group_gemm_alpha_zero():
 
 @pytest.mark.group_gemm
 @pytest.mark.skipif(
-    IS_ASCEND or IS_ILUVATAR or IS_PPU, reason="Hopper-only alpha/beta interface"
+    IS_ASCEND or IS_ILUVATAR or IS_PPU or IS_HYGPON,
+    reason="alpha/beta interface is unavailable on this backend",
 )
 def test_group_gemm_beta_zero():
     m, k, e, n = 8, 32, 3, 64
@@ -534,7 +534,8 @@ def test_group_gemm_beta_zero():
     "alpha,beta", [(1.0, 0.0), (2.0, 0.0), (2.0, 0.5), (0.0, 1.0), (0.5, 1.5)]
 )
 @pytest.mark.skipif(
-    IS_ASCEND or IS_ILUVATAR or IS_PPU, reason="Hopper-only alpha/beta interface"
+    IS_ASCEND or IS_ILUVATAR or IS_PPU or IS_HYGPON,
+    reason="alpha/beta interface is unavailable on this backend",
 )
 def test_group_gemm_alpha_beta(alpha, beta):
     m, k, e, n = 32, 128, 2, 128

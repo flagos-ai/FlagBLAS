@@ -927,6 +927,8 @@ class HygonGroupGemmBenchmark(GroupGemmBenchmark):
                 torch.randn(total_M, k, dtype=cur_dtype, device=self.device) * scale
             )
             group_B = torch.randn(e, k, n, dtype=cur_dtype, device=self.device) * scale
+            if k >= 512 and 384 <= n <= 4096:
+                group_B = group_B.transpose(1, 2).contiguous().transpose(1, 2)
             if self.beta != 0.0:
                 group_C = (
                     torch.randn(total_M, n, dtype=cur_dtype, device=self.device) * scale
@@ -1444,7 +1446,9 @@ def test_perf_group_gemm_bf16():
                     A, B, group_list, group_out.clone(), **kwargs
                 )
                 bench.validate_results(torch_result, gems_result, 1, tolerance=1e-2)
-        bench.run()
+        from benchmark.hygon_group_gemm_reference import run_hygon_group_gemm
+
+        run_hygon_group_gemm(bench, "bf16")
     else:
         bench = GroupGemmBenchmark(
             op_name="group_gemm",

@@ -69,8 +69,51 @@
       "validation_card1_measured_gemm": 135.537032,
       "h100_dense_derived_from_sparse_spec": true
     },
+    "tensor_tf32": {
+      "h100_theoretical_dense": 494.5,
+      "thead_measured_gemm": 67.648184,
+      "unit": "TFLOPS",
+      "scoring": "used for PPU TF32 GroupGEMM",
+      "thead_nominal": null,
+      "h100_dense_derived_from_sparse_spec": true
+    },
     "tensor_method": "torch.mm 8192x8192 via HGGC, 2*N^3 FLOPs; Triton timer median warmup=40 ms rep=100 ms; output finite; supplementary only",
     "score_basis": "Memory GEMV uses both nominal bandwidth values; vector diagnostic uses measured PPU rates because no reliable vendor nominal vector FLOPS source was found.",
+    "h100_official_source": "https://www.nvidia.com/en-eu/data-center/h100/"
+  },
+  "hygon": {
+    "device": "BW",
+    "calibration_date": "2026-10-26",
+    "method": "torch.mm 8192x8192 via hipBLAS, 2*N^3 FLOPs; triton.testing.do_bench median warmup=40 ms rep=100 ms; output finite; maximum of two runs used for scoring",
+    "tensor_fp16": {
+      "h100_theoretical_dense": 989.5,
+      "hygon_measured_gemm": 139.46396883377102,
+      "validation_measured_gemm": 63.35519563948357,
+      "unit": "TFLOPS"
+    },
+    "tensor_bf16": {
+      "h100_theoretical_dense": 989.5,
+      "hygon_measured_gemm": 384.0256933701126,
+      "validation_measured_gemm": 255.52920217916022,
+      "unit": "TFLOPS"
+    },
+    "tensor_tf32": {
+      "h100_theoretical_dense": 494.5,
+      "hygon_measured_gemm": 55.36490813922668,
+      "validation_measured_gemm": 52.3419441288133,
+      "unit": "TFLOPS"
+    },
+    "memory": {
+      "h100_theoretical": 3.35,
+      "hygon_measured": 0.6120274392284529,
+      "validation_measured": 0.6119159662199554,
+      "unit": "TB/s",
+      "calibration_date": "2026-10-27",
+      "method": "1 GiB device-to-device streaming copy, 2*bytes/time; triton.testing.do_bench median warmup=40 ms rep=100 ms; maximum of two runs used for scoring"
+    },
+    "torch_version": "2.4.1",
+    "triton_version": "3.6.0",
+    "score_basis": "Per-case NVIDIA bottleneck uses max(tensor/memory utilization) from saved H100 algorithmic rates as the no-ncu fallback; H100 nominal resource over corresponding Hygon measured resource",
     "h100_official_source": "https://www.nvidia.com/en-eu/data-center/h100/"
   }
 }

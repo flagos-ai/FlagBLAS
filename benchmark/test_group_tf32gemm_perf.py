@@ -618,6 +618,11 @@ class HygonGroupGemmBenchmark(GroupGemmBenchmark):
                 "group_B_T": group_B_T,
                 "group_list": group_list,
                 "out_flag": out_flag,
+                "m_list": m_list,
+                "group_size": e,
+                "M": total_M,
+                "N": n,
+                "K": k,
                 "alpha": self.alpha,
                 "beta": self.beta,
             }
@@ -651,9 +656,7 @@ def hygon_gems_group_gemm_wrapper(
     beta,
     **kwargs,
 ):
-    return flag_blas.group_tf32gemm(
-        group_A, group_B_T, group_C, group_list, out_flag, alpha, beta
-    )
+    return flag_blas.group_tf32gemm(group_A, group_B_T, group_C, group_list, out_flag)
 
 
 class AscendGroupGemmBenchmark(GroupGemmBenchmark):
@@ -1039,7 +1042,9 @@ def test_perf_group_gemm_tf32():
                 # atol sized for tf32-vs-fp32 noise; see
                 # PpuGroupGemmBenchmark.validate_results.
                 bench.validate_results(torch_result, gems_result, 1, tolerance=0.5)
-        bench.run()
+        from benchmark.thead_l3_reference import run_thead_group_tf32gemm
+
+        run_thead_group_tf32gemm(bench)
     elif IS_ASCEND:
         bench = AscendGroupGemmBenchmark(
             op_name="group_gemm",
@@ -1070,7 +1075,9 @@ def test_perf_group_gemm_tf32():
                 )
                 k = A.shape[1]
                 bench.validate_results(torch_result, gems_result, k, tolerance=1e-3)
-        bench.run()
+        from benchmark.hygon_group_gemm_reference import run_hygon_group_gemm
+
+        run_hygon_group_gemm(bench, "tf32")
     else:
         bench = GroupGemmBenchmark(
             op_name="group_gemm",

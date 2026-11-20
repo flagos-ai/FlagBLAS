@@ -5,7 +5,6 @@ import triton.language as tl
 from flag_blas import runtime
 from flag_blas.ops.level3.group_gemm import grouped_launch
 from flag_blas.utils import libentry, libtuner
-from flag_blas.utils import triton_lang_extension as tle
 
 
 @libentry()
@@ -25,9 +24,9 @@ def grouped_bfgemm_kernel(
     BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
 ):
-    tile_idx = tle.program_id(0)
-    total_grid = tle.num_programs(0)
-    last_problem_end = tile_idx * 0
+    tile_idx = tl.program_id(0)
+    total_grid = tl.num_programs(0)
+    last_problem_end = (tile_idx * 0).to(tl.int64)
     group_start = (tile_idx * 0).to(tl.int64)
     a_descriptor = tl.make_tensor_descriptor(
         group_A,
@@ -126,9 +125,9 @@ def grouped_hgemm_kernel(
     BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
 ):
-    tile_idx = tle.program_id(0)
-    total_grid = tle.num_programs(0)
-    last_problem_end = tile_idx * 0
+    tile_idx = tl.program_id(0)
+    total_grid = tl.num_programs(0)
+    last_problem_end = (tile_idx * 0).to(tl.int64)
     group_start = (tile_idx * 0).to(tl.int64)
     a_descriptor = tl.make_tensor_descriptor(
         group_A,
@@ -224,9 +223,9 @@ def grouped_tf32gemm_kernel(
     BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
 ):
-    tile_idx = tle.program_id(0)
-    total_grid = tle.num_programs(0)
-    last_problem_end = tile_idx * 0
+    tile_idx = tl.program_id(0)
+    total_grid = tl.num_programs(0)
+    last_problem_end = (tile_idx * 0).to(tl.int64)
     group_start = (tile_idx * 0).to(tl.int64)
     a_descriptor = tl.make_tensor_descriptor(
         group_A,
@@ -326,10 +325,10 @@ def grouped_bfgemm_n_chunk_kernel(
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
 ):
-    core_idx = tle.program_id(0)
-    total_grid = tle.num_programs(0)
+    core_idx = tl.program_id(0)
+    total_grid = tl.num_programs(0)
     task_idx = core_idx
-    last_problem_end = core_idx * 0
+    last_problem_end = (core_idx * 0).to(tl.int64)
     group_start = (core_idx * 0).to(tl.int64)
     offs_k = tl.arange(0, BLOCK_K)
     a_descriptor = tl.make_tensor_descriptor(
