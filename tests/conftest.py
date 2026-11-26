@@ -18,6 +18,7 @@ import os
 from datetime import datetime
 
 import pytest
+import yaml
 
 import flag_blas
 
@@ -79,6 +80,18 @@ def pytest_addoption(parser):
         "--output",
         help="path to the result file",
     )
+
+    try:
+        parser.addoption(
+            "--collect-marks",
+            default=None,
+            help=(
+                "Collect the tests with marker information and write to "
+                "the specified file"
+            ),
+        )
+    except ValueError:
+        pass
 
     parser.addoption(
         "--L1_n_start",
@@ -171,6 +184,45 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(config, items):
+    collect_marks_file = config.getoption("--collect-marks", default=None)
+    if collect_marks_file:
+        registered_marks = {
+            marker.split(":")[0].strip() for marker in config.getini("markers")
+        }
+        excluded_marks = {
+            "parametrize",
+            "skip",
+            "skipif",
+            "xfail",
+            "usefixtures",
+            "filterwarnings",
+            "timeout",
+            "tryfirst",
+            "trylast",
+        } | registered_marks
+
+        report = []
+        for item in items:
+            data = {}
+            if item.cls:
+                data["class"] = item.cls.__name__
+            data["test_case"] = item.name
+            if item.originalname:
+                data["function"] = item.originalname
+            data["file"] = item.location[0]
+            data["marks"] = [
+                mark.name
+                for mark in item.iter_markers()
+                if mark.name not in excluded_marks
+            ]
+            report.append(data)
+
+        with open(collect_marks_file, "w") as f:
+            yaml.dump(report, f, indent=2)
+
+        items.clear()
+        return
+
     if flag_blas.vendor_name != "thead" or config.getoption("--ref") != "cuda":
         return
 
@@ -242,14 +294,17 @@ def pytest_runtest_logreport(report):
             reason = get_skipped_reason(report)
             test_results[report.nodeid]["result"] = "skipped"
             test_results[report.nodeid]["skipped_reason"] = reason
+            test_results[report.nodeid]["reason"] = reason
 
     elif report.when == "call":
         test_results[report.nodeid]["result"] = report.outcome
-        if report.outcome == "skipped":
+        if report.outcome in ("skipped", "failed"):
             reason = get_skipped_reason(report)
             test_results[report.nodeid]["skipped_reason"] = reason
+            test_results[report.nodeid]["reason"] = reason
         else:
             test_results[report.nodeid]["skipped_reason"] = None
+            test_results[report.nodeid]["reason"] = None
 
 
 def pytest_terminal_summary(terminalreporter):
