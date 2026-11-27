@@ -19,6 +19,7 @@ import os
 
 import pytest
 import torch
+import yaml
 
 import flag_blas
 from benchmark.attri_util import (
@@ -41,8 +42,35 @@ vendor_name = flag_blas.vendor_name
 recordLogger = logging.getLogger("flag_blas_benchmark")
 recordLogger.propagate = False
 
+TEST_RESULTS = {}
+REPORT_FILE = "benchmark_result.json"
+CURRENT_OP = None
+
+
+def update_result(op, data):
+    if not Config.record_json:
+        return
+
+    key = CURRENT_OP or op
+    entry = TEST_RESULTS.setdefault(key, {"details": []})
+    details = entry.setdefault("details", [])
+    dtype = data.get("dtype")
+    for existing in details:
+        if existing.get("dtype") == dtype:
+            existing.setdefault("result", []).extend(data.get("result", []))
+            return
+    details.append(data)
+
 
 def emit_record_logger(message: str) -> None:
+    if Config.record_json:
+        try:
+            payload = json.loads(message)
+        except (TypeError, ValueError):
+            payload = None
+        if isinstance(payload, dict) and "op_name" in payload and "result" in payload:
+            update_result(payload["op_name"], payload)
+
     if recordLogger.handlers:
         handler = recordLogger.handlers[0]
         if isinstance(handler, logging.FileHandler) and handler.stream is None:
@@ -69,6 +97,7 @@ class BenchConfig:
             self.warm_up = 1
             self.repetition = 1
         self.record_log = False
+        self.record_json = False
         self.user_desired_dtypes = None
         self.user_desired_metrics = None
         self.shape_file = os.path.join(os.path.dirname(__file__), "core_shapes.yaml")
@@ -185,9 +214,22 @@ def pytest_addoption(parser):
         # tests/conftest.py. Reuse the existing option in that case.
         pass
 
+    try:
+        parser.addoption(
+            "--collect-marks",
+            default=None,
+            help=(
+                "Collect the tests with marker information and write to "
+                "the specified file"
+            ),
+        )
+    except ValueError:
+        pass
+
 
 def pytest_configure(config):
     global Config  # noqa: F824
+    global REPORT_FILE
     mode_value = config.getoption(
         "--mode" if vendor_name != "kunlunxin" else "--fg_mode"
     )
@@ -216,6 +258,10 @@ def pytest_configure(config):
     Config.shape_file = shape_file_str
 
     Config.record_log = config.getoption("--record") == "log"
+    Config.record_json = config.getoption("--record") == "json"
+    if Config.record_json:
+        REPORT_FILE = config.getoption("--output") or REPORT_FILE
+
     if Config.record_log:
         # Allow the caller to specify a deterministic log filename via
         # --output.  This makes it easy for automation (e.g.
@@ -261,7 +307,35 @@ BUILTIN_MARKS = {
 }
 
 
-def pytest_collection_modifyitems(items):
+def pytest_collection_modifyitems(session, config, items):
+    collect_marks_file = config.getoption("--collect-marks", default=None)
+    if collect_marks_file:
+        registered_marks = {
+            marker.split(":")[0].strip() for marker in config.getini("markers")
+        }
+        excluded_marks = BUILTIN_MARKS | registered_marks
+        report = []
+        for item in items:
+            data = {}
+            if item.cls:
+                data["class"] = item.cls.__name__
+            data["test_case"] = item.name
+            if item.originalname:
+                data["function"] = item.originalname
+            data["file"] = item.location[0]
+            data["marks"] = [
+                mark.name
+                for mark in item.iter_markers()
+                if mark.name not in excluded_marks
+            ]
+            report.append(data)
+
+        with open(collect_marks_file, "w") as f:
+            yaml.dump(report, f, indent=2)
+
+        items.clear()
+        return
+
     if vendor_name != "thead":
         return
 
@@ -277,7 +351,31 @@ def _get_skipped_reason(report):
         return str(report.longrepr)
 
 
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):
+    global CURRENT_OP
+    marks = [
+        mark.name for mark in item.iter_markers() if mark.name not in BUILTIN_MARKS
+    ]
+    CURRENT_OP = marks[0] if marks else None
+
+
 def pytest_runtest_logreport(report):
+    if Config.record_json:
+        op = CURRENT_OP or report.nodeid
+        entry = TEST_RESULTS.setdefault(op, {"details": []})
+        if report.when == "setup" and report.outcome == "skipped":
+            entry["result"] = "skipped"
+            entry["reason"] = _get_skipped_reason(report)
+            entry["test_case"] = report.nodeid
+        elif report.when == "call":
+            entry["result"] = report.outcome
+            entry["test_case"] = report.nodeid
+            if report.outcome in ("skipped", "failed"):
+                entry["reason"] = _get_skipped_reason(report)
+            else:
+                entry["reason"] = None
+
     # Record why a benchmark case was skipped so the caller (e.g.
     # tools/run_tests.py) can tell "all cases skipped" apart from
     # "no benchmark data collected".
@@ -286,6 +384,21 @@ def pytest_runtest_logreport(report):
     if report.when not in ("setup", "call"):
         return
     emit_record_logger(json.dumps({"skip_reason": _get_skipped_reason(report)}))
+
+
+def pytest_terminal_summary(terminalreporter):
+    if not Config.record_json:
+        return
+
+    data = TEST_RESULTS
+    if os.path.exists(REPORT_FILE):
+        with open(REPORT_FILE, "r") as json_file:
+            existing_data = json.load(json_file)
+        existing_data.update(TEST_RESULTS)
+        data = existing_data
+
+    with open(REPORT_FILE, "w") as json_file:
+        json.dump(data, json_file, indent=2, default=str)
 
 
 @pytest.fixture(scope="session", autouse=True)
